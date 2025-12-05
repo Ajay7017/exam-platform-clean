@@ -1,0 +1,65 @@
+{
+  "leaderboard": [
+    {
+      "rank": 1,
+      "userId": "user-045",
+      "name": "Arjun Sharma",
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun",
+      "score": 98.5,
+      "examsCompleted": 45,
+      "averageAccuracy": 95.2,
+      "totalPoints": 4425
+    },
+    {
+      "rank": 2,
+      "userId": "user-023",
+      "name": "Priya Patel",
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Priya",
+      "score": 96.8,
+      "examsCompleted": 42,
+      "averageAccuracy": 93.8,
+      "totalPoints": 4066
+    },
+    {
+      "rank": 3,
+      "userId": "user-089",
+      "name": "Rahul Kumar",
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul",
+      "score": 95.3,
+      "examsCompleted": 38,
+      "averageAccuracy": 92.5,
+      "totalPoints": 3621
+    },
+    {
+      "rank": 4,
+      "userId": "user-067",
+      "name": "Sneha Reddy",
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha",
+      "score": 94.1,
+      "examsCompleted": 40,
+      "averageAccuracy": 91.8,
+      "totalPoints": 3764
+    },
+    {
+      "rank": 5,
+      "userId": "user-112",
+      "name": "Vikram Singh",
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Vikram",
+      "score": 92.7,
+      "examsCompleted": 35,
+      "averageAccuracy": 90.2,
+      "totalPoints": 3245
+    },
+    {
+      "rank": 147,
+      "userId": "user-001",
+      "name": "You",
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=You",
+      "score": 78.5,
+      "examsCompleted": 12,
+      "averageAccuracy": 84.5,
+      "totalPoints": 942,
+      "isCurrentUser": true
+    }
+  ]
+}

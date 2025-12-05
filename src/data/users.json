@@ -1,0 +1,68 @@
+{
+  "users": [
+    {
+      "id": "user-001",
+      "name": "Rahul Kumar",
+      "email": "rahul.kumar@example.com",
+      "role": "student",
+      "examsTaken": 12,
+      "createdAt": "2024-09-15T10:30:00Z"
+    },
+    {
+      "id": "user-002",
+      "name": "Priya Sharma",
+      "email": "priya.sharma@example.com",
+      "role": "student",
+      "examsTaken": 8,
+      "createdAt": "2024-10-01T14:20:00Z"
+    },
+    {
+      "id": "user-003",
+      "name": "Amit Patel",
+      "email": "amit.patel@example.com",
+      "role": "student",
+      "examsTaken": 15,
+      "createdAt": "2024-08-22T09:15:00Z"
+    },
+    {
+      "id": "user-004",
+      "name": "Sneha Reddy",
+      "email": "sneha.reddy@example.com",
+      "role": "admin",
+      "examsTaken": 0,
+      "createdAt": "2024-07-10T11:00:00Z"
+    },
+    {
+      "id": "user-005",
+      "name": "Vikram Singh",
+      "email": "vikram.singh@example.com",
+      "role": "student",
+      "examsTaken": 20,
+      "createdAt": "2024-09-05T16:45:00Z"
+    },
+    {
+      "id": "user-006",
+      "name": "Anjali Gupta",
+      "email": "anjali.gupta@example.com",
+      "role": "student",
+      "examsTaken": 6,
+      "createdAt": "2024-10-12T13:30:00Z"
+    },
+    {
+      "id": "user-007",
+      "name": "Ravi Verma",
+      "email": "ravi.verma@example.com",
+      "role": "student",
+      "examsTaken": 18,
+      "createdAt": "2024-08-30T10:20:00Z"
+    },
+    {
+      "id": "user-008",
+      "name": "Deepika Nair",
+      "email": "deepika.nair@example.com",
+      "role": "admin",
+      "examsTaken": 0,
+      "createdAt": "2024-06-18T08:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "subjects": [
+    {
+      "id": "sub-001",
+      "name": "Computer Science",
+      "slug": "computer-science",
+      "icon": "💻",
+      "totalQuestions": 856,
+      "topics": [
+        {
+          "id": "topic-001",
+          "name": "Data Structures",
+          "slug": "data-structures",
+          "questionCount": 145
+        },
+        {
+          "id": "topic-002",
+          "name": "Algorithms",
+          "slug": "algorithms",
+          "questionCount": 198
+        },
+        {
+          "id": "topic-003",
+          "name": "Operating Systems",
+          "slug": "operating-systems",
+          "questionCount": 132
+        },
+        {
+          "id": "topic-004",
+          "name": "Database Management",
+          "slug": "database-management",
+          "questionCount": 167
+        },
+        {
+          "id": "topic-005",
+          "name": "Computer Networks",
+          "slug": "computer-networks",
+          "questionCount": 214
+        }
+      ]
+    },
+    {
+      "id": "sub-002",
+      "name": "Mathematics",
+      "slug": "mathematics",
+      "icon": "🔢",
+      "totalQuestions": 542,
+      "topics": [
+        {
+          "id": "topic-006",
+          "name": "Linear Algebra",
+          "slug": "linear-algebra",
+          "questionCount": 98
+        },
+        {
+          "id": "topic-007",
+          "name": "Calculus",
+          "slug": "calculus",
+          "questionCount": 156
+        },
+        {
+          "id": "topic-008",
+          "name": "Probability",
+          "slug": "probability",
+          "questionCount": 134
+        },
+        {
+          "id": "topic-009",
+          "name": "Discrete Mathematics",
+          "slug": "discrete-mathematics",
+          "questionCount": 154
+        }
+      ]
+    },
+    {
+      "id": "sub-003",
+      "name": "General Aptitude",
+      "slug": "general-aptitude",
+      "icon": "🧠",
+      "totalQuestions": 423,
+      "topics": [
+        {
+          "id": "topic-010",
+          "name": "Verbal Ability",
+          "slug": "verbal-ability",
+          "questionCount": 145
+        },
+        {
+          "id": "topic-011",
+          "name": "Numerical Ability",
+          "slug": "numerical-ability",
+          "questionCount": 167
+        },
+        {
+          "id": "topic-012",
+          "name": "Logical Reasoning",
+          "slug": "logical-reasoning",
+          "questionCount": 111
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "results": [
+    {
+      "id": "result-001",
+      "examId": "exam-001",
+      "examTitle": "GATE CS Mock Test 2025 - 1",
+      "userId": "user-001",
+      "completedAt": "2024-10-28T14:30:00Z",
+      "duration": 180,
+      "timeTaken": 165,
+      "totalQuestions": 65,
+      "totalMarks": 100,
+      "marksObtained": 78.5,
+      "correctAnswers": 52,
+      "wrongAnswers": 8,
+      "unattempted": 5,
+      "accuracy": 86.67,
+      "rank": 147,
+      "percentile": 94.2,
+      "topicWisePerformance": [
+        { "topic": "Algorithms", "total": 15, "correct": 13, "accuracy": 86.67 },
+        { "topic": "Data Structures", "total": 20, "correct": 17, "accuracy": 85.0 },
+        { "topic": "Operating Systems", "total": 15, "correct": 12, "accuracy": 80.0 },
+        { "topic": "DBMS", "total": 15, "correct": 10, "accuracy": 66.67 }
+      ]
+    },
+    {
+      "id": "result-002",
+      "examId": "exam-002",
+      "examTitle": "SSC CGL Tier 1 Practice Test",
+      "userId": "user-001",
+      "completedAt": "2024-10-25T10:15:00Z",
+      "duration": 60,
+      "timeTaken": 58,
+      "totalQuestions": 100,
+      "totalMarks": 200,
+      "marksObtained": 165,
+      "correctAnswers": 85,
+      "wrongAnswers": 10,
+      "unattempted": 5,
+      "accuracy": 89.47,
+      "rank": 89,
+      "percentile": 96.8,
+      "topicWisePerformance": [
+        { "topic": "History", "total": 25, "correct": 22, "accuracy": 88.0 },
+        { "topic": "Geography", "total": 25, "correct": 21, "accuracy": 84.0 },
+        { "topic": "Polity", "total": 25, "correct": 23, "accuracy": 92.0 },
+        { "topic": "Economics", "total": 25, "correct": 19, "accuracy": 76.0 }
+      ]
+    },
+    {
+      "id": "result-003",
+      "examId": "exam-003",
+      "examTitle": "JEE Advanced Mathematics",
+      "userId": "user-001",
+      "completedAt": "2024-10-20T16:45:00Z",
+      "duration": 120,
+      "timeTaken": 118,
+      "totalQuestions": 50,
+      "totalMarks": 150,
+      "marksObtained": 112,
+      "correctAnswers": 38,
+      "wrongAnswers": 8,
+      "unattempted": 4,
+      "accuracy": 82.61,
+      "rank": 234,
+      "percentile": 91.5,
+      "topicWisePerformance": [
+        { "topic": "Calculus", "total": 15, "correct": 12, "accuracy": 80.0 },
+        { "topic": "Algebra", "total": 15, "correct": 13, "accuracy": 86.67 },
+        { "topic": "Trigonometry", "total": 10, "correct": 7, "accuracy": 70.0 },
+        { "topic": "Vectors", "total": 10, "correct": 6, "accuracy": 60.0 }
+      ]
+    }
+  ]
+}
