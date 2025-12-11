@@ -26,7 +26,7 @@ const steps: Step[] = [
   {
     icon: <UserPlus className="w-8 h-8" />,
     step: 'Step 1',
-    title: 'Create Your Account',
+    title: 'Create Account',
     description: 'Sign up in seconds with Google or email. No credit card required for free practice',
     features: [
       'Quick Google sign-in',
@@ -215,7 +215,7 @@ export function HowItWorks() {
   return (
     <section 
       ref={sectionRef}
-      className="relative py-20 md:py-32 bg-gradient-to-b from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 overflow-hidden"
+      className="relative py-20 md:py-8 bg-gradient-to-b from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 overflow-hidden"
     >
       {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -239,7 +239,7 @@ export function HowItWorks() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section header */}
-        <div className="text-center space-y-6 mb-16 md:mb-24">
+        <div className="text-center space-y-6 mb-16 md:mb-8">
           
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 border border-blue-200 dark:border-blue-800 shadow-lg">
@@ -300,7 +300,7 @@ export function HowItWorks() {
         </div>
 
         {/* Bottom CTA */}
-        <div className="mt-20 text-center space-y-6">
+        <div className="mt-8 text-center space-y-6">
           <p className="text-lg text-gray-600 dark:text-gray-400">
             Ready to get started? Join thousands of successful students today!
           </p>

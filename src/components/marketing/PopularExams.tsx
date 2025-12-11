@@ -48,7 +48,7 @@ const exams: Exam[] = [
   {
     id: 'jee-main',
     name: 'JEE Main',
-    fullName: 'Joint Entrance Examination - Main',
+    fullName: 'Joint Entrance Examination - Main Exam',
     icon: <Calculator className="w-8 h-8" />,
     category: 'engineering',
     gradient: 'from-blue-500 via-cyan-500 to-teal-500',
@@ -140,7 +140,7 @@ const exams: Exam[] = [
       'Image-based MCQs',
       'Performance tracking'
     ],
-    subjects: ['Medicine', 'Surgery', 'Pathology'],
+    subjects: ['Medicine', 'Surgery', 'Pathology', 'Radiology'],
     rating: 4.7,
     popular: false,
     trending: false
@@ -465,7 +465,7 @@ export function PopularExams() {
     <section
       ref={sectionRef}
       id="exams"
-      className="relative py-20 md:py-32 bg-gradient-to-b from-white via-gray-50 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden"
+      className="relative py-20 md:py-8 bg-gradient-to-b from-white via-gray-50 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden"
     >
       {/* Background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -489,7 +489,7 @@ export function PopularExams() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section header */}
-        <div className="text-center space-y-6 mb-12 md:mb-16">
+        <div className="text-center space-y-6 mb-12 md:mb-10">
           
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 border border-blue-200 dark:border-blue-800 shadow-lg">
@@ -549,7 +549,7 @@ export function PopularExams() {
         </div>
 
         {/* Bottom CTA */}
-        <div className="mt-20 text-center space-y-6">
+        <div className="mt-8 text-center space-y-6">
           <p className="text-lg text-gray-600 dark:text-gray-400">
             Want to explore more exams?
           </p>

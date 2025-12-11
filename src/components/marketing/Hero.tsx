@@ -207,7 +207,7 @@ export function Hero() {
       <div className="absolute -bottom-8 left-1/2 w-72 h-72 bg-gradient-to-r from-indigo-400 to-blue-400 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-3xl opacity-30 animate-blob animation-delay-4000" />
 
       {/* Content */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center">
         <div className="space-y-8 animate-fade-in-up">
           
           {/* Trust Badge */}
@@ -283,9 +283,9 @@ export function Hero() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-8">
             {/* Primary CTA */}
             <Link href="/exams">
-              <Button
-                size="lg"
-                className="group relative px-8 py-7 text-lg font-semibold overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-white shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105 animate-shimmer"
+              {/* Changed Button to div to fix style conflict and HTML nesting */}
+              <div
+                className="group relative px-8 py-7 text-lg font-semibold rounded-full overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-white shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105 cursor-pointer flex items-center justify-center w-fit"
                 onMouseEnter={() => setIsHovering(true)}
                 onMouseLeave={() => setIsHovering(false)}
               >
@@ -297,7 +297,7 @@ export function Hero() {
                   Start Free Practice
                   <ArrowRight className={`w-5 h-5 transition-transform duration-300 ${isHovering ? 'translate-x-1' : ''}`} />
                 </span>
-              </Button>
+              </div>
             </Link>
 
             {/* Secondary CTA */}

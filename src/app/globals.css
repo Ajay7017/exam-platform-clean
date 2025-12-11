@@ -223,3 +223,21 @@ button:focus {
   transform: translateY(-4px);
   box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.1);
 }
+
+/* Add this to your existing src/app/globals.css file */
+
+/* Scale down marketing page by 10% */
+.marketing-container {
+  zoom: 0.9; /* Works in Chrome, Edge, Safari */
+}
+
+/* Firefox fallback */
+@-moz-document url-prefix() {
+  .marketing-container {
+    zoom: 1; /* Reset zoom for Firefox */
+    transform: scale(0.9);
+    transform-origin: top center;
+    width: 111.11%;
+    margin-left: -5.56%;
+  }
+}
