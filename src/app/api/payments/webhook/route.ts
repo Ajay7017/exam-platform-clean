@@ -282,8 +282,8 @@ async function handlePaymentFailed(payment: any) {
 }
 
 // IMPORTANT: Disable body parsing to get raw body for signature verification
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-}
+// export const config = {
+//   api: {
+//     bodyParser: false,
+//   },
+// }
