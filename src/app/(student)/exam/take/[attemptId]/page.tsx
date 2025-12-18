@@ -1,5 +1,4 @@
-// src/app/(student)/exam/take/[ateemptId]/page.tsx
-
+// src/app/(student)/exam/take/[attemptId]/page.tsx
 'use client'
 
 import React, { useEffect, useState, useRef, useMemo } from 'react'
@@ -56,6 +55,7 @@ export default function ExamInterface() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [isMaximizeMode, setIsMaximizeMode] = useState(false)
   const saveTimerRef = useRef<NodeJS.Timeout>()
+  const lockdownRef = useRef<any>(null)
 
   // Fetch exam data on mount
   useEffect(() => {
@@ -181,7 +181,7 @@ export default function ExamInterface() {
   }
 
   const saveAnswers = async () => {
-    if (!exam) return
+    if (!exam || submitting) return
     try {
       const answersToSave = Object.entries(answers).map(([questionId, selectedOption]) => ({
         questionId,
@@ -245,7 +245,7 @@ export default function ExamInterface() {
 
   // Update the handleSubmit function to mark submission
   const handleSubmit = async (autoSubmit = false) => {
-    if (!exam) return
+    if (!exam || submitting) return
 
     if (!autoSubmit) {
       setShowSubmitConfirm(true)
@@ -256,22 +256,35 @@ export default function ExamInterface() {
 
     try {
       // Allow submission to proceed without warnings
-      const lockdownElement = document.querySelector('[data-allow-submission]') as any
-      if (lockdownElement?.dataset?.allowSubmission) {
-        const allowSubmission = new Function('return ' + lockdownElement.dataset.allowSubmission)()
-        allowSubmission()
+      if (lockdownRef.current?.allowSubmission) {
+        lockdownRef.current.allowSubmission()
       }
 
+      // Save answers first
       await saveAnswers()
+      
+      // Submit exam
       const res = await fetch(`/api/attempts/${exam.attemptId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })
 
-      if (!res.ok) throw new Error('Failed to submit exam')
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to submit exam')
+      }
       
-      toast.success('Exam submitted successfully!')
-      router.push(`/results/${exam.attemptId}`)
+      // Show success message
+      toast.success('🎉 Exam submitted successfully!', {
+        description: 'Your results are being processed. Redirecting to dashboard...'
+      })
+      
+      // Redirect to dashboard with processing flag
+      setTimeout(() => {
+        router.push(`/dashboard?processing=${exam.attemptId}`)
+        router.refresh()
+      }, 1000)
+      
     } catch (error: any) {
       console.error('Submission error:', error)
       toast.error(error.message || 'Failed to submit exam.')
@@ -330,6 +343,7 @@ export default function ExamInterface() {
 
   return (
     <ExamLockdown 
+      ref={lockdownRef}
       attemptId={attemptId}
       onAutoSubmit={() => handleSubmit(true)}
     >

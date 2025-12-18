@@ -5,20 +5,10 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 const violationSchema = z.object({
-  type: z.enum([
-    'tab_switch', 
-    'window_blur', 
-    'devtools', 
-    'copy_attempt', 
-    'right_click',
-    'fullscreen_exit',
-    'back_navigation',
-    'refresh_attempt',
-    'paste_attempt',
-    'cut_attempt'
-  ]),
+  type: z.string(), // Made more flexible
   details: z.string().optional(),
-  count: z.number().optional()
+  count: z.number().optional(),
+  timestamp: z.string().optional()
 })
 
 export async function POST(
@@ -28,7 +18,7 @@ export async function POST(
   try {
     const session = await requireAuth()
     const body = await request.json()
-    const { type, details, count } = violationSchema.parse(body)
+    const { type, details, count, timestamp } = violationSchema.parse(body)
     const attemptId = params.id
 
     const attempt = await prisma.attempt.findUnique({
@@ -41,12 +31,19 @@ export async function POST(
       }
     })
 
-    if (!attempt || attempt.userId !== session.user.id) {
+    if (!attempt) {
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 })
+    }
+
+    if (attempt.userId !== session.user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
     if (attempt.status !== 'in_progress') {
-      return NextResponse.json({ error: 'Attempt not active' }, { status: 400 })
+      return NextResponse.json({ 
+        error: 'Attempt not active',
+        success: true // Return success to prevent repeated calls
+      }, { status: 200 })
     }
 
     // Update violation records
@@ -54,7 +51,7 @@ export async function POST(
     flags.push({
       type,
       details,
-      timestamp: new Date().toISOString(),
+      timestamp: timestamp || new Date().toISOString(),
       count
     })
 
@@ -89,8 +86,9 @@ export async function POST(
     })
 
   } catch (error) {
+    console.error('Violation API error:', error)
     return NextResponse.json(
-      { error: 'Failed to log violation' },
+      { error: 'Failed to log violation', success: false },
       { status: 500 }
     )
   }

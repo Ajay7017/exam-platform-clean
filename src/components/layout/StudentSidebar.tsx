@@ -16,6 +16,7 @@ import {
   ChevronRight,
   LogOut,
   ShoppingBag,
+  GraduationCap, // NEW ICON
 } from 'lucide-react';
 
 export function StudentSidebar() {
@@ -29,6 +30,11 @@ export function StudentSidebar() {
           label: 'Dashboard',
           href: '/dashboard',
           icon: LayoutDashboard,
+        },
+        {
+          label: 'My Exams', // NEW ITEM
+          href: '/my-exams',
+          icon: GraduationCap,
         },
         {
           label: 'Browse Exams',

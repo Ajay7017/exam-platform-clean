@@ -1,7 +1,7 @@
 // src/app/api/payments/create-order/route.ts
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { razorpay, rupeesToPaise } from '@/lib/razorpay'
+import { razorpay, getRazorpayPublicKey, validatePaymentAmount, isTestMode } from '@/lib/razorpay'
 import { requireAuth } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
 import { createOrderSchema } from '@/lib/validations/payment'
@@ -53,8 +53,14 @@ export async function POST(request: Request) {
 
     if (existingPurchase) {
       return NextResponse.json(
-        { error: 'You already own this exam' },
-        { status: 400 }
+        { 
+          success: true,
+          isFree: true,
+          alreadyOwned: true,
+          purchaseId: existingPurchase.id,
+          message: 'You already own this exam'
+        },
+        { status: 200 }
       )
     }
 
@@ -66,10 +72,17 @@ export async function POST(request: Request) {
           examId,
           price: 0,
           status: 'active',
-          type: 'exam', // ADDED: Required by your schema
+          type: 'exam',
           validFrom: new Date(),
           validUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
         }
+      })
+
+      console.log('Free exam enrolled:', {
+        purchaseId: purchase.id,
+        userId,
+        examId,
+        examTitle: exam.title
       })
 
       return NextResponse.json({
@@ -80,58 +93,113 @@ export async function POST(request: Request) {
       })
     }
 
-    // 7. Create pending purchase record
+    // 7. Validate payment amount
+    const amountInPaise = exam.price
+
+    if (!validatePaymentAmount(amountInPaise)) {
+      return NextResponse.json(
+        { error: 'Invalid payment amount' },
+        { status: 400 }
+      )
+    }
+
+    // 8. Create pending purchase record with idempotency
     const purchase = await prisma.purchase.create({
       data: {
         userId,
         examId,
         price: exam.price,
         status: 'pending',
-        type: 'exam', // ADDED: Required by your schema
+        type: 'exam',
       }
     })
 
-    // 8. Create Razorpay order
-    // Ensure amount is integer (paise)
-    const amountInPaise = exam.price
-
-    const razorpayOrder = await razorpay.orders.create({
-      amount: amountInPaise, 
-      currency: 'INR',
-      receipt: purchase.id,
-      notes: {
-        purchaseId: purchase.id,
-        examId: exam.id,
-        userId: userId,
-        examName: exam.title.substring(0, 30),
-      }
-    })
-
-    // 9. Save Razorpay order ID
-    await prisma.payment.create({
-      data: {
-        purchaseId: purchase.id,
-        razorpayOrderId: razorpayOrder.id,
-        amount: exam.price,
+    // 9. Create Razorpay order
+    try {
+      const razorpayOrder = await razorpay.orders.create({
+        amount: amountInPaise, 
         currency: 'INR',
-        status: 'created',
-      }
-    })
+        receipt: purchase.id,
+        notes: {
+          purchaseId: purchase.id,
+          examId: exam.id,
+          userId: userId,
+          examName: exam.title.substring(0, 30),
+          environment: process.env.NODE_ENV || 'development'
+        },
+        // Payment capture settings
+        payment_capture: 1, // Auto-capture
+      })
 
-    // 10. Return order details for frontend
-    return NextResponse.json({
-      success: true,
-      orderId: razorpayOrder.id,
-      amount: amountInPaise,
-      currency: 'INR',
-      key: process.env.RAZORPAY_KEY_ID,
-      purchaseId: purchase.id,
-      examTitle: exam.title,
-      examSubject: exam.subject?.name || 'General',
-    })
+      // 10. Save Razorpay order ID
+      await prisma.payment.create({
+        data: {
+          purchaseId: purchase.id,
+          razorpayOrderId: razorpayOrder.id,
+          amount: exam.price,
+          currency: 'INR',
+          status: 'created',
+        }
+      })
+
+      // 11. Log order creation (important for debugging)
+      console.log('Razorpay order created:', {
+        orderId: razorpayOrder.id,
+        purchaseId: purchase.id,
+        amount: amountInPaise,
+        userId,
+        examId,
+        mode: isTestMode ? 'TEST' : 'LIVE'
+      })
+
+      // 12. Return order details for frontend
+      return NextResponse.json({
+        success: true,
+        orderId: razorpayOrder.id,
+        amount: amountInPaise,
+        currency: 'INR',
+        key: getRazorpayPublicKey(), // Use safe getter
+        purchaseId: purchase.id,
+        examTitle: exam.title,
+        examSubject: exam.subject?.name || 'General',
+        isTestMode, // Let frontend know if in test mode
+      })
+
+    } catch (razorpayError: any) {
+      // Handle Razorpay API errors
+      console.error('Razorpay order creation failed:', {
+        error: razorpayError.message,
+        purchaseId: purchase.id,
+        userId,
+        examId
+      })
+
+      // Mark purchase as failed
+      await prisma.purchase.update({
+        where: { id: purchase.id },
+        data: { status: 'failed' }
+      })
+
+      return NextResponse.json(
+        { 
+          error: 'Failed to create payment order. Please try again.',
+          details: process.env.NODE_ENV === 'development' ? razorpayError.message : undefined
+        },
+        { status: 500 }
+      )
+    }
 
   } catch (error) {
-    console.error("PAYMENT API ERROR:", error)
+    console.error("CREATE ORDER ERROR:", error)
     return handleApiError(error)
   }
+}
+
+// Add request configuration for body parsing
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '1mb',
+    },
+  },
 }

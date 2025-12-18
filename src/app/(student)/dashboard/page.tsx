@@ -1,7 +1,8 @@
 //src/app/(student)/dashboard/page.tsx
 
 'use client';
-
+import { useSearchParams } from 'next/navigation'
+import { ResultsProcessingBanner } from '@/components/student/ResultsProcessingBanner'
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -51,6 +52,8 @@ interface DashboardData {
 }
 
 export default function StudentDashboard() {
+  const searchParams = useSearchParams()
+  const processingAttemptId = searchParams.get('processing')
   const router = useRouter();
   const { data: session } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -133,6 +136,11 @@ export default function StudentDashboard() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+    <div className="space-y-6">
+      {/* Add this banner at the very top */}
+      {processingAttemptId && (
+        <ResultsProcessingBanner attemptId={processingAttemptId} />
+      )}
       {/* Welcome Section */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">
@@ -308,6 +316,7 @@ export default function StudentDashboard() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   );
 }

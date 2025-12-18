@@ -1,4 +1,4 @@
-//src/app/(student)/exam/[slug]/start/page.tsx
+// src/app/(student)/exam/[slug]/start/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -33,7 +33,7 @@ interface ExamStartData {
 export default function ExamStartPage() {
   const params = useParams()
   const router = useRouter()
-  const slug = params.slug as string  // It's called "id" in route but contains slug
+  const slug = params.slug as string
   
   const [exam, setExam] = useState<ExamStartData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -47,8 +47,6 @@ export default function ExamStartPage() {
   const fetchExamData = async () => {
     try {
       setLoading(true)
-      
-      // Fetch from student API using slug
       const res = await fetch(`/api/exams/${slug}`)
       
       if (!res.ok) {
@@ -77,7 +75,6 @@ export default function ExamStartPage() {
       return
     }
 
-    // Check if purchase is required
     if (!exam?.isFree && !exam?.isPurchased) {
       toast.error('Please purchase this exam first')
       router.push(`/exams/${exam?.slug}`)
@@ -87,7 +84,6 @@ export default function ExamStartPage() {
     try {
       setStarting(true)
       
-      // Call API to create attempt and get questions
       const res = await fetch('/api/attempts/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,7 +93,6 @@ export default function ExamStartPage() {
       if (!res.ok) {
         const data = await res.json()
         
-        // Handle existing attempt
         if (data.canResume && data.attemptId) {
           const shouldResume = confirm('You have an active attempt. Do you want to resume it?')
           if (shouldResume) {
@@ -113,10 +108,7 @@ export default function ExamStartPage() {
       }
       
       const data = await res.json()
-      
       toast.success('Exam started successfully!')
-      
-      // Redirect to exam taking page
       router.push(`/exam/take/${data.attemptId}`)
       
     } catch (error: any) {
@@ -143,120 +135,120 @@ export default function ExamStartPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 p-6">
+    <div className="max-w-5xl mx-auto p-4">
       {/* Back Button */}
       <Button
         variant="ghost"
         onClick={() => router.push('/exams')}
         disabled={starting}
+        className="mb-3"
       >
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Exams
       </Button>
 
-      {/* Exam Header */}
-      <Card>
-        <CardContent className="p-6">
-          <h1 className="text-3xl font-bold mb-2">{exam.title}</h1>
-          <p className="text-muted-foreground mb-6">{exam.subject}</p>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <Clock className="h-6 w-6 mx-auto mb-2 text-primary" />
-              <p className="text-sm text-muted-foreground">Duration</p>
-              <p className="text-xl font-bold">{exam.duration} min</p>
-            </div>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <FileText className="h-6 w-6 mx-auto mb-2 text-primary" />
-              <p className="text-sm text-muted-foreground">Questions</p>
-              <p className="text-xl font-bold">{exam.totalQuestions}</p>
-            </div>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-primary" />
-              <p className="text-sm text-muted-foreground">Total Marks</p>
-              <p className="text-xl font-bold">{exam.totalMarks}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Left Column - Exam Info */}
+        <div className="space-y-4">
+          {/* Exam Header */}
+          <Card>
+            <CardContent className="p-4">
+              <h1 className="text-2xl font-bold mb-1">{exam.title}</h1>
+              <p className="text-sm text-muted-foreground mb-4">{exam.subject}</p>
+              
+              <div className="grid grid-cols-3 gap-2">
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <Clock className="h-5 w-5 mx-auto mb-1 text-primary" />
+                  <p className="text-xs text-muted-foreground">Duration</p>
+                  <p className="text-lg font-bold">{exam.duration} min</p>
+                </div>
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <FileText className="h-5 w-5 mx-auto mb-1 text-primary" />
+                  <p className="text-xs text-muted-foreground">Questions</p>
+                  <p className="text-lg font-bold">{exam.totalQuestions}</p>
+                </div>
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <AlertTriangle className="h-5 w-5 mx-auto mb-1 text-primary" />
+                  <p className="text-xs text-muted-foreground">Total Marks</p>
+                  <p className="text-lg font-bold">{exam.totalMarks}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-      {/* Instructions */}
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="text-xl font-bold mb-4">Instructions</h2>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            {exam.instructions ? (
-              <div className="whitespace-pre-wrap">{exam.instructions}</div>
+          {/* Instructions */}
+          <Card>
+            <CardContent className="p-4">
+              <h2 className="text-lg font-bold mb-3">Instructions</h2>
+              <ul className="space-y-1.5 text-sm text-muted-foreground">
+                <li>• Read all questions carefully</li>
+                <li>• All questions are mandatory</li>
+                <li>• You can navigate between questions using the question palette</li>
+                <li>• Ensure stable internet connection throughout the exam</li>
+                <li>• Do not refresh the page during the exam</li>
+                <li>• Your progress will be auto-saved periodically</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column - Guidelines & Start */}
+        <div className="space-y-4">
+          {/* Important Guidelines */}
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-red-900 mb-2">Important Guidelines</h3>
+                  <ul className="space-y-1 text-sm text-red-800">
+                    <li>• Once started, the timer cannot be paused</li>
+                    <li>• Switching tabs or windows may be flagged as suspicious activity</li>
+                    <li>• Your answers are auto-saved every 30 seconds</li>
+                    <li>• Exam will auto-submit when time expires</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Terms & Conditions */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="terms"
+                  checked={agreedToTerms}
+                  onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
+                  className="mt-1"
+                />
+                <label htmlFor="terms" className="text-sm cursor-pointer leading-relaxed">
+                  I have read and understood the instructions. I agree to abide by the exam rules and understand that any violation may result in disqualification.
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Start Button */}
+          <Button
+            size="lg"
+            onClick={handleStartExam}
+            disabled={!agreedToTerms || starting}
+            className="w-full h-14 text-lg"
+          >
+            {starting ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Starting Exam...
+              </>
             ) : (
               <>
-                <p>• Read each question carefully before answering.</p>
-                <p>• All questions are mandatory.</p>
-                <p>• You can navigate between questions using the question palette.</p>
-                {exam.allowReview && (
-                  <p>• You can review your answers before final submission.</p>
-                )}
-                <p>• Ensure stable internet connection throughout the exam.</p>
-                <p>• Do not refresh the page during the exam.</p>
-                <p>• Your progress will be auto-saved periodically.</p>
+                <Play className="mr-2 h-5 w-5" />
+                Start Exam Now
               </>
             )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Important Guidelines */}
-      <Card className="border-red-200 bg-red-50">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-            <div className="space-y-2 text-sm">
-              <h3 className="font-semibold text-red-900">Important Guidelines</h3>
-              <ul className="space-y-1 text-red-800">
-                <li>• Once started, the timer cannot be paused</li>
-                <li>• Switching tabs or windows may be flagged as suspicious activity</li>
-                <li>• Your answers are auto-saved every 30 seconds</li>
-                <li>• Exam will auto-submit when time expires</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Terms & Conditions */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="terms"
-              checked={agreedToTerms}
-              onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
-            />
-            <label htmlFor="terms" className="text-sm cursor-pointer">
-              I have read and understood the instructions. I agree to abide by the exam rules and understand that any violation may result in disqualification.
-            </label>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Start Button */}
-      <div className="flex justify-center pb-8">
-        <Button
-          size="lg"
-          onClick={handleStartExam}
-          disabled={!agreedToTerms || starting}
-          className="px-12"
-        >
-          {starting ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Starting Exam...
-            </>
-          ) : (
-            <>
-              <Play className="mr-2 h-5 w-5" />
-              Start Exam Now
-            </>
-          )}
-        </Button>
+          </Button>
+        </div>
       </div>
     </div>
   )

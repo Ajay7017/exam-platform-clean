@@ -1,4 +1,4 @@
-// src/app/(student)/exam/page.tsx
+// src/app/(student)/exams/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -16,42 +16,77 @@ import {
   Search,
   BookOpen,
   Filter,
+  Users,
 } from 'lucide-react';
-import examsData from '@/data/exams.json';
 import { toast } from 'sonner';
+
+interface Exam {
+  id: string;
+  title: string;
+  slug: string;
+  subject: string;
+  subjectSlug: string;
+  thumbnail: string;
+  duration: number;
+  totalQuestions: number;
+  totalMarks: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+  price: number;
+  isFree: boolean;
+  isPurchased: boolean;
+  topics: string[];
+  totalAttempts: number;
+}
 
 export default function ExamsPage() {
   const [isLoading, setIsLoading] = useState(true);
-  const [exams, setExams] = useState<any[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
-
-  // Simulate loading (remove in production)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setExams(examsData.exams);
-      setIsLoading(false);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Filter exams
-  const filteredExams = exams.filter((exam) => {
-    const matchesSearch = exam.title
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    const matchesDifficulty =
-      selectedDifficulty === 'all' || exam.difficulty === selectedDifficulty;
-    return matchesSearch && matchesDifficulty;
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0,
   });
 
-  const handleStartExam = (examId: string, isFree: boolean, isPurchased: boolean) => {
-    if (!isFree && !isPurchased) {
-      toast.error('Please purchase this exam to start');
-      return;
+  // Fetch exams from database
+  useEffect(() => {
+    fetchExams();
+  }, [searchQuery, selectedDifficulty]);
+
+  const fetchExams = async () => {
+    try {
+      setIsLoading(true);
+
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+      });
+
+      if (searchQuery) params.append('search', searchQuery);
+      if (selectedDifficulty !== 'all') params.append('difficulty', selectedDifficulty);
+
+      const res = await fetch(`/api/exams?${params}`);
+
+      if (!res.ok) {
+        throw new Error('Failed to fetch exams');
+      }
+
+      const data = await res.json();
+
+      setExams(data.exams);
+      setPagination((prev) => ({
+        ...prev,
+        total: data.pagination.total,
+        totalPages: data.pagination.totalPages,
+      }));
+    } catch (error: any) {
+      console.error('Failed to fetch exams:', error);
+      toast.error('Failed to load exams');
+    } finally {
+      setIsLoading(false);
     }
-    toast.success('Starting exam...');
-    // Navigate to exam
   };
 
   const getDifficultyColor = (difficulty: string) => {
@@ -73,7 +108,7 @@ export default function ExamsPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Browse Exams</h1>
         <p className="mt-2 text-gray-600">
-          Choose from our collection of mock tests and practice exams
+          Choose from {pagination.total} available exams across multiple subjects
         </p>
       </div>
 
@@ -131,7 +166,7 @@ export default function ExamsPage() {
               <Filter className="h-4 w-4 text-gray-500" />
               <span className="text-sm text-gray-600">Showing:</span>
               <Badge variant="secondary">
-                {filteredExams.length} exam{filteredExams.length !== 1 ? 's' : ''}
+                {exams.length} exam{exams.length !== 1 ? 's' : ''}
               </Badge>
               <Button
                 variant="ghost"
@@ -159,7 +194,7 @@ export default function ExamsPage() {
       )}
 
       {/* Empty State */}
-      {!isLoading && filteredExams.length === 0 && (
+      {!isLoading && exams.length === 0 && (
         <Card>
           <CardContent className="py-12">
             <EmptyState
@@ -178,17 +213,17 @@ export default function ExamsPage() {
         </Card>
       )}
 
-      {/* Exams Grid */}
-      {!isLoading && filteredExams.length > 0 && (
+      {/* Exams Grid - Blue Gradient Cards */}
+      {!isLoading && exams.length > 0 && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredExams.map((exam, index) => (
+          {exams.map((exam, index) => (
             <Card
               key={exam.id}
               className="card-hover overflow-hidden animate-scale-in"
               style={{ animationDelay: `${index * 0.05}s` }}
             >
               <CardContent className="p-0">
-                {/* Exam Thumbnail */}
+                {/* Blue Gradient Thumbnail */}
                 <div className="relative h-40 bg-gradient-to-br from-primary-500 to-primary-700">
                   <div className="absolute inset-0 flex items-center justify-center">
                     <FileQuestion className="h-16 w-16 text-white opacity-50" />
@@ -227,8 +262,8 @@ export default function ExamsPage() {
                       <span>{exam.totalQuestions} Q</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Star className="h-4 w-4 fill-warning-400 text-warning-400" />
-                      <span>{exam.rating}</span>
+                      <Users className="h-4 w-4" />
+                      <span>{exam.totalAttempts}</span>
                     </div>
                   </div>
 
@@ -254,11 +289,10 @@ export default function ExamsPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2">
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleStartExam(exam.id, exam.isFree, exam.isPurchased)}
-                    >
-                      {exam.isFree || exam.isPurchased ? 'Start Exam' : 'Purchase'}
+                    <Button className="flex-1" asChild>
+                      <Link href={`/exams/${exam.slug}`}>
+                        {exam.isFree || exam.isPurchased ? 'Start Exam' : 'Purchase'}
+                      </Link>
                     </Button>
                     <Button variant="outline" asChild>
                       <Link href={`/exams/${exam.slug}`}>Details</Link>
@@ -272,9 +306,9 @@ export default function ExamsPage() {
       )}
 
       {/* Results Count */}
-      {!isLoading && filteredExams.length > 0 && (
+      {!isLoading && exams.length > 0 && (
         <div className="text-center text-sm text-gray-600">
-          Showing {filteredExams.length} of {exams.length} exams
+          Showing {exams.length} of {pagination.total} exams
         </div>
       )}
     </div>

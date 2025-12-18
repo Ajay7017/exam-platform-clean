@@ -17,6 +17,7 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
   const isSubmitting = useRef(false)
   const violationCount = useRef(0)
   const hasTerminated = useRef(false)
+  const reportingInProgress = useRef(false)
 
   // Enter fullscreen
   const enterFullscreen = useCallback(async () => {
@@ -34,10 +35,13 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
     }
   }, [])
 
-  // Report violation
+  // Report violation with debouncing
   const reportViolation = useCallback(async (type: string, details?: string) => {
-    if (hasTerminated.current || isSubmitting.current) return
+    if (hasTerminated.current || isSubmitting.current || reportingInProgress.current) {
+      return
+    }
 
+    reportingInProgress.current = true
     violationCount.current += 1
 
     try {
@@ -51,6 +55,12 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
           timestamp: new Date().toISOString()
         })
       })
+
+      if (!res.ok) {
+        console.error('Violation API failed:', res.status)
+        reportingInProgress.current = false
+        return
+      }
 
       const data = await res.json()
 
@@ -71,12 +81,15 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
         
         // Wait 3 seconds then auto-submit
         setTimeout(() => {
+          isSubmitting.current = true
           onAutoSubmit()
         }, 3000)
       }
 
     } catch (error) {
       console.error('Failed to report violation:', error)
+    } finally {
+      reportingInProgress.current = false
     }
   }, [attemptId, onAutoSubmit])
 
@@ -96,7 +109,6 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
       
       e.preventDefault()
       e.returnValue = 'Your exam is in progress. Are you sure you want to leave?'
-      reportViolation('refresh_attempt', 'Attempted to reload page')
       return e.returnValue
     }
 
@@ -150,16 +162,30 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
       }
     }
 
-    // Detect tab/window switch
+    // Detect tab/window switch (throttled)
+    let visibilityTimeout: NodeJS.Timeout | null = null
     const handleVisibilityChange = () => {
       if (document.hidden && !isSubmitting.current) {
-        reportViolation('tab_switch', 'Switched to another tab/window')
+        // Throttle to prevent multiple rapid calls
+        if (!visibilityTimeout) {
+          reportViolation('tab_switch', 'Switched to another tab/window')
+          visibilityTimeout = setTimeout(() => {
+            visibilityTimeout = null
+          }, 2000)
+        }
       }
     }
 
+    // Detect window blur (throttled)
+    let blurTimeout: NodeJS.Timeout | null = null
     const handleBlur = () => {
       if (!isSubmitting.current) {
-        reportViolation('window_blur', 'Window lost focus')
+        if (!blurTimeout) {
+          reportViolation('window_blur', 'Window lost focus')
+          blurTimeout = setTimeout(() => {
+            blurTimeout = null
+          }, 2000)
+        }
       }
     }
 
@@ -262,7 +288,7 @@ export function ExamLockdown({ children, attemptId, onAutoSubmit }: ExamLockdown
       )}
 
       {/* Exam Content */}
-      <div data-allow-submission={allowSubmission}>
+      <div data-allow-submission={allowSubmission.toString()}>
         {children}
       </div>
     </>
