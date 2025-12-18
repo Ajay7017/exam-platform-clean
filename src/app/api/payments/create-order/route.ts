@@ -195,11 +195,11 @@ export async function POST(request: Request) {
   }
 }
 
-// Add request configuration for body parsing
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '1mb',
-    },
-  },
-}
+// // Add request configuration for body parsing
+// export const config = {
+//   api: {
+//     bodyParser: {
+//       sizeLimit: '1mb',
+//     },
+//   },
+// }
