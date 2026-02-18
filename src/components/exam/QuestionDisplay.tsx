@@ -1,7 +1,6 @@
 // src/components/exam/QuestionDisplay.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
 import { SafeHtml } from '@/lib/utils/safe-html';
 import { Question } from '@/types/exam';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -20,45 +19,6 @@ interface QuestionDisplayProps {
   onOptionSelect: (option: string) => void;
   onClearResponse: () => void;
   onMarkForReview: () => void;
-}
-
-// Renders HTML safely — DOMPurify is loaded client-side only
-function SafeHtml({ html, className }: { html: string; className?: string }) {
-  const [sanitized, setSanitized] = useState('');
-
-  useEffect(() => {
-    // Dynamic import so it only runs in the browser (no SSR issues)
-    import('dompurify').then((DOMPurifyModule) => {
-      const DOMPurify = DOMPurifyModule.default;
-      setSanitized(
-        DOMPurify.sanitize(html, {
-          ALLOWED_TAGS: [
-            'p', 'br', 'strong', 'em', 'u', 's',
-            'ul', 'ol', 'li',
-            'img',
-            'span', 'div',
-            'sup', 'sub',
-          ],
-          ALLOWED_ATTR: ['src', 'alt', 'class', 'style', 'width', 'height'],
-          // Only allow https Cloudinary images and data URIs (none expected but safe)
-          ALLOWED_URI_REGEXP: /^https:\/\/res\.cloudinary\.com\//,
-        })
-      );
-    });
-  }, [html]);
-
-  // Check if content looks like plain text (no HTML tags) — render as plain text
-  const isPlainText = !html.includes('<');
-  if (isPlainText) {
-    return <span className={className}>{html}</span>;
-  }
-
-  return (
-    <div
-      className={`rich-content ${className || ''}`}
-      dangerouslySetInnerHTML={{ __html: sanitized }}
-    />
-  );
 }
 
 export function QuestionDisplay({
@@ -116,10 +76,7 @@ export function QuestionDisplay({
                 onClick={() => onOptionSelect(option.key)}
               >
                 <RadioGroupItem value={option.key} id={option.key} className="mt-1 shrink-0" />
-                <Label
-                  htmlFor={option.key}
-                  className="flex-1 cursor-pointer"
-                >
+                <Label htmlFor={option.key} className="flex-1 cursor-pointer">
                   <span className="font-semibold mr-2">{option.key}.</span>
                   <SafeHtml html={option.text} className="inline" />
                 </Label>
@@ -138,7 +95,7 @@ export function QuestionDisplay({
             <Flag className="w-4 h-4" />
             {isMarkedForReview ? 'Marked for Review' : 'Mark for Review'}
           </Button>
-          
+
           {selectedOption && (
             <Button
               variant="outline"
