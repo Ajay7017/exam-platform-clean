@@ -2,6 +2,7 @@
 'use client'
 
 import React, { useEffect, useState, useRef, useMemo } from 'react'
+import { SafeHtml } from '@/lib/utils/safe-html'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
@@ -409,7 +410,9 @@ export default function ExamInterface() {
             <div className="flex-1 overflow-y-auto p-6 bg-white">
                 <div className="max-w-5xl mx-auto">
                 <div className="mb-8">
-                    <p className="text-lg leading-relaxed whitespace-pre-wrap font-medium text-gray-800">{question.statement}</p>
+                    <div className="text-lg leading-relaxed font-medium text-gray-800">
+                      <SafeHtml html={question.statement} />
+                    </div>
                     {question.imageUrl && (
                     <img src={question.imageUrl} alt="Question" className="max-w-full h-auto rounded-lg mt-4 border shadow-sm"/>
                     )}
@@ -432,7 +435,9 @@ export default function ExamInterface() {
                         }`}>
                             {answers[question.id] === option.key && <div className="w-2 h-2 bg-white rounded-full" />}
                         </div>
-                        <div className="text-base text-gray-700 font-medium">{option.text}</div>
+                        <div className="text-base text-gray-700 font-medium">
+                          <SafeHtml html={option.text} />
+                        </div>
                         </div>
                         {option.imageUrl && (
                         <img src={option.imageUrl} alt={`Option ${option.key}`} className="max-w-full h-auto rounded mt-3 ml-9 border"/>
