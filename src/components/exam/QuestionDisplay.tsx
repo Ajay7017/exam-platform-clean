@@ -1,6 +1,8 @@
 // src/components/exam/QuestionDisplay.tsx
 'use client';
 
+import { useEffect, useState } from 'react';
+import { SafeHtml } from '@/lib/utils/safe-html';
 import { Question } from '@/types/exam';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
@@ -8,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Flag, X } from 'lucide-react';
-import Image from 'next/image';
 
 interface QuestionDisplayProps {
   question: Question;
@@ -19,6 +20,45 @@ interface QuestionDisplayProps {
   onOptionSelect: (option: string) => void;
   onClearResponse: () => void;
   onMarkForReview: () => void;
+}
+
+// Renders HTML safely — DOMPurify is loaded client-side only
+function SafeHtml({ html, className }: { html: string; className?: string }) {
+  const [sanitized, setSanitized] = useState('');
+
+  useEffect(() => {
+    // Dynamic import so it only runs in the browser (no SSR issues)
+    import('dompurify').then((DOMPurifyModule) => {
+      const DOMPurify = DOMPurifyModule.default;
+      setSanitized(
+        DOMPurify.sanitize(html, {
+          ALLOWED_TAGS: [
+            'p', 'br', 'strong', 'em', 'u', 's',
+            'ul', 'ol', 'li',
+            'img',
+            'span', 'div',
+            'sup', 'sub',
+          ],
+          ALLOWED_ATTR: ['src', 'alt', 'class', 'style', 'width', 'height'],
+          // Only allow https Cloudinary images and data URIs (none expected but safe)
+          ALLOWED_URI_REGEXP: /^https:\/\/res\.cloudinary\.com\//,
+        })
+      );
+    });
+  }, [html]);
+
+  // Check if content looks like plain text (no HTML tags) — render as plain text
+  const isPlainText = !html.includes('<');
+  if (isPlainText) {
+    return <span className={className}>{html}</span>;
+  }
+
+  return (
+    <div
+      className={`rich-content ${className || ''}`}
+      dangerouslySetInnerHTML={{ __html: sanitized }}
+    />
+  );
 }
 
 export function QuestionDisplay({
@@ -55,19 +95,8 @@ export function QuestionDisplay({
 
       <CardContent className="p-6 space-y-6">
         {/* Question Statement */}
-        <div className="space-y-4">
-          <p className="text-base leading-relaxed">{question.statement}</p>
-          
-          {question.imageUrl && (
-            <div className="relative w-full h-64 rounded-lg overflow-hidden border">
-              <Image
-                src={question.imageUrl}
-                alt="Question image"
-                fill
-                className="object-contain"
-              />
-            </div>
-          )}
+        <div className="text-base leading-relaxed">
+          <SafeHtml html={question.statement} />
         </div>
 
         {/* Options */}
@@ -84,26 +113,15 @@ export function QuestionDisplay({
                     ? 'border-primary bg-primary/5'
                     : 'border-border'
                 }`}
+                onClick={() => onOptionSelect(option.key)}
               >
-                <RadioGroupItem value={option.key} id={option.key} className="mt-1" />
+                <RadioGroupItem value={option.key} id={option.key} className="mt-1 shrink-0" />
                 <Label
                   htmlFor={option.key}
-                  className="flex-1 cursor-pointer space-y-2"
+                  className="flex-1 cursor-pointer"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">{option.key}.</span>
-                    <span>{option.text}</span>
-                  </div>
-                  {option.imageUrl && (
-                    <div className="relative w-full h-32 rounded overflow-hidden border">
-                      <Image
-                        src={option.imageUrl}
-                        alt={`Option ${option.key}`}
-                        fill
-                        className="object-contain"
-                      />
-                    </div>
-                  )}
+                  <span className="font-semibold mr-2">{option.key}.</span>
+                  <SafeHtml html={option.text} className="inline" />
                 </Label>
               </div>
             ))}

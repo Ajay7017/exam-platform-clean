@@ -2,30 +2,43 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Loader2, Plus, Save, ArrowLeft } from 'lucide-react';
+import { RichTextEditor } from '@/components/admin/RichTextEditor';
+
+// Helper: strip HTML tags to get plain text for validation length check
+const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
 
 // Validation schema
 const questionSchema = z.object({
-  statement: z.string().min(5, 'Question statement is required'),
+  statement: z.string().refine((v) => stripHtml(v).length >= 5, {
+    message: 'Question statement is required (min 5 characters)',
+  }),
   subjectId: z.string().min(1, 'Subject is required'),
   topicId: z.string().optional(),
   topicName: z.string().optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number().min(0.5),
   negativeMarks: z.number().min(0),
-  optionA: z.string().min(1, 'Option A is required'),
-  optionB: z.string().min(1, 'Option B is required'),
-  optionC: z.string().min(1, 'Option C is required'),
-  optionD: z.string().min(1, 'Option D is required'),
+  optionA: z.string().refine((v) => stripHtml(v).length >= 1, {
+    message: 'Option A is required',
+  }),
+  optionB: z.string().refine((v) => stripHtml(v).length >= 1, {
+    message: 'Option B is required',
+  }),
+  optionC: z.string().refine((v) => stripHtml(v).length >= 1, {
+    message: 'Option C is required',
+  }),
+  optionD: z.string().refine((v) => stripHtml(v).length >= 1, {
+    message: 'Option D is required',
+  }),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -80,6 +93,7 @@ export function QuestionForm({
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
     reset,
     watch,
@@ -92,6 +106,12 @@ export function QuestionForm({
       difficulty: 'medium',
       correctAnswer: 'A',
       isActive: true,
+      statement: '',
+      optionA: '',
+      optionB: '',
+      optionC: '',
+      optionD: '',
+      explanation: '',
     },
   });
 
@@ -137,7 +157,6 @@ export function QuestionForm({
       const data = await res.json();
       setTopics(data || []);
       
-      // If topics exist, default to select mode
       if (data && data.length > 0) {
         setTopicMode('select');
       } else {
@@ -174,7 +193,6 @@ export function QuestionForm({
   const onSubmit = async (data: QuestionFormData) => {
     setIsSubmitting(true);
     try {
-      // Prepare payload based on topic mode
       const payload: any = {
         statement: data.statement,
         difficulty: data.difficulty,
@@ -190,10 +208,8 @@ export function QuestionForm({
       };
 
       if (topicMode === 'select' && data.topicId) {
-        // Use existing topic
         payload.topicId = data.topicId;
       } else if (topicMode === 'create' && data.topicName) {
-        // Create new topic
         payload.subjectId = data.subjectId;
         payload.topicName = data.topicName;
       } else {
@@ -221,7 +237,7 @@ export function QuestionForm({
       if (onSuccess) {
         onSuccess();
       } else if (!isEditMode) {
-        // Efficient Reset for CREATE mode: Keep Context but clear Content
+        // Keep context (subject, topic, difficulty, marks) but clear content
         reset({
           subjectId: data.subjectId,
           topicId: data.topicId,
@@ -238,8 +254,6 @@ export function QuestionForm({
           explanation: '',
           isActive: true,
         });
-        
-        document.getElementById('statement')?.focus();
       }
 
     } catch (error: any) {
@@ -286,7 +300,7 @@ export function QuestionForm({
       <CardContent className={mode === 'dialog' ? 'p-0' : ''}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           
-          {/* Metadata Row */}
+          {/* Subject & Topic Row — unchanged */}
           <div className="grid gap-6 md:grid-cols-2 p-4 bg-slate-50 rounded-lg border border-slate-100">
             <div className="space-y-2">
               <Label>Subject *</Label>
@@ -366,47 +380,66 @@ export function QuestionForm({
             </div>
           </div>
 
+          {/* Question Statement — RichTextEditor */}
           <div className="space-y-2">
-            <Label>Question Statement</Label>
-            <Textarea 
-              id="statement"
-              {...register('statement')} 
-              placeholder="Type your question here..." 
-              className="min-h-[100px] text-lg"
+            <Label>Question Statement *</Label>
+            <Controller
+              name="statement"
+              control={control}
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder="Type your question here... You can paste screenshots directly!"
+                  minHeight="120px"
+                />
+              )}
             />
-            {errors.statement && <p className="text-xs text-red-500">{errors.statement.message}</p>}
+            {errors.statement && (
+              <p className="text-xs text-red-500">{errors.statement.message}</p>
+            )}
           </div>
 
-          {/* Options Grid */}
+          {/* Options Grid — RichTextEditor for each option */}
           <div className="grid gap-4 md:grid-cols-2">
-            {['A', 'B', 'C', 'D'].map((opt) => (
+            {(['A', 'B', 'C', 'D'] as const).map((opt) => (
               <div key={opt} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Option {opt}</Label>
                   <div className="flex items-center space-x-2">
-                     <input 
-                        type="radio" 
-                        value={opt} 
-                        {...register('correctAnswer')}
-                        className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
-                     />
-                     <span className="text-xs text-muted-foreground">Correct</span>
+                    <input 
+                      type="radio" 
+                      value={opt} 
+                      {...register('correctAnswer')}
+                      className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                    />
+                    <span className="text-xs text-muted-foreground">Correct</span>
                   </div>
                 </div>
-                <Input 
-                  {...register(`option${opt}` as any)} 
-                  placeholder={`Option ${opt} text`}
+                <Controller
+                  name={`option${opt}` as 'optionA' | 'optionB' | 'optionC' | 'optionD'}
+                  control={control}
+                  render={({ field }) => (
+                    <RichTextEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder={`Option ${opt} text`}
+                      minHeight="60px"
+                    />
+                  )}
                 />
                 {errors[`option${opt}` as keyof QuestionFormData] && (
-                  <p className="text-xs text-red-500">{errors[`option${opt}` as keyof QuestionFormData]?.message as string}</p>
+                  <p className="text-xs text-red-500">
+                    {errors[`option${opt}` as keyof QuestionFormData]?.message as string}
+                  </p>
                 )}
               </div>
             ))}
           </div>
 
-          {/* Settings Row */}
+          {/* Difficulty / Marks / Negative — unchanged */}
           <div className="grid gap-4 md:grid-cols-3">
-             <div className="space-y-2">
+            <div className="space-y-2">
               <Label>Difficulty</Label>
               <select
                 {...register('difficulty')}
@@ -427,12 +460,24 @@ export function QuestionForm({
             </div>
           </div>
 
+          {/* Explanation — RichTextEditor */}
           <div className="space-y-2">
             <Label>Explanation (Optional)</Label>
-            <Textarea {...register('explanation')} placeholder="Why is this the correct answer?" />
+            <Controller
+              name="explanation"
+              control={control}
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  placeholder="Why is this the correct answer? You can add images here too."
+                  minHeight="80px"
+                />
+              )}
+            />
           </div>
 
-          {/* Active Status for Edit Mode */}
+          {/* Active Status for Edit Mode — unchanged */}
           {isEditMode && (
             <div className="flex items-center space-x-2">
               <input

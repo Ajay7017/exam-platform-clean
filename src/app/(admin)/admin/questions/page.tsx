@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { SafeHtml } from '@/lib/utils/safe-html'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,7 +42,15 @@ import {
 } from '@/components/ui/alert-dialog'
 import { QuestionForm } from '@/components/admin/QuestionForm'
 import { toast } from 'sonner'
-import { Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2 } from 'lucide-react'
+
+// Strip HTML tags to get plain text for table preview truncation
+function stripHtml(html: string) {
+  return html
+    .replace(/<math-node[^>]*><\/math-node>/g, '[Math]')
+    .replace(/<[^>]*>/g, '')
+    .trim()
+}
 
 interface Question {
   id: string
@@ -75,17 +84,14 @@ export default function AdminQuestionsPage() {
   const [search, setSearch] = useState('')
   const [difficulty, setDifficulty] = useState('all')
 
-  // View Dialog State
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [viewQuestion, setViewQuestion] = useState<QuestionDetail | null>(null)
   const [loadingView, setLoadingView] = useState(false)
 
-  // Edit Dialog State
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editQuestionId, setEditQuestionId] = useState<string | null>(null)
   const [editQuestionData, setEditQuestionData] = useState<Partial<QuestionDetail> | null>(null)
 
-  // Delete Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteQuestionId, setDeleteQuestionId] = useState<string | null>(null)
   const [deleteQuestionName, setDeleteQuestionName] = useState('')
@@ -98,18 +104,9 @@ export default function AdminQuestionsPage() {
   const fetchQuestions = async () => {
     try {
       setLoading(true)
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: '20',
-      })
-
-      if (difficulty !== 'all') {
-        params.append('difficulty', difficulty)
-      }
-
-      if (search) {
-        params.append('search', search)
-      }
+      const params = new URLSearchParams({ page: page.toString(), limit: '20' })
+      if (difficulty !== 'all') params.append('difficulty', difficulty)
+      if (search) params.append('search', search)
 
       const response = await fetch(`/api/admin/questions?${params}`)
       if (!response.ok) throw new Error('Failed to fetch questions')
@@ -131,14 +128,12 @@ export default function AdminQuestionsPage() {
     fetchQuestions()
   }
 
-  // VIEW: Load and display question details
   const handleView = async (questionId: string) => {
     setLoadingView(true)
     setViewDialogOpen(true)
     try {
       const response = await fetch(`/api/admin/questions/${questionId}`)
       if (!response.ok) throw new Error('Failed to fetch question')
-      
       const data = await response.json()
       setViewQuestion(data.question)
     } catch (error) {
@@ -149,12 +144,10 @@ export default function AdminQuestionsPage() {
     }
   }
 
-  // EDIT: Load question and open edit dialog
   const handleEdit = async (questionId: string) => {
     try {
       const response = await fetch(`/api/admin/questions/${questionId}`)
       if (!response.ok) throw new Error('Failed to fetch question')
-      
       const data = await response.json()
       setEditQuestionId(questionId)
       setEditQuestionData(data.question)
@@ -164,31 +157,22 @@ export default function AdminQuestionsPage() {
     }
   }
 
-  // DELETE: Confirm and delete question
   const handleDeleteClick = (questionId: string, questionStatement: string) => {
     setDeleteQuestionId(questionId)
-    setDeleteQuestionName(questionStatement)
+    setDeleteQuestionName(stripHtml(questionStatement))
     setDeleteDialogOpen(true)
   }
 
   const handleDeleteConfirm = async () => {
     if (!deleteQuestionId) return
-
     setDeleting(true)
     try {
-      const response = await fetch(`/api/admin/questions/${deleteQuestionId}`, {
-        method: 'DELETE',
-      })
-
+      const response = await fetch(`/api/admin/questions/${deleteQuestionId}`, { method: 'DELETE' })
       const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to delete question')
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to delete question')
       toast.success('Question deleted successfully')
       setDeleteDialogOpen(false)
-      fetchQuestions() // Refresh list
+      fetchQuestions()
     } catch (error: any) {
       toast.error(error.message)
     } finally {
@@ -198,14 +182,10 @@ export default function AdminQuestionsPage() {
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
-      case 'easy':
-        return 'bg-green-100 text-green-800'
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'hard':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
+      case 'easy': return 'bg-green-100 text-green-800'
+      case 'medium': return 'bg-yellow-100 text-yellow-800'
+      case 'hard': return 'bg-red-100 text-red-800'
+      default: return 'bg-gray-100 text-gray-800'
     }
   }
 
@@ -215,19 +195,17 @@ export default function AdminQuestionsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Question Bank</h1>
-          <p className="text-gray-600 mt-1">
-            {total} questions available
-          </p>
+          <p className="text-gray-600 mt-1">{total} questions available</p>
         </div>
         <div className="flex gap-2">
-            <Button variant="outline" onClick={() => window.location.href = '/admin/questions/import'}>
-              <Upload className="w-4 h-4 mr-2" />
-              Import Questions
-            </Button>
-            <Button onClick={() => window.location.href = '/admin/questions/new'}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Question
-            </Button>
+          <Button variant="outline" onClick={() => window.location.href = '/admin/questions/import'}>
+            <Upload className="w-4 h-4 mr-2" />
+            Import Questions
+          </Button>
+          <Button onClick={() => window.location.href = '/admin/questions/new'}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Question
+          </Button>
         </div>
       </div>
 
@@ -248,7 +226,6 @@ export default function AdminQuestionsPage() {
                 </Button>
               </div>
             </div>
-
             <Select value={difficulty} onValueChange={setDifficulty}>
               <SelectTrigger>
                 <SelectValue placeholder="Difficulty" />
@@ -260,16 +237,8 @@ export default function AdminQuestionsPage() {
                 <SelectItem value="hard">Hard</SelectItem>
               </SelectContent>
             </Select>
-
             {(search || difficulty !== 'all') && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSearch('')
-                  setDifficulty('all')
-                  setPage(1)
-                }}
-              >
+              <Button variant="ghost" onClick={() => { setSearch(''); setDifficulty('all'); setPage(1) }}>
                 Clear Filters
               </Button>
             )}
@@ -309,9 +278,7 @@ export default function AdminQuestionsPage() {
                         <div className="flex flex-col items-center gap-2">
                           <Search className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-600">No questions found</p>
-                          <p className="text-sm text-gray-500">
-                            Add your first question to get started!
-                          </p>
+                          <p className="text-sm text-gray-500">Add your first question to get started!</p>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -322,8 +289,11 @@ export default function AdminQuestionsPage() {
                           <input type="checkbox" className="rounded border-gray-300" />
                         </TableCell>
                         <TableCell className="max-w-md">
-                          <p className="font-medium truncate" title={question.statement}>
-                            {question.statement}
+                          <p
+                            className="font-medium truncate text-sm"
+                            title={stripHtml(question.statement)}
+                          >
+                            {stripHtml(question.statement) || '(Image/rich content question)'}
                           </p>
                         </TableCell>
                         <TableCell>{question.subjectName}</TableCell>
@@ -340,13 +310,7 @@ export default function AdminQuestionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            className={
-                              question.isActive
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }
-                          >
+                          <Badge className={question.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
                             {question.isActive ? 'Active' : 'Inactive'}
                           </Badge>
                         </TableCell>
@@ -355,28 +319,13 @@ export default function AdminQuestionsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleView(question.id)}
-                              title="View details"
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleView(question.id)} title="View details">
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEdit(question.id)}
-                              title="Edit question"
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(question.id)} title="Edit question">
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteClick(question.id, question.statement)}
-                              title="Delete question"
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(question.id, question.statement)} title="Delete question">
                               <Trash2 className="h-4 w-4 text-red-600" />
                             </Button>
                           </div>
@@ -389,24 +338,13 @@ export default function AdminQuestionsPage() {
             </CardContent>
           </Card>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
+              <Button variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                 Previous
               </Button>
-              <div className="flex items-center px-4">
-                Page {page} of {totalPages}
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-              >
+              <div className="flex items-center px-4">Page {page} of {totalPages}</div>
+              <Button variant="outline" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
                 Next
               </Button>
             </div>
@@ -421,7 +359,7 @@ export default function AdminQuestionsPage() {
             <DialogTitle>Question Details</DialogTitle>
             <DialogDescription>Complete information about this question</DialogDescription>
           </DialogHeader>
-          
+
           {loadingView ? (
             <div className="flex justify-center items-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -457,30 +395,31 @@ export default function AdminQuestionsPage() {
               {/* Question Statement */}
               <div>
                 <Label className="text-sm text-gray-600">Question</Label>
-                <p className="mt-2 text-lg font-medium">{viewQuestion.statement}</p>
+                <div className="mt-2 text-base leading-relaxed">
+                  <SafeHtml html={viewQuestion.statement} />
+                </div>
               </div>
 
               {/* Options */}
               <div className="space-y-3">
                 <Label className="text-sm text-gray-600">Options</Label>
-                {['A', 'B', 'C', 'D'].map((opt) => {
-                  const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail]
+                {(['A', 'B', 'C', 'D'] as const).map((opt) => {
+                  const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail] as string
                   const isCorrect = viewQuestion.correctAnswer === opt
-                  
                   return (
                     <div
                       key={opt}
                       className={`p-3 rounded-lg border-2 flex items-start gap-3 ${
-                        isCorrect 
-                          ? 'border-green-500 bg-green-50' 
-                          : 'border-gray-200 bg-white'
+                        isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'
                       }`}
                     >
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 shrink-0">
                         <span className="font-bold text-sm">{opt}.</span>
                         {isCorrect && <CheckCircle2 className="w-5 h-5 text-green-600" />}
                       </div>
-                      <p className="flex-1">{optionText}</p>
+                      <div className="flex-1 min-w-0">
+                        <SafeHtml html={optionText} />
+                      </div>
                     </div>
                   )
                 })}
@@ -490,9 +429,9 @@ export default function AdminQuestionsPage() {
               {viewQuestion.explanation && (
                 <div>
                   <Label className="text-sm text-gray-600">Explanation</Label>
-                  <p className="mt-2 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200">
-                    {viewQuestion.explanation}
-                  </p>
+                  <div className="mt-2 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <SafeHtml html={viewQuestion.explanation} />
+                  </div>
                 </div>
               )}
 
@@ -517,7 +456,6 @@ export default function AdminQuestionsPage() {
             <DialogTitle>Edit Question</DialogTitle>
             <DialogDescription>Update question details below</DialogDescription>
           </DialogHeader>
-          
           {editQuestionId && editQuestionData && (
             <QuestionForm
               questionId={editQuestionId}
@@ -525,7 +463,7 @@ export default function AdminQuestionsPage() {
               mode="dialog"
               onSuccess={() => {
                 setEditDialogOpen(false)
-                fetchQuestions() // Refresh list
+                fetchQuestions()
               }}
               onCancel={() => setEditDialogOpen(false)}
             />
@@ -541,9 +479,7 @@ export default function AdminQuestionsPage() {
             <AlertDialogDescription>
               This will permanently delete the question:
               <div className="mt-3 p-3 bg-gray-100 rounded-lg">
-                <p className="font-medium text-gray-900 line-clamp-2">
-                  {deleteQuestionName}
-                </p>
+                <p className="font-medium text-gray-900 line-clamp-2">{deleteQuestionName}</p>
               </div>
               <p className="mt-3 text-red-600">
                 This action cannot be undone. The question will be removed from the database.
@@ -558,15 +494,9 @@ export default function AdminQuestionsPage() {
               className="bg-red-600 hover:bg-red-700"
             >
               {deleting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deleting...
-                </>
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>
               ) : (
-                <>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Question
-                </>
+                <><Trash2 className="w-4 h-4 mr-2" />Delete Question</>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
