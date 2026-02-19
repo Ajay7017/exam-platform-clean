@@ -3,11 +3,9 @@ import mammoth from 'mammoth'
 
 export interface ParsedQuestion {
   statement: string
-  statementImage?: string // Image in question statement
   options: {
     key: 'A' | 'B' | 'C' | 'D'
     text: string
-    imageUrl?: string // Image in option
   }[]
   correctAnswer: 'A' | 'B' | 'C' | 'D'
   marks: number
@@ -16,22 +14,13 @@ export interface ParsedQuestion {
   explanation?: string
 }
 
-export interface ImageMapping {
-  [filename: string]: string // filename -> URL
-}
-
 /**
- * Parse Word document and extract questions
+ * Parse Word document and extract questions (text only — images added later via edit)
  */
 export async function parseWordDocument(
-  fileBuffer: Buffer,
-  imageMapping: ImageMapping
+  fileBuffer: Buffer
 ): Promise<{ questions: ParsedQuestion[]; errors: string[] }> {
-  // Extract text from Word
-  const result = await mammoth.extractRawText({
-    buffer: fileBuffer,
-  })
-
+  const result = await mammoth.extractRawText({ buffer: fileBuffer })
   const text = result.value
 
   // Split by delimiter (---)
@@ -42,7 +31,7 @@ export async function parseWordDocument(
 
   sections.forEach((section, sectionIndex) => {
     try {
-      const question = parseQuestionSection(section, imageMapping)
+      const question = parseQuestionSection(section)
       questions.push(question)
     } catch (error: any) {
       errors.push(`Question ${sectionIndex + 1}: ${error.message}`)
@@ -57,65 +46,34 @@ export async function parseWordDocument(
  */
 function normalizeDifficulty(value: string): 'easy' | 'medium' | 'hard' {
   const normalized = value.toLowerCase().trim()
-  
-  // Easy variations
-  if (['easy', 'simple', 'basic', 'beginner'].includes(normalized)) {
-    return 'easy'
-  }
-  
-  // Hard variations
-  if (['hard', 'difficult', 'advanced', 'complex', 'challenging'].includes(normalized)) {
-    return 'hard'
-  }
-  
-  // Medium/Moderate variations (default)
+  if (['easy', 'simple', 'basic', 'beginner'].includes(normalized)) return 'easy'
+  if (['hard', 'difficult', 'advanced', 'complex', 'challenging'].includes(normalized)) return 'hard'
   return 'medium'
 }
 
 /**
  * Parse a single question section
  */
-function parseQuestionSection(
-  section: string,
-  imageMapping: ImageMapping
-): ParsedQuestion {
+function parseQuestionSection(section: string): ParsedQuestion {
   const lines = section.split('\n').map(l => l.trim()).filter(Boolean)
 
-  if (lines.length === 0) {
-    throw new Error('Empty question section')
-  }
+  if (lines.length === 0) throw new Error('Empty question section')
 
-  // Extract statement (everything before options)
+  // Extract statement (everything before options A) B) C) D))
   let statement = ''
-  let statementImage: string | undefined
   let i = 0
 
   while (i < lines.length && !lines[i].match(/^[A-D]\)/)) {
     const line = lines[i]
-
-    // Check for image tag
-    const imageMatch = line.match(/\[IMAGE:\s*([^\]]+)\]/)
-    if (imageMatch) {
-      const filename = imageMatch[1].trim()
-      const url = imageMapping[filename] || imageMapping[filename.toLowerCase()]
-
-      if (url) {
-        statementImage = url
-      } else {
-        throw new Error(`Image not found: ${filename}`)
-      }
-    } else {
+    // Skip [IMAGE:...] tags silently — images will be added later via edit button
+    if (!line.match(/^\[IMAGE:/i)) {
       statement += line + ' '
     }
-
     i++
   }
 
   statement = statement.trim()
-
-  if (!statement) {
-    throw new Error('Question statement is empty')
-  }
+  if (!statement) throw new Error('Question statement is empty')
 
   // Extract options
   const options: ParsedQuestion['options'] = []
@@ -123,31 +81,12 @@ function parseQuestionSection(
   while (i < lines.length && lines[i].match(/^[A-D]\)/)) {
     const line = lines[i]
     const match = line.match(/^([A-D])\)\s*(.+)$/)
-
     if (match) {
       const key = match[1] as 'A' | 'B' | 'C' | 'D'
-      let text = match[2]
-      let optionImage: string | undefined
-
-      // Check for image in option
-      const imageMatch = text.match(/\[IMAGE:\s*([^\]]+)\]/)
-      if (imageMatch) {
-        const filename = imageMatch[1].trim()
-        const url = imageMapping[filename] || imageMapping[filename.toLowerCase()]
-
-        if (url) {
-          optionImage = url
-          text = text.replace(/\[IMAGE:\s*[^\]]+\]/, '').trim()
-        }
-      }
-
-      options.push({
-        key,
-        text,
-        imageUrl: optionImage,
-      })
+      // Strip any [IMAGE:...] tags from options too
+      const text = match[2].replace(/\[IMAGE:[^\]]+\]/gi, '').trim()
+      options.push({ key, text })
     }
-
     i++
   }
 
@@ -157,8 +96,8 @@ function parseQuestionSection(
 
   // Extract metadata
   let correctAnswer: 'A' | 'B' | 'C' | 'D' | undefined
-  let marks = 1
-  let negativeMarks = 0.25
+  let marks = 4
+  let negativeMarks = 1
   let difficulty: 'easy' | 'medium' | 'hard' = 'medium'
   let explanation: string | undefined
 
@@ -167,26 +106,18 @@ function parseQuestionSection(
 
     if (line.match(/^ANSWER:/i)) {
       const answer = line.replace(/^ANSWER:/i, '').trim().toUpperCase()
-      if (!['A', 'B', 'C', 'D'].includes(answer)) {
-        throw new Error(`Invalid answer: ${answer}`)
-      }
+      if (!['A', 'B', 'C', 'D'].includes(answer)) throw new Error(`Invalid answer: ${answer}`)
       correctAnswer = answer as 'A' | 'B' | 'C' | 'D'
     } else if (line.match(/^MARKS:/i)) {
       marks = parseInt(line.replace(/^MARKS:/i, '').trim())
-      if (isNaN(marks) || marks <= 0) {
-        throw new Error(`Invalid marks: ${line}`)
-      }
+      if (isNaN(marks) || marks <= 0) throw new Error(`Invalid marks: ${line}`)
     } else if (line.match(/^NEGATIVE:/i)) {
       negativeMarks = parseFloat(line.replace(/^NEGATIVE:/i, '').trim())
-      if (isNaN(negativeMarks) || negativeMarks < 0) {
-        throw new Error(`Invalid negative marks: ${line}`)
-      }
+      if (isNaN(negativeMarks) || negativeMarks < 0) throw new Error(`Invalid negative marks: ${line}`)
     } else if (line.match(/^DIFFICULTY:/i)) {
-      const diffValue = line.replace(/^DIFFICULTY:/i, '').trim()
-      difficulty = normalizeDifficulty(diffValue)
+      difficulty = normalizeDifficulty(line.replace(/^DIFFICULTY:/i, '').trim())
     } else if (line.match(/^EXPLANATION:/i)) {
       explanation = line.replace(/^EXPLANATION:/i, '').trim()
-      // Collect remaining lines as explanation
       i++
       while (i < lines.length) {
         explanation += ' ' + lines[i]
@@ -198,45 +129,9 @@ function parseQuestionSection(
     i++
   }
 
-  if (!correctAnswer) {
-    throw new Error('Missing ANSWER field')
-  }
+  if (!correctAnswer) throw new Error('Missing ANSWER field')
 
-  return {
-    statement,
-    statementImage,
-    options,
-    correctAnswer,
-    marks,
-    negativeMarks,
-    difficulty,
-    explanation,
-  }
-}
-
-/**
- * Parse CSV mapping file
- */
-export function parseCSVMapping(csvContent: string): ImageMapping {
-  const lines = csvContent.split('\n').map(l => l.trim()).filter(Boolean)
-
-  // Skip header if it exists
-  const dataLines = lines[0].toLowerCase().includes('filename') || lines[0].toLowerCase().includes('url') 
-    ? lines.slice(1) 
-    : lines
-
-  const mapping: ImageMapping = {}
-
-  dataLines.forEach(line => {
-    const [filename, url] = line.split(',').map(s => s.trim())
-    if (filename && url) {
-      mapping[filename] = url
-      // Also add lowercase version
-      mapping[filename.toLowerCase()] = url
-    }
-  })
-
-  return mapping
+  return { statement, options, correctAnswer, marks, negativeMarks, difficulty, explanation }
 }
 
 /**
@@ -252,36 +147,15 @@ export function validateQuestions(
   }
 
   questions.forEach((q, index) => {
-    const questionNum = index + 1
-
-    if (!q.statement) {
-      errors.push(`Question ${questionNum}: Missing statement`)
-    }
-
-    if (q.options.length !== 4) {
-      errors.push(`Question ${questionNum}: Must have exactly 4 options`)
-    }
-
-    const emptyOptions = q.options.filter(opt => !opt.text || opt.text.trim() === '')
-    if (emptyOptions.length > 0) {
-      errors.push(`Question ${questionNum}: Has empty option(s)`)
-    }
-
-    if (!q.correctAnswer) {
-      errors.push(`Question ${questionNum}: Missing correct answer`)
-    }
-
-    if (q.marks <= 0) {
-      errors.push(`Question ${questionNum}: Marks must be positive`)
-    }
-
-    if (q.negativeMarks < 0) {
-      errors.push(`Question ${questionNum}: Negative marks cannot be negative`)
-    }
+    const n = index + 1
+    if (!q.statement) errors.push(`Question ${n}: Missing statement`)
+    if (q.options.length !== 4) errors.push(`Question ${n}: Must have exactly 4 options`)
+    const emptyOptions = q.options.filter(opt => !opt.text?.trim())
+    if (emptyOptions.length > 0) errors.push(`Question ${n}: Has empty option(s)`)
+    if (!q.correctAnswer) errors.push(`Question ${n}: Missing correct answer`)
+    if (q.marks <= 0) errors.push(`Question ${n}: Marks must be positive`)
+    if (q.negativeMarks < 0) errors.push(`Question ${n}: Negative marks cannot be negative`)
   })
 
-  return {
-    valid: errors.length === 0,
-    errors,
-  }
+  return { valid: errors.length === 0, errors }
 }

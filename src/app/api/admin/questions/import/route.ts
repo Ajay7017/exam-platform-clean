@@ -3,26 +3,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
-import { parseWordDocument, parseCSVMapping, validateQuestions } from '@/lib/question-parser'
+import { parseWordDocument, validateQuestions } from '@/lib/question-parser'
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate and get Admin ID
     const session = await requireAdmin()
     const adminId = session.user.id
 
-    // 2. Parse FormData
     const formData = await request.formData()
-    console.log('IMPORT API RECEIVED KEYS:', Array.from(formData.keys()))
 
     const wordFile = formData.get('wordFile') as File | null
-    const csvFile = formData.get('csvFile') as File | null
     const subjectId = formData.get('subjectId') as string
     const topicId = formData.get('topicId') as string
+    const subTopicId = formData.get('subTopicId') as string | null
 
-    if (!wordFile || !csvFile || !subjectId || !topicId) {
+    if (!wordFile || !subjectId || !topicId) {
       return NextResponse.json(
-        { error: 'Missing required fields (wordFile, csvFile, subjectId, or topicId)' },
+        { error: 'Missing required fields: wordFile, subjectId, topicId' },
         { status: 400 }
       )
     }
@@ -34,14 +31,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!csvFile.name.endsWith('.csv')) {
-      return NextResponse.json(
-        { error: 'Only .csv files are supported for image mapping' },
-        { status: 400 }
-      )
-    }
-
-    // 3. Get Subject and Topic names for summary
+    // Validate subject, topic (and optional subtopic)
     const subject = await prisma.subject.findUnique({
       where: { id: subjectId },
       select: { name: true }
@@ -59,27 +49,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. Parse CSV file for image mapping
-    const csvBytes = await csvFile.arrayBuffer()
-    const csvText = new TextDecoder().decode(csvBytes)
-    const imageMapping = parseCSVMapping(csvText)
+    let subTopicName: string | undefined
+    if (subTopicId) {
+      const subTopic = await prisma.subTopic.findUnique({
+        where: { id: subTopicId },
+        select: { name: true }
+      })
+      if (!subTopic) {
+        return NextResponse.json(
+          { error: 'Invalid subtopic ID' },
+          { status: 400 }
+        )
+      }
+      subTopicName = subTopic.name
+    }
 
-    // 5. Parse Word document
+    // Parse Word document (text only)
     const wordBytes = await wordFile.arrayBuffer()
     const wordBuffer = Buffer.from(wordBytes)
-    
-    const { questions, errors: parseErrors } = await parseWordDocument(
-      wordBuffer,
-      imageMapping
-    )
+    const { questions, errors: parseErrors } = await parseWordDocument(wordBuffer)
 
-    // 6. Validate questions
+    // Validate
     const { valid, errors: validationErrors } = validateQuestions(questions)
-    
     const allErrors = [...parseErrors, ...validationErrors]
     const canProceed = questions.length > 0 && valid
 
-    // 7. Create ImportJob in DB with all questions data
+    // Create ImportJob
     const job = await prisma.importJob.create({
       data: {
         adminId,
@@ -88,7 +83,7 @@ export async function POST(request: NextRequest) {
         topicId,
         totalQuestions: questions.length,
         status: 'pending',
-        previewData: questions as any, // Store all questions for import
+        previewData: questions as any,
         successCount: 0,
         failedCount: 0,
       }
@@ -97,17 +92,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       importJobId: job.id,
-      preview: questions.slice(0, 10), // Send first 10 for preview
+      preview: questions.slice(0, 10),
       summary: {
         totalQuestions: questions.length,
         subjectName: subject.name,
         topicName: topic.name,
+        subTopicName: subTopicName || null,
       },
       errors: allErrors,
       canProceed,
-      message: canProceed 
-        ? `Successfully parsed ${questions.length} questions` 
-        : 'Document has errors. Please fix and try again.'
+      // Pass subTopicId along so confirm step can use it
+      subTopicId: subTopicId || null,
     })
 
   } catch (error) {

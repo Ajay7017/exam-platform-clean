@@ -6,8 +6,6 @@ import { z } from 'zod'
 
 const questionUpdateSchema = z.object({
   statement: z.string().min(1),
-  subject: z.string().min(1),
-  topic: z.string().min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number(),
   negativeMarks: z.number(),
@@ -18,25 +16,32 @@ const questionUpdateSchema = z.object({
   correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
-})
+  // Topic — either topicId OR (subjectId + topicName)
+  topicId: z.string().optional(),
+  subjectId: z.string().optional(),
+  topicName: z.string().optional(),
+  // SubTopic — either subTopicId OR subTopicName (both optional)
+  subTopicId: z.string().optional(),
+  subTopicName: z.string().optional(),
+}).refine(
+  (data) => data.topicId || (data.subjectId && data.topicName),
+  { message: 'Either topicId or (subjectId + topicName) must be provided', path: ['topicId'] }
+)
 
-// GET: Fetch single question by ID with all details
+// GET: Fetch single question
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     await requireAdmin()
-    
+
     const question = await prisma.question.findUnique({
       where: { id: params.id },
       include: {
-        options: {
-          orderBy: { sequence: 'asc' }
-        },
-        topic: {
-          include: { subject: true }
-        }
+        options: { orderBy: { sequence: 'asc' } },
+        topic: { include: { subject: true } },
+        subTopic: true,
       }
     })
 
@@ -44,12 +49,12 @@ export async function GET(
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
-    // Format response to match form structure
     const formattedQuestion = {
       id: question.id,
       statement: question.statement,
-      subject: question.topic.subject.name,
-      topic: question.topic.name,
+      subjectId: question.topic.subjectId,
+      topicId: question.topicId,
+      subTopicId: question.subTopicId || '',
       difficulty: question.difficulty,
       marks: question.marks,
       negativeMarks: question.negativeMarks,
@@ -79,9 +84,24 @@ export async function PUT(
   try {
     await requireAdmin()
     const body = await request.json()
-    const data = questionUpdateSchema.parse(body)
 
-    // Check if question exists
+    let parsed
+    try {
+      parsed = questionUpdateSchema.parse(body)
+    } catch (zodError) {
+      if (zodError instanceof z.ZodError) {
+        console.error('Validation error:', zodError.errors)
+        return NextResponse.json(
+          { error: 'Validation failed', details: zodError.errors },
+          { status: 400 }
+        )
+      }
+      throw zodError
+    }
+
+    const data = parsed
+
+    // Check question exists
     const existingQuestion = await prisma.question.findUnique({
       where: { id: params.id },
       include: { options: true }
@@ -91,46 +111,88 @@ export async function PUT(
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
-    // Find Subject
-    const subject = await prisma.subject.findFirst({
-      where: { name: { equals: data.subject, mode: 'insensitive' } }
-    })
+    // --- Resolve topicId ---
+    let topicId: string
 
-    if (!subject) {
-      return NextResponse.json(
-        { error: `Subject '${data.subject}' not found` },
-        { status: 400 }
-      )
-    }
-
-    // Find or Create Topic
-    let topic = await prisma.topic.findFirst({
-      where: { 
-        subjectId: subject.id,
-        name: { equals: data.topic, mode: 'insensitive' }
+    if (data.topicId) {
+      const topicExists = await prisma.topic.findUnique({ where: { id: data.topicId } })
+      if (!topicExists) {
+        return NextResponse.json({ error: 'Topic not found' }, { status: 400 })
       }
-    })
+      topicId = data.topicId
+    } else {
+      // subjectId + topicName
+      const subject = await prisma.subject.findUnique({ where: { id: data.subjectId! } })
+      if (!subject) {
+        return NextResponse.json({ error: 'Subject not found' }, { status: 400 })
+      }
 
-    if (!topic) {
-      const slug = data.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-      topic = await prisma.topic.create({
-        data: {
-          name: data.topic,
-          slug: `${slug}-${Date.now().toString().slice(-4)}`,
-          subjectId: subject.id,
-          isActive: true
+      let topic = await prisma.topic.findFirst({
+        where: {
+          subjectId: data.subjectId!,
+          name: { equals: data.topicName!.trim(), mode: 'insensitive' }
         }
       })
+
+      if (!topic) {
+        const slug = data.topicName!.toLowerCase().trim()
+          .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        topic = await prisma.topic.create({
+          data: {
+            name: data.topicName!.trim(),
+            slug: `${slug}-${Date.now().toString().slice(-6)}`,
+            subjectId: data.subjectId!,
+            isActive: true,
+            sequence: 0,
+          }
+        })
+      }
+
+      topicId = topic.id
     }
 
-    // Update question and options in a transaction
+    // --- Resolve subTopicId (optional) ---
+    let subTopicId: string | null = null
+
+    if (data.subTopicId) {
+      const subTopicExists = await prisma.subTopic.findUnique({ where: { id: data.subTopicId } })
+      if (!subTopicExists) {
+        return NextResponse.json({ error: 'SubTopic not found' }, { status: 400 })
+      }
+      subTopicId = data.subTopicId
+    } else if (data.subTopicName) {
+      let subTopic = await prisma.subTopic.findFirst({
+        where: {
+          topicId,
+          name: { equals: data.subTopicName.trim(), mode: 'insensitive' }
+        }
+      })
+
+      if (!subTopic) {
+        const slug = data.subTopicName.toLowerCase().trim()
+          .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        subTopic = await prisma.subTopic.create({
+          data: {
+            name: data.subTopicName.trim(),
+            slug: `${slug}-${Date.now().toString().slice(-6)}`,
+            topicId,
+            isActive: true,
+            sequence: 0,
+          }
+        })
+      }
+
+      subTopicId = subTopic.id
+    }
+
+    // --- Update question + options in transaction ---
     const updatedQuestion = await prisma.$transaction(async (tx) => {
-      // Update question
       const question = await tx.question.update({
         where: { id: params.id },
         data: {
           statement: data.statement,
-          topicId: topic.id,
+          topicId,
+          subTopicId,
           marks: data.marks,
           negativeMarks: data.negativeMarks,
           difficulty: data.difficulty,
@@ -139,7 +201,6 @@ export async function PUT(
         }
       })
 
-      // Update options
       const optionUpdates = [
         { key: 'A', text: data.optionA, isCorrect: data.correctAnswer === 'A' },
         { key: 'B', text: data.optionB, isCorrect: data.correctAnswer === 'B' },
@@ -148,11 +209,10 @@ export async function PUT(
       ]
 
       for (const opt of optionUpdates) {
-        const existingOption = existingQuestion.options.find(o => o.optionKey === opt.key)
-        
-        if (existingOption) {
+        const existing = existingQuestion.options.find(o => o.optionKey === opt.key)
+        if (existing) {
           await tx.option.update({
-            where: { id: existingOption.id },
+            where: { id: existing.id },
             data: { text: opt.text, isCorrect: opt.isCorrect }
           })
         }
@@ -161,17 +221,14 @@ export async function PUT(
       return question
     })
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       questionId: updatedQuestion.id,
       message: 'Question updated successfully'
     })
 
   } catch (error) {
     console.error('UPDATE QUESTION ERROR:', error)
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation failed', details: error.errors }, { status: 400 })
-    }
     return NextResponse.json({ error: 'Failed to update question' }, { status: 500 })
   }
 }
@@ -184,42 +241,25 @@ export async function DELETE(
   try {
     await requireAdmin()
 
-    // Check if question exists
     const question = await prisma.question.findUnique({
       where: { id: params.id },
-      include: {
-        _count: {
-          select: {
-            examQuestions: true
-          }
-        }
-      }
+      include: { _count: { select: { examQuestions: true } } }
     })
 
     if (!question) {
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
-    // Check if question is used in any exams
     if (question._count.examQuestions > 0) {
       return NextResponse.json(
-        { 
-          error: 'Cannot delete question that is used in exams',
-          usedInExams: question._count.examQuestions 
-        },
+        { error: 'Cannot delete question that is used in exams', usedInExams: question._count.examQuestions },
         { status: 400 }
       )
     }
 
-    // Delete question (options will be cascade deleted)
-    await prisma.question.delete({
-      where: { id: params.id }
-    })
+    await prisma.question.delete({ where: { id: params.id } })
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Question deleted successfully' 
-    })
+    return NextResponse.json({ success: true, message: 'Question deleted successfully' })
 
   } catch (error) {
     console.error('DELETE QUESTION ERROR:', error)
