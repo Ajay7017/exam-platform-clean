@@ -1,5 +1,4 @@
 // src/types/admin.ts
-// Admin-specific types
 export interface Subject {
   id: string;
   name: string;
@@ -14,6 +13,21 @@ export interface Topic {
   name: string;
   slug: string;
   questionCount: number;
+  subTopics?: SubTopic[]; // ✅ NEW
+}
+
+// ✅ NEW
+export interface SubTopic {
+  id: string;
+  name: string;
+  slug: string;
+  topicId: string;
+  topicName?: string;
+  subjectId?: string;
+  sequence: number;
+  isActive: boolean;
+  questionsCount: number;
+  createdAt: string;
 }
 
 export interface Question {
@@ -24,6 +38,8 @@ export interface Question {
   subjectId: string;
   topic: string;
   topicId: string;
+  subTopic?: string;    // ✅ NEW
+  subTopicId?: string;  // ✅ NEW
   difficulty: 'easy' | 'medium' | 'hard';
   marks: number;
   negativeMarks: number;

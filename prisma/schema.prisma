@@ -1,5 +1,3 @@
-//schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -18,8 +16,8 @@ model User {
   emailVerified DateTime?
   name          String?
   image         String?
-  phone         String?   @unique  // ✅ NEW: Phone number field
-  phoneVerified Boolean   @default(false)  // ✅ NEW: For future OTP verification
+  phone         String?   @unique
+  phoneVerified Boolean   @default(false)
   role          String    @default("student") // "student" | "admin"
   isBlocked     Boolean   @default(false)
   createdAt     DateTime  @default(now())
@@ -32,7 +30,7 @@ model User {
   leaderboard LeaderboardEntry[]
   
   @@index([email])
-  @@index([phone])  // ✅ NEW: Index for faster phone lookups
+  @@index([phone])
 }
 
 model Account {
@@ -101,10 +99,29 @@ model Topic {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
+  subTopics SubTopic[]
   questions Question[]
   
   @@unique([subjectId, name])
   @@index([subjectId, isActive])
+}
+
+// ✅ NEW: SubTopic model — 3rd level in content hierarchy
+model SubTopic {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  isActive  Boolean  @default(true)
+  sequence  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  questions Question[]
+
+  @@unique([topicId, name])
+  @@index([topicId, isActive])
 }
 
 enum Difficulty {
@@ -119,6 +136,8 @@ model Question {
   imageUrl      String?
   topicId       String
   topic         Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  subTopicId    String?    // ✅ NEW: nullable for backward compat
+  subTopic      SubTopic?  @relation(fields: [subTopicId], references: [id], onDelete: SetNull)
   marks         Int        @default(1)
   negativeMarks Float      @default(0.25)
   explanation   String?    @db.Text
@@ -132,6 +151,7 @@ model Question {
   examQuestions ExamQuestion[]
   
   @@index([topicId, isActive])
+  @@index([subTopicId])
   @@index([difficulty])
 }
 
@@ -160,11 +180,11 @@ model Exam {
   thumbnail       String?
   subjectId       String?
   subject         Subject?   @relation(fields: [subjectId], references: [id])
-  isMultiSubject  Boolean    @default(false)  // NEW: Add this line
+  isMultiSubject  Boolean    @default(false)
   durationMin     Int
   totalMarks      Int
   passingMarks    Int?
-  price           Int        // In paise (₹100 = 10000 paise)
+  price           Int
   isPaid          Boolean    @default(true)
   isFree          Boolean    @default(false)
   isPublished     Boolean    @default(false)
@@ -213,7 +233,7 @@ model Subscription {
   description  String?  @db.Text
   subjectId    String?
   subject      Subject? @relation(fields: [subjectId], references: [id])
-  durationDays Int      // 30, 180, 365
+  durationDays Int
   price        Int
   discount     Int      @default(0)
   isActive     Boolean  @default(true)
@@ -273,7 +293,7 @@ model Purchase {
   bundle         Bundle?       @relation(fields: [bundleId], references: [id])
   type           String        // "single_exam" | "subscription" | "bundle"
   price          Int
-  status         String        @default("pending") // pending | active | expired | refunded
+  status         String        @default("pending")
   validFrom      DateTime      @default(now())
   validUntil     DateTime?
   purchasedAt    DateTime      @default(now())
@@ -294,8 +314,8 @@ model Payment {
   razorpaySignature  String?
   amount             Int
   currency           String    @default("INR")
-  status             String    @default("created") // created | paid | failed | refunded
-  method             String?   // card | upi | netbanking | wallet
+  status             String    @default("created")
+  method             String?
   failureReason      String?
   createdAt          DateTime  @default(now())
   paidAt             DateTime?
@@ -314,36 +334,29 @@ model Attempt {
   examId         String
   exam           Exam      @relation(fields: [examId], references: [id])
   
-  // Timing fields
   startedAt      DateTime  @default(now())
   submittedAt    DateTime?
   expiresAt      DateTime
   timeSpentSec   Int       @default(0)
   
-  // Question tracking
   totalQuestions Int
   
-  // Answer storage
   answers        Json      @default("{}")
   
-  // Scoring fields
   correctAnswers Int       @default(0)
   wrongAnswers   Int       @default(0)
   unattempted    Int       @default(0)
   score          Float?
   percentage     Float?
-  rank           Int?       // ✅ ADD THIS
-  percentile     Float?     // ✅ ADD THIS
+  rank           Int?
+  percentile     Float?
   
-  // Status tracking
   status         String    @default("in_progress")
   
-  // Anti-cheating
   ipAddress      String?
   tabSwitchCount Int       @default(0)
   suspiciousFlags Json?    @default("[]")
   
-  // Metadata
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   
@@ -364,13 +377,13 @@ model LeaderboardEntry {
   attempt     Attempt  @relation(fields: [attemptId], references: [id])
   score       Float
   percentage  Float
-  rank        Int      // ✅ REMOVE the '?' to make it required
-  timeTaken   Int      // seconds
+  rank        Int
+  timeTaken   Int
   submittedAt DateTime
   
   @@unique([examId, userId])
-  @@index([examId, rank])  // ✅ CHANGE from [examId, score, timeTaken]
-  @@index([userId])        // ✅ ADD THIS for user-specific queries
+  @@index([examId, rank])
+  @@index([userId])
 }
 
 // ============================================
@@ -385,7 +398,7 @@ model ImportJob {
   totalQuestions Int
   successCount   Int       @default(0)
   failedCount    Int       @default(0)
-  status         String    @default("queued") // queued | processing | completed | failed
+  status         String    @default("queued")
   errors         Json?
   previewData    Json?
   startedAt      DateTime  @default(now())
@@ -398,9 +411,9 @@ model EmailLog {
   id         String    @id @default(cuid())
   userId     String?
   email      String
-  type       String    // "welcome" | "purchase_confirmation" | "result_summary"
+  type       String
   subject    String
-  status     String    @default("pending") // pending | sent | failed
+  status     String    @default("pending")
   provider   String    @default("sendgrid")
   providerId String?
   error      String?

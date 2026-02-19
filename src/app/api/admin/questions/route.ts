@@ -4,7 +4,6 @@ import { requireAdmin } from '@/lib/auth-utils'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
-// Updated validation schema to support both existing and new topics
 const questionSchema = z.object({
   statement: z.string().min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
@@ -17,16 +16,17 @@ const questionSchema = z.object({
   correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
-  // New fields for dynamic topic handling
   topicId: z.string().optional(),
   subjectId: z.string().optional(),
   topicName: z.string().optional(),
+  subTopicId: z.string().optional(),
+  subTopicName: z.string().optional(),
 }).refine(
   (data) => data.topicId || (data.subjectId && data.topicName),
-  {
-    message: "Either topicId or (subjectId + topicName) must be provided",
-    path: ["topicId"],
-  }
+  { message: "Either topicId or (subjectId + topicName) must be provided", path: ["topicId"] }
+).refine(
+  (data) => data.subTopicId || data.subTopicName,
+  { message: "Either subTopicId or subTopicName must be provided", path: ["subTopicId"] }
 )
 
 // GET: List questions
@@ -38,19 +38,24 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const search = searchParams.get('search') || ''
     const difficulty = searchParams.get('difficulty')
+    const subjectId = searchParams.get('subjectId') // ✅ ADDED
+    const topicId = searchParams.get('topicId')
+    const subTopicId = searchParams.get('subTopicId')
 
     const where: any = {}
     if (search) where.statement = { contains: search, mode: 'insensitive' }
     if (difficulty && difficulty !== 'all') where.difficulty = difficulty
+    if (topicId) where.topicId = topicId
+    if (subTopicId) where.subTopicId = subTopicId
+    if (subjectId) where.topic = { subjectId } // ✅ ADDED — filters through relation
 
     const [questions, total] = await Promise.all([
       prisma.question.findMany({
         where,
         include: {
           topic: { include: { subject: true } },
-          options: {
-            orderBy: { sequence: 'asc' }
-          }
+          subTopic: true,
+          options: { orderBy: { sequence: 'asc' } }
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -67,6 +72,8 @@ export async function GET(request: NextRequest) {
         topicName: q.topic.name,
         subjectId: q.topic.subjectId,
         subjectName: q.topic.subject.name,
+        subTopicId: q.subTopicId,
+        subTopicName: q.subTopic?.name,
         marks: q.marks,
         negativeMarks: q.negativeMarks,
         difficulty: q.difficulty,
@@ -92,82 +99,76 @@ export async function POST(request: NextRequest) {
 
     let topicId: string
 
-    // Case 1: Using existing topic
     if (data.topicId) {
-      // Verify topic exists
-      const topicExists = await prisma.topic.findUnique({
-        where: { id: data.topicId }
-      })
-
+      const topicExists = await prisma.topic.findUnique({ where: { id: data.topicId } })
       if (!topicExists) {
-        return NextResponse.json(
-          { error: 'Selected topic not found' },
-          { status: 404 }
-        )
+        return NextResponse.json({ error: 'Selected topic not found' }, { status: 404 })
       }
-
       topicId = data.topicId
-    }
-    // Case 2: Creating new topic
-    else if (data.subjectId && data.topicName) {
-      // Verify subject exists
-      const subject = await prisma.subject.findUnique({
-        where: { id: data.subjectId }
-      })
-
+    } else if (data.subjectId && data.topicName) {
+      const subject = await prisma.subject.findUnique({ where: { id: data.subjectId } })
       if (!subject) {
-        return NextResponse.json(
-          { error: 'Subject not found' },
-          { status: 404 }
-        )
+        return NextResponse.json({ error: 'Subject not found' }, { status: 404 })
       }
 
-      // Check if topic already exists in this subject
       let existingTopic = await prisma.topic.findFirst({
-        where: {
-          subjectId: data.subjectId,
-          name: { equals: data.topicName.trim(), mode: 'insensitive' }
-        }
+        where: { subjectId: data.subjectId, name: { equals: data.topicName.trim(), mode: 'insensitive' } }
       })
 
       if (existingTopic) {
-        // Topic already exists, use it
         topicId = existingTopic.id
       } else {
-        // Create new topic
-        const slug = data.topicName
-          .toLowerCase()
-          .trim()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/(^-|-$)/g, '')
-
-        // Ensure unique slug
-        const uniqueSlug = `${slug}-${Date.now().toString().slice(-6)}`
-
+        const slug = data.topicName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
         const newTopic = await prisma.topic.create({
           data: {
             name: data.topicName.trim(),
-            slug: uniqueSlug,
+            slug: `${slug}-${Date.now().toString().slice(-6)}`,
             subjectId: data.subjectId,
             isActive: true,
-            sequence: 0
+            sequence: 0,
           }
         })
-
         topicId = newTopic.id
       }
     } else {
-      return NextResponse.json(
-        { error: 'Either topicId or (subjectId + topicName) must be provided' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Either topicId or (subjectId + topicName) must be provided' }, { status: 400 })
     }
 
-    // Create Question with Options
+    let subTopicId: string | undefined
+
+    if (data.subTopicId) {
+      const subTopicExists = await prisma.subTopic.findUnique({ where: { id: data.subTopicId } })
+      if (!subTopicExists) {
+        return NextResponse.json({ error: 'Selected subtopic not found' }, { status: 404 })
+      }
+      subTopicId = data.subTopicId
+    } else if (data.subTopicName) {
+      let existingSubTopic = await prisma.subTopic.findFirst({
+        where: { topicId, name: { equals: data.subTopicName.trim(), mode: 'insensitive' } }
+      })
+
+      if (existingSubTopic) {
+        subTopicId = existingSubTopic.id
+      } else {
+        const slug = data.subTopicName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        const newSubTopic = await prisma.subTopic.create({
+          data: {
+            name: data.subTopicName.trim(),
+            slug: `${slug}-${Date.now().toString().slice(-6)}`,
+            topicId,
+            isActive: true,
+            sequence: 0,
+          }
+        })
+        subTopicId = newSubTopic.id
+      }
+    }
+
     const question = await prisma.question.create({
       data: {
         statement: data.statement,
-        topicId: topicId,
+        topicId,
+        subTopicId,
         marks: data.marks,
         negativeMarks: data.negativeMarks,
         difficulty: data.difficulty,
@@ -175,40 +176,17 @@ export async function POST(request: NextRequest) {
         isActive: data.isActive ?? true,
         options: {
           create: [
-            { 
-              text: data.optionA, 
-              optionKey: 'A', 
-              sequence: 1, 
-              isCorrect: data.correctAnswer === 'A' 
-            },
-            { 
-              text: data.optionB, 
-              optionKey: 'B', 
-              sequence: 2, 
-              isCorrect: data.correctAnswer === 'B' 
-            },
-            { 
-              text: data.optionC, 
-              optionKey: 'C', 
-              sequence: 3, 
-              isCorrect: data.correctAnswer === 'C' 
-            },
-            { 
-              text: data.optionD, 
-              optionKey: 'D', 
-              sequence: 4, 
-              isCorrect: data.correctAnswer === 'D' 
-            },
+            { text: data.optionA, optionKey: 'A', sequence: 1, isCorrect: data.correctAnswer === 'A' },
+            { text: data.optionB, optionKey: 'B', sequence: 2, isCorrect: data.correctAnswer === 'B' },
+            { text: data.optionC, optionKey: 'C', sequence: 3, isCorrect: data.correctAnswer === 'C' },
+            { text: data.optionD, optionKey: 'D', sequence: 4, isCorrect: data.correctAnswer === 'D' },
           ]
         }
       },
       include: {
-        topic: {
-          include: {
-            subject: true
-          }
-        },
-        options: true
+        topic: { include: { subject: true } },
+        subTopic: true,
+        options: true,
       }
     })
 
@@ -222,6 +200,8 @@ export async function POST(request: NextRequest) {
         topicName: question.topic.name,
         subjectId: question.topic.subjectId,
         subjectName: question.topic.subject.name,
+        subTopicId: question.subTopicId,
+        subTopicName: question.subTopic?.name,
         marks: question.marks,
         negativeMarks: question.negativeMarks,
         difficulty: question.difficulty,
@@ -233,10 +213,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('CREATE QUESTION ERROR:', error)
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ 
-        error: 'Validation failed', 
-        details: error.errors 
-      }, { status: 400 })
+      return NextResponse.json({ error: 'Validation failed', details: error.errors }, { status: 400 })
     }
     return NextResponse.json({ 
       error: 'Internal Server Error',

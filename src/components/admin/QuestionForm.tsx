@@ -13,10 +13,8 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Save, ArrowLeft } from 'lucide-react';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 
-// Helper: strip HTML tags to get plain text for validation length check
 const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
 
-// Validation schema
 const questionSchema = z.object({
   statement: z.string().refine((v) => stripHtml(v).length >= 5, {
     message: 'Question statement is required (min 5 characters)',
@@ -24,30 +22,25 @@ const questionSchema = z.object({
   subjectId: z.string().min(1, 'Subject is required'),
   topicId: z.string().optional(),
   topicName: z.string().optional(),
+  subTopicId: z.string().optional(),   // ✅ NEW
+  subTopicName: z.string().optional(), // ✅ NEW
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number().min(0.5),
   negativeMarks: z.number().min(0),
-  optionA: z.string().refine((v) => stripHtml(v).length >= 1, {
-    message: 'Option A is required',
-  }),
-  optionB: z.string().refine((v) => stripHtml(v).length >= 1, {
-    message: 'Option B is required',
-  }),
-  optionC: z.string().refine((v) => stripHtml(v).length >= 1, {
-    message: 'Option C is required',
-  }),
-  optionD: z.string().refine((v) => stripHtml(v).length >= 1, {
-    message: 'Option D is required',
-  }),
+  optionA: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option A is required' }),
+  optionB: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option B is required' }),
+  optionC: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option C is required' }),
+  optionD: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option D is required' }),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
 }).refine(
   (data) => data.topicId || data.topicName,
-  {
-    message: 'Topic is required',
-    path: ['topicId'],
-  }
+  { message: 'Topic is required', path: ['topicId'] }
+).refine(
+  // ✅ NEW: subTopic required — either selected or named
+  (data) => data.subTopicId || data.subTopicName,
+  { message: 'SubTopic is required', path: ['subTopicId'] }
 );
 
 type QuestionFormData = z.infer<typeof questionSchema>;
@@ -63,6 +56,14 @@ interface Topic {
   name: string;
   slug: string;
   subjectId: string;
+}
+
+// ✅ NEW
+interface SubTopic {
+  id: string;
+  name: string;
+  slug: string;
+  topicId: string;
 }
 
 interface QuestionFormProps {
@@ -83,10 +84,13 @@ export function QuestionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [subTopics, setSubTopics] = useState<SubTopic[]>([]); // ✅ NEW
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingTopics, setLoadingTopics] = useState(false);
+  const [loadingSubTopics, setLoadingSubTopics] = useState(false); // ✅ NEW
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [topicMode, setTopicMode] = useState<'select' | 'create'>('select');
+  const [subTopicMode, setSubTopicMode] = useState<'select' | 'create'>('select'); // ✅ NEW
   
   const isEditMode = !!questionId;
 
@@ -116,6 +120,7 @@ export function QuestionForm({
   });
 
   const watchSubjectId = watch('subjectId');
+  const watchTopicId = watch('topicId'); // ✅ NEW
 
   // Fetch subjects on mount
   useEffect(() => {
@@ -127,7 +132,6 @@ export function QuestionForm({
         const data = await res.json();
         setSubjects(data || []);
       } catch (error) {
-        console.error('Failed to fetch subjects:', error);
         toast.error('Failed to load subjects');
       } finally {
         setLoadingSubjects(false);
@@ -141,34 +145,58 @@ export function QuestionForm({
     if (watchSubjectId && watchSubjectId !== selectedSubjectId) {
       setSelectedSubjectId(watchSubjectId);
       fetchTopicsForSubject(watchSubjectId);
+      // ✅ Reset subtopic when subject changes
+      setSubTopics([]);
+      setValue('subTopicId', '');
+      setValue('subTopicName', '');
     }
   }, [watchSubjectId]);
 
-  const fetchTopicsForSubject = async (subjectId: string) => {
-    if (!subjectId) {
-      setTopics([]);
-      return;
+  // ✅ NEW: Fetch subtopics when topic changes
+  useEffect(() => {
+    if (watchTopicId) {
+      fetchSubTopicsForTopic(watchTopicId);
+    } else {
+      setSubTopics([]);
+      setValue('subTopicId', '');
+      setValue('subTopicName', '');
     }
+  }, [watchTopicId]);
 
+  const fetchTopicsForSubject = async (subjectId: string) => {
+    if (!subjectId) { setTopics([]); return; }
     setLoadingTopics(true);
     try {
       const res = await fetch(`/api/admin/topics?subjectId=${subjectId}&isActive=true`);
       if (!res.ok) throw new Error('Failed to fetch topics');
       const data = await res.json();
       setTopics(data || []);
-      
-      if (data && data.length > 0) {
-        setTopicMode('select');
-      } else {
-        setTopicMode('create');
-      }
+      setTopicMode(data?.length > 0 ? 'select' : 'create');
     } catch (error) {
-      console.error('Failed to fetch topics:', error);
       toast.error('Failed to load topics');
       setTopics([]);
       setTopicMode('create');
     } finally {
       setLoadingTopics(false);
+    }
+  };
+
+  // ✅ NEW
+  const fetchSubTopicsForTopic = async (topicId: string) => {
+    if (!topicId) { setSubTopics([]); return; }
+    setLoadingSubTopics(true);
+    try {
+      const res = await fetch(`/api/admin/subtopics?topicId=${topicId}&isActive=true`);
+      if (!res.ok) throw new Error('Failed to fetch subtopics');
+      const data = await res.json();
+      setSubTopics(data || []);
+      setSubTopicMode(data?.length > 0 ? 'select' : 'create');
+    } catch (error) {
+      toast.error('Failed to load subtopics');
+      setSubTopics([]);
+      setSubTopicMode('create');
+    } finally {
+      setLoadingSubTopics(false);
     }
   };
 
@@ -216,6 +244,15 @@ export function QuestionForm({
         throw new Error('Please select or create a topic');
       }
 
+      // ✅ NEW: handle subTopic
+      if (subTopicMode === 'select' && data.subTopicId) {
+        payload.subTopicId = data.subTopicId;
+      } else if (subTopicMode === 'create' && data.subTopicName) {
+        payload.subTopicName = data.subTopicName;
+      } else {
+        throw new Error('Please select or create a subtopic');
+      }
+
       const url = isEditMode 
         ? `/api/admin/questions/${questionId}` 
         : '/api/admin/questions';
@@ -229,7 +266,6 @@ export function QuestionForm({
       });
 
       const result = await res.json();
-
       if (!res.ok) throw new Error(result.error || 'Failed to save question');
 
       toast.success(isEditMode ? 'Question updated successfully' : 'Question saved successfully');
@@ -237,11 +273,13 @@ export function QuestionForm({
       if (onSuccess) {
         onSuccess();
       } else if (!isEditMode) {
-        // Keep context (subject, topic, difficulty, marks) but clear content
+        // Keep context but clear content
         reset({
           subjectId: data.subjectId,
           topicId: data.topicId,
           topicName: data.topicName,
+          subTopicId: data.subTopicId,     // ✅ NEW
+          subTopicName: data.subTopicName, // ✅ NEW
           difficulty: data.difficulty,
           marks: data.marks,
           negativeMarks: data.negativeMarks,
@@ -264,11 +302,8 @@ export function QuestionForm({
   };
 
   const handleCancel = () => {
-    if (onCancel) {
-      onCancel();
-    } else {
-      window.history.back();
-    }
+    if (onCancel) onCancel();
+    else window.history.back();
   };
 
   const CardWrapper = mode === 'dialog' ? 'div' : Card;
@@ -300,8 +335,10 @@ export function QuestionForm({
       <CardContent className={mode === 'dialog' ? 'p-0' : ''}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           
-          {/* Subject & Topic Row — unchanged */}
-          <div className="grid gap-6 md:grid-cols-2 p-4 bg-slate-50 rounded-lg border border-slate-100">
+          {/* Subject / Topic / SubTopic Row */}
+          <div className="grid gap-6 md:grid-cols-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
+            
+            {/* Subject */}
             <div className="space-y-2">
               <Label>Subject *</Label>
               <select
@@ -321,6 +358,7 @@ export function QuestionForm({
               {errors.subjectId && <p className="text-xs text-red-500">{errors.subjectId.message}</p>}
             </div>
 
+            {/* Topic */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Topic *</Label>
@@ -331,6 +369,9 @@ export function QuestionForm({
                       setTopicMode(topicMode === 'select' ? 'create' : 'select');
                       setValue('topicId', '');
                       setValue('topicName', '');
+                      setSubTopics([]);
+                      setValue('subTopicId', '');
+                      setValue('subTopicName', '');
                     }}
                     className="text-xs text-primary hover:underline"
                   >
@@ -340,11 +381,7 @@ export function QuestionForm({
               </div>
 
               {!watchSubjectId ? (
-                <Input 
-                  disabled 
-                  placeholder="Select a subject first" 
-                  className="disabled:cursor-not-allowed"
-                />
+                <Input disabled placeholder="Select a subject first" />
               ) : loadingTopics ? (
                 <Input disabled placeholder="Loading topics..." />
               ) : topicMode === 'select' && topics.length > 0 ? (
@@ -360,10 +397,7 @@ export function QuestionForm({
                   ))}
                 </select>
               ) : (
-                <Input 
-                  {...register('topicName')} 
-                  placeholder="e.g. Thermodynamics" 
-                />
+                <Input {...register('topicName')} placeholder="e.g. Thermodynamics" />
               )}
               
               {(errors.topicId || errors.topicName) && (
@@ -371,16 +405,62 @@ export function QuestionForm({
                   {errors.topicId?.message || errors.topicName?.message}
                 </p>
               )}
-              
               {topics.length === 0 && watchSubjectId && !loadingTopics && (
-                <p className="text-xs text-muted-foreground">
-                  No topics found. Create a new one.
+                <p className="text-xs text-muted-foreground">No topics found. Create a new one.</p>
+              )}
+            </div>
+
+            {/* ✅ NEW: SubTopic */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>SubTopic *</Label>
+                {subTopics.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubTopicMode(subTopicMode === 'select' ? 'create' : 'select');
+                      setValue('subTopicId', '');
+                      setValue('subTopicName', '');
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {subTopicMode === 'select' ? '+ Create New' : 'Select Existing'}
+                  </button>
+                )}
+              </div>
+
+              {!watchTopicId && topicMode === 'select' ? (
+                <Input disabled placeholder="Select a topic first" />
+              ) : loadingSubTopics ? (
+                <Input disabled placeholder="Loading subtopics..." />
+              ) : subTopicMode === 'select' && subTopics.length > 0 ? (
+                <select
+                  {...register('subTopicId')}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">Select SubTopic</option>
+                  {subTopics.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input {...register('subTopicName')} placeholder="e.g. Boyle's Law" />
+              )}
+
+              {(errors.subTopicId || errors.subTopicName) && (
+                <p className="text-xs text-red-500">
+                  {errors.subTopicId?.message || errors.subTopicName?.message}
                 </p>
+              )}
+              {subTopics.length === 0 && (watchTopicId || topicMode === 'create') && !loadingSubTopics && (
+                <p className="text-xs text-muted-foreground">No subtopics found. Create a new one.</p>
               )}
             </div>
           </div>
 
-          {/* Question Statement — RichTextEditor */}
+          {/* Question Statement */}
           <div className="space-y-2">
             <Label>Question Statement *</Label>
             <Controller
@@ -400,7 +480,7 @@ export function QuestionForm({
             )}
           </div>
 
-          {/* Options Grid — RichTextEditor for each option */}
+          {/* Options Grid */}
           <div className="grid gap-4 md:grid-cols-2">
             {(['A', 'B', 'C', 'D'] as const).map((opt) => (
               <div key={opt} className="space-y-2">
@@ -437,7 +517,7 @@ export function QuestionForm({
             ))}
           </div>
 
-          {/* Difficulty / Marks / Negative — unchanged */}
+          {/* Difficulty / Marks / Negative */}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Difficulty</Label>
@@ -460,7 +540,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* Explanation — RichTextEditor */}
+          {/* Explanation */}
           <div className="space-y-2">
             <Label>Explanation (Optional)</Label>
             <Controller
@@ -470,14 +550,14 @@ export function QuestionForm({
                 <RichTextEditor
                   value={field.value || ''}
                   onChange={field.onChange}
-                  placeholder="Why is this the correct answer? You can add images here too."
+                  placeholder="Why is this the correct answer?"
                   minHeight="80px"
                 />
               )}
             />
           </div>
 
-          {/* Active Status for Edit Mode — unchanged */}
+          {/* Active Status for Edit Mode */}
           {isEditMode && (
             <div className="flex items-center space-x-2">
               <input

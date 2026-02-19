@@ -7,7 +7,7 @@ export interface Exam {
   subject: string;
   subjectSlug: string;
   thumbnail: string;
-  duration: number; // in minutes
+  duration: number;
   totalQuestions: number;
   totalMarks: number;
   difficulty: 'easy' | 'medium' | 'hard';
@@ -24,6 +24,8 @@ export interface Question {
   statement: string;
   imageUrl: string | null;
   topic: string;
+  subTopic?: string;    // ✅ NEW
+  subTopicId?: string;  // ✅ NEW
   difficulty: 'easy' | 'medium' | 'hard';
   marks: number;
   negativeMarks: number;
@@ -39,20 +41,20 @@ export interface QuestionOption {
 }
 
 export type QuestionStatus = 
-  | 'not-visited'    // Not clicked yet (white/gray)
-  | 'not-answered'   // Visited but no answer (red)
-  | 'answered'       // Answered (green)
-  | 'marked'         // Marked for review (orange/yellow)
-  | 'answered-marked'; // Answered + marked (purple)
+  | 'not-visited'
+  | 'not-answered'
+  | 'answered'
+  | 'marked'
+  | 'answered-marked';
 
 export interface ExamState {
   examId: string;
   currentQuestionIndex: number;
-  answers: Record<string, string>; // questionId -> selectedOption
+  answers: Record<string, string>;
   questionStates: Record<string, QuestionStatus>;
-  markedForReview: string[]; // questionIds
-  visitedQuestions: string[]; // questionIds
-  timeLeft: number; // in seconds
+  markedForReview: string[];
+  visitedQuestions: string[];
+  timeLeft: number;
   startTime: Date;
   tabSwitchCount: number;
 }
@@ -63,13 +65,14 @@ export interface ExamAttempt {
   userId: string;
   startedAt: Date;
   submittedAt?: Date;
-  timeSpent: number; // in seconds
+  timeSpent: number;
   answers: Record<string, string>;
   score: number;
   totalMarks: number;
   percentage: number;
   rank?: number;
 }
+
 // ============================================
 // LEADERBOARD TYPES
 // ============================================
@@ -81,7 +84,7 @@ export interface LeaderboardEntry {
   userImage?: string | null;
   score: number;
   percentage: number;
-  timeTaken: number; // in seconds
+  timeTaken: number;
   submittedAt: string;
   isCurrentUser?: boolean;
 }

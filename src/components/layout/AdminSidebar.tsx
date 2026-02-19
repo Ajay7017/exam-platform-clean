@@ -14,8 +14,9 @@ import {
   FolderTree,
   ChevronRight,
   Image,
-  List, // Added for Topics
-  ClipboardList, // Added for Exams
+  List,
+  Layers,  // ✅ NEW: for SubTopics
+  ClipboardList,
 } from 'lucide-react';
 
 export function AdminSidebar() {
@@ -25,67 +26,31 @@ export function AdminSidebar() {
     {
       title: 'Overview',
       items: [
-        {
-          label: 'Dashboard',
-          href: '/admin/dashboard',
-          icon: LayoutDashboard,
-        },
-        {
-          label: 'Analytics',
-          href: '/admin/analytics',
-          icon: BarChart3,
-        },
+        { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
+        { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
       ],
     },
     {
       title: 'Content Management',
       items: [
-        {
-          label: 'Subjects',
-          href: '/admin/subjects',
-          icon: FolderTree,
-        },
-        {
-          label: 'Topics',
-          href: '/admin/topics',
-          icon: List,
-        },
-        {
-          label: 'Question Bank',
-          href: '/admin/questions',
-          icon: FileQuestion,
-          
-        },
-        {
-          label: 'Image Upload',
-          href: '/admin/images',
-          icon: Image,
-        },
-        {
-          label: 'Exam Management',
-          href: '/admin/exams',
-          icon: ClipboardList,
-        },
+        { label: 'Subjects', href: '/admin/subjects', icon: FolderTree },
+        { label: 'Topics', href: '/admin/topics', icon: List },
+        { label: 'SubTopics', href: '/admin/subtopics', icon: Layers }, // ✅ NEW
+        { label: 'Question Bank', href: '/admin/questions', icon: FileQuestion },
+        { label: 'Image Upload', href: '/admin/images', icon: Image },
+        { label: 'Exam Management', href: '/admin/exams', icon: ClipboardList },
       ],
     },
     {
       title: 'Users',
       items: [
-        {
-          label: 'User Management',
-          href: '/admin/users',
-          icon: Users,
-        },
+        { label: 'User Management', href: '/admin/users', icon: Users },
       ],
     },
     {
       title: 'System',
       items: [
-        {
-          label: 'Settings',
-          href: '/admin/settings',
-          icon: Settings,
-        },
+        { label: 'Settings', href: '/admin/settings', icon: Settings },
       ],
     },
   ];
@@ -105,7 +70,6 @@ export function AdminSidebar() {
                 {group.items.map((item) => {
                   const isActive = pathname === item.href;
                   const Icon = item.icon;
-
                   return (
                     <li key={item.href}>
                       <Link
@@ -119,11 +83,6 @@ export function AdminSidebar() {
                       >
                         <Icon className="h-5 w-5 shrink-0" />
                         <span className="flex-1">{item.label}</span>
-                        {item.badge && (
-                          <span className="rounded-full bg-primary-500 px-2 py-0.5 text-xs font-semibold text-white">
-                            {item.badge}
-                          </span>
-                        )}
                         {isActive && (
                           <ChevronRight className="h-4 w-4 shrink-0 text-primary-500" />
                         )}

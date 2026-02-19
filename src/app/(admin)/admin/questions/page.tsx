@@ -51,21 +51,15 @@ function stripHtml(html: string) {
     .trim()
 }
 
-interface Subject {
-  id: string
-  name: string
-}
-
-interface Topic {
-  id: string
-  name: string
-  subjectId: string
-}
+interface Subject { id: string; name: string }
+interface Topic { id: string; name: string; subjectId: string }
+interface SubTopic { id: string; name: string; topicId: string } // ✅ NEW
 
 interface Question {
   id: string
   statement: string
   topicName: string
+  subTopicName?: string // ✅ NEW
   subjectName: string
   marks: number
   negativeMarks: number
@@ -77,6 +71,7 @@ interface Question {
 interface QuestionDetail extends Question {
   topic: string
   subject: string
+  subTopic?: string // ✅ NEW
   optionA: string
   optionB: string
   optionC: string
@@ -95,10 +90,13 @@ export default function AdminQuestionsPage() {
   const [difficulty, setDifficulty] = useState('all')
   const [subjectId, setSubjectId] = useState('all')
   const [topicId, setTopicId] = useState('all')
+  const [subTopicId, setSubTopicId] = useState('all') // ✅ NEW
 
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [filteredTopics, setFilteredTopics] = useState<Topic[]>([])
+  const [subTopics, setSubTopics] = useState<SubTopic[]>([])           // ✅ NEW
+  const [filteredSubTopics, setFilteredSubTopics] = useState<SubTopic[]>([]) // ✅ NEW
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [viewQuestion, setViewQuestion] = useState<QuestionDetail | null>(null)
@@ -113,13 +111,13 @@ export default function AdminQuestionsPage() {
   const [deleteQuestionName, setDeleteQuestionName] = useState('')
   const [deleting, setDeleting] = useState(false)
 
-  // Fetch subjects and topics on mount
   useEffect(() => {
     fetchSubjects()
     fetchTopics()
+    fetchAllSubTopics() // ✅ NEW
   }, [])
 
-  // When subject changes, filter topics and reset topic selection
+  // Filter topics by subject
   useEffect(() => {
     if (subjectId === 'all') {
       setFilteredTopics(topics)
@@ -127,11 +125,22 @@ export default function AdminQuestionsPage() {
       setFilteredTopics(topics.filter(t => t.subjectId === subjectId))
     }
     setTopicId('all')
+    setSubTopicId('all') // ✅ NEW: reset subtopic when subject changes
   }, [subjectId, topics])
+
+  // ✅ NEW: Filter subtopics by topic
+  useEffect(() => {
+    if (topicId === 'all') {
+      setFilteredSubTopics(subTopics)
+    } else {
+      setFilteredSubTopics(subTopics.filter(st => st.topicId === topicId))
+    }
+    setSubTopicId('all')
+  }, [topicId, subTopics])
 
   useEffect(() => {
     fetchQuestions()
-  }, [page, difficulty, subjectId, topicId])
+  }, [page, difficulty, subjectId, topicId, subTopicId]) // ✅ added subTopicId
 
   const fetchSubjects = async () => {
     try {
@@ -149,11 +158,24 @@ export default function AdminQuestionsPage() {
       const res = await fetch('/api/admin/topics')
       if (!res.ok) return
       const data = await res.json()
-      const topicList = data.topics || data || []
-      setTopics(topicList)
-      setFilteredTopics(topicList)
+      const list = data.topics || data || []
+      setTopics(list)
+      setFilteredTopics(list)
     } catch (e) {
       console.error('Failed to fetch topics', e)
+    }
+  }
+
+  // ✅ NEW
+  const fetchAllSubTopics = async () => {
+    try {
+      const res = await fetch('/api/admin/subtopics')
+      if (!res.ok) return
+      const data = await res.json()
+      setSubTopics(data || [])
+      setFilteredSubTopics(data || [])
+    } catch (e) {
+      console.error('Failed to fetch subtopics', e)
     }
   }
 
@@ -165,46 +187,43 @@ export default function AdminQuestionsPage() {
       if (search) params.append('search', search)
       if (subjectId !== 'all') params.append('subjectId', subjectId)
       if (topicId !== 'all') params.append('topicId', topicId)
+      if (subTopicId !== 'all') params.append('subTopicId', subTopicId) // ✅ NEW
 
       const response = await fetch(`/api/admin/questions?${params}`)
       if (!response.ok) throw new Error('Failed to fetch questions')
-
       const data = await response.json()
       setQuestions(data.questions || [])
       setTotalPages(data.pagination?.totalPages || 1)
       setTotal(data.pagination?.total || 0)
     } catch (error) {
-      console.error('Error fetching questions:', error)
       toast.error('Failed to load questions')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSearch = () => {
-    setPage(1)
-    fetchQuestions()
-  }
+  const handleSearch = () => { setPage(1); fetchQuestions() }
 
   const handleClearFilters = () => {
     setSearch('')
     setDifficulty('all')
     setSubjectId('all')
     setTopicId('all')
+    setSubTopicId('all') // ✅ NEW
     setPage(1)
   }
 
-  const hasActiveFilters = search || difficulty !== 'all' || subjectId !== 'all' || topicId !== 'all'
+  const hasActiveFilters = search || difficulty !== 'all' || subjectId !== 'all' || topicId !== 'all' || subTopicId !== 'all' // ✅ NEW
 
   const handleView = async (questionId: string) => {
     setLoadingView(true)
     setViewDialogOpen(true)
     try {
       const response = await fetch(`/api/admin/questions/${questionId}`)
-      if (!response.ok) throw new Error('Failed to fetch question')
+      if (!response.ok) throw new Error()
       const data = await response.json()
       setViewQuestion(data.question)
-    } catch (error) {
+    } catch {
       toast.error('Failed to load question details')
       setViewDialogOpen(false)
     } finally {
@@ -215,19 +234,19 @@ export default function AdminQuestionsPage() {
   const handleEdit = async (questionId: string) => {
     try {
       const response = await fetch(`/api/admin/questions/${questionId}`)
-      if (!response.ok) throw new Error('Failed to fetch question')
+      if (!response.ok) throw new Error()
       const data = await response.json()
       setEditQuestionId(questionId)
       setEditQuestionData(data.question)
       setEditDialogOpen(true)
-    } catch (error) {
+    } catch {
       toast.error('Failed to load question for editing')
     }
   }
 
-  const handleDeleteClick = (questionId: string, questionStatement: string) => {
+  const handleDeleteClick = (questionId: string, statement: string) => {
     setDeleteQuestionId(questionId)
-    setDeleteQuestionName(stripHtml(questionStatement))
+    setDeleteQuestionName(stripHtml(statement))
     setDeleteDialogOpen(true)
   }
 
@@ -267,12 +286,10 @@ export default function AdminQuestionsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => window.location.href = '/admin/questions/import'}>
-            <Upload className="w-4 h-4 mr-2" />
-            Import Questions
+            <Upload className="w-4 h-4 mr-2" />Import Questions
           </Button>
           <Button onClick={() => window.location.href = '/admin/questions/new'}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Question
+            <Plus className="w-4 h-4 mr-2" />Add Question
           </Button>
         </div>
       </div>
@@ -280,7 +297,7 @@ export default function AdminQuestionsPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6"> {/* ✅ 6 cols now */}
             {/* Search */}
             <div className="lg:col-span-2 flex gap-2">
               <Input
@@ -294,37 +311,44 @@ export default function AdminQuestionsPage() {
               </Button>
             </div>
 
-            {/* Subject filter */}
+            {/* Subject */}
             <Select value={subjectId} onValueChange={val => { setSubjectId(val); setPage(1) }}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Subjects" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="All Subjects" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Subjects</SelectItem>
-                {subjects.map(s => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                ))}
+                {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
 
-            {/* Topic filter — only shows topics for selected subject */}
-            <Select value={topicId} onValueChange={val => { setTopicId(val); setPage(1) }} disabled={filteredTopics.length === 0}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Topics" />
-              </SelectTrigger>
+            {/* Topic */}
+            <Select
+              value={topicId}
+              onValueChange={val => { setTopicId(val); setPage(1) }}
+              disabled={filteredTopics.length === 0}
+            >
+              <SelectTrigger><SelectValue placeholder="All Topics" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Topics</SelectItem>
-                {filteredTopics.map(t => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
+                {filteredTopics.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
               </SelectContent>
             </Select>
 
-            {/* Difficulty filter */}
+            {/* ✅ NEW: SubTopic */}
+            <Select
+              value={subTopicId}
+              onValueChange={val => { setSubTopicId(val); setPage(1) }}
+              disabled={filteredSubTopics.length === 0}
+            >
+              <SelectTrigger><SelectValue placeholder="All SubTopics" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All SubTopics</SelectItem>
+                {filteredSubTopics.map(st => <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            {/* Difficulty */}
             <Select value={difficulty} onValueChange={val => { setDifficulty(val); setPage(1) }}>
-              <SelectTrigger>
-                <SelectValue placeholder="Difficulty" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Difficulties</SelectItem>
                 <SelectItem value="easy">Easy</SelectItem>
@@ -334,13 +358,14 @@ export default function AdminQuestionsPage() {
             </Select>
           </div>
 
-          {/* Active filters + clear */}
+          {/* Active filters */}
           {hasActiveFilters && (
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t flex-wrap">
               <span className="text-xs text-muted-foreground">Active filters:</span>
               {search && <Badge variant="secondary" className="text-xs">Search: "{search}"</Badge>}
               {subjectId !== 'all' && <Badge variant="secondary" className="text-xs">Subject: {subjects.find(s => s.id === subjectId)?.name}</Badge>}
               {topicId !== 'all' && <Badge variant="secondary" className="text-xs">Topic: {filteredTopics.find(t => t.id === topicId)?.name}</Badge>}
+              {subTopicId !== 'all' && <Badge variant="secondary" className="text-xs">SubTopic: {filteredSubTopics.find(st => st.id === subTopicId)?.name}</Badge>} {/* ✅ NEW */}
               {difficulty !== 'all' && <Badge variant="secondary" className="text-xs">Difficulty: {difficulty}</Badge>}
               <Button variant="ghost" size="sm" onClick={handleClearFilters} className="text-xs h-6 ml-auto">
                 Clear all filters
@@ -368,6 +393,7 @@ export default function AdminQuestionsPage() {
                     <TableHead>Question</TableHead>
                     <TableHead>Subject</TableHead>
                     <TableHead>Topic</TableHead>
+                    <TableHead>SubTopic</TableHead> {/* ✅ NEW */}
                     <TableHead>Marks</TableHead>
                     <TableHead>Difficulty</TableHead>
                     <TableHead>Status</TableHead>
@@ -378,7 +404,7 @@ export default function AdminQuestionsPage() {
                 <TableBody>
                   {questions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12">
+                      <TableCell colSpan={10} className="text-center py-12"> {/* ✅ 10 cols */}
                         <div className="flex flex-col items-center gap-2">
                           <Search className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-600">No questions found</p>
@@ -386,9 +412,7 @@ export default function AdminQuestionsPage() {
                             {hasActiveFilters ? 'Try adjusting your filters' : 'Add your first question to get started!'}
                           </p>
                           {hasActiveFilters && (
-                            <Button variant="outline" size="sm" onClick={handleClearFilters}>
-                              Clear filters
-                            </Button>
+                            <Button variant="outline" size="sm" onClick={handleClearFilters}>Clear filters</Button>
                           )}
                         </div>
                       </TableCell>
@@ -399,16 +423,16 @@ export default function AdminQuestionsPage() {
                         <TableCell>
                           <input type="checkbox" className="rounded border-gray-300" />
                         </TableCell>
-                        <TableCell className="max-w-md">
-                          <p
-                            className="font-medium truncate text-sm"
-                            title={stripHtml(question.statement)}
-                          >
+                        <TableCell className="max-w-xs">
+                          <p className="font-medium truncate text-sm" title={stripHtml(question.statement)}>
                             {stripHtml(question.statement) || '(Image/rich content question)'}
                           </p>
                         </TableCell>
                         <TableCell>{question.subjectName}</TableCell>
                         <TableCell>{question.topicName}</TableCell>
+                        <TableCell className="text-gray-500 text-sm"> {/* ✅ NEW */}
+                          {question.subTopicName || <span className="text-gray-300">—</span>}
+                        </TableCell>
                         <TableCell>
                           <div className="text-sm">
                             <div className="text-green-600">+{question.marks}</div>
@@ -430,13 +454,13 @@ export default function AdminQuestionsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" onClick={() => handleView(question.id)} title="View details">
+                            <Button variant="ghost" size="icon" onClick={() => handleView(question.id)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleEdit(question.id)} title="Edit question">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(question.id)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(question.id, question.statement)} title="Delete question">
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(question.id, question.statement)}>
                               <Trash2 className="h-4 w-4 text-red-600" />
                             </Button>
                           </div>
@@ -451,13 +475,9 @@ export default function AdminQuestionsPage() {
 
           {totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-6">
-              <Button variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
+              <Button variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
               <div className="flex items-center px-4">Page {page} of {totalPages}</div>
-              <Button variant="outline" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                Next
-              </Button>
+              <Button variant="outline" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
             </div>
           )}
         </>
@@ -470,7 +490,6 @@ export default function AdminQuestionsPage() {
             <DialogTitle>Question Details</DialogTitle>
             <DialogDescription>Complete information about this question</DialogDescription>
           </DialogHeader>
-
           {loadingView ? (
             <div className="flex justify-center items-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -486,6 +505,13 @@ export default function AdminQuestionsPage() {
                   <p className="text-sm text-gray-600">Topic</p>
                   <p className="font-medium">{viewQuestion.topic}</p>
                 </div>
+                {/* ✅ NEW */}
+                {viewQuestion.subTopic && (
+                  <div>
+                    <p className="text-sm text-gray-600">SubTopic</p>
+                    <p className="font-medium">{viewQuestion.subTopic}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-sm text-gray-600">Difficulty</p>
                   <Badge className={getDifficultyColor(viewQuestion.difficulty)}>
@@ -515,12 +541,9 @@ export default function AdminQuestionsPage() {
                   const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail] as string
                   const isCorrect = viewQuestion.correctAnswer === opt
                   return (
-                    <div
-                      key={opt}
-                      className={`p-3 rounded-lg border-2 flex items-start gap-3 ${
-                        isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'
-                      }`}
-                    >
+                    <div key={opt} className={`p-3 rounded-lg border-2 flex items-start gap-3 ${
+                      isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'
+                    }`}>
                       <div className="flex items-center gap-2 mt-0.5 shrink-0">
                         <span className="font-bold text-sm">{opt}.</span>
                         {isCorrect && <CheckCircle2 className="w-5 h-5 text-green-600" />}
@@ -567,17 +590,14 @@ export default function AdminQuestionsPage() {
               questionId={editQuestionId}
               initialData={editQuestionData}
               mode="dialog"
-              onSuccess={() => {
-                setEditDialogOpen(false)
-                fetchQuestions()
-              }}
+              onSuccess={() => { setEditDialogOpen(false); fetchQuestions() }}
               onCancel={() => setEditDialogOpen(false)}
             />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* DELETE CONFIRMATION DIALOG */}
+      {/* DELETE DIALOG */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -587,23 +607,16 @@ export default function AdminQuestionsPage() {
               <div className="mt-3 p-3 bg-gray-100 rounded-lg">
                 <p className="font-medium text-gray-900 line-clamp-2">{deleteQuestionName}</p>
               </div>
-              <p className="mt-3 text-red-600">
-                This action cannot be undone. The question will be removed from the database.
-              </p>
+              <p className="mt-3 text-red-600">This action cannot be undone.</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {deleting ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>
-              ) : (
-                <><Trash2 className="w-4 h-4 mr-2" />Delete Question</>
-              )}
+            <AlertDialogAction onClick={handleDeleteConfirm} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+              {deleting
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>
+                : <><Trash2 className="w-4 h-4 mr-2" />Delete Question</>
+              }
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
