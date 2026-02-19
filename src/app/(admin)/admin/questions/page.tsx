@@ -44,12 +44,22 @@ import { QuestionForm } from '@/components/admin/QuestionForm'
 import { toast } from 'sonner'
 import { Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2 } from 'lucide-react'
 
-// Strip HTML tags to get plain text for table preview truncation
 function stripHtml(html: string) {
   return html
     .replace(/<math-node[^>]*><\/math-node>/g, '[Math]')
     .replace(/<[^>]*>/g, '')
     .trim()
+}
+
+interface Subject {
+  id: string
+  name: string
+}
+
+interface Topic {
+  id: string
+  name: string
+  subjectId: string
 }
 
 interface Question {
@@ -83,6 +93,12 @@ export default function AdminQuestionsPage() {
   const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
   const [difficulty, setDifficulty] = useState('all')
+  const [subjectId, setSubjectId] = useState('all')
+  const [topicId, setTopicId] = useState('all')
+
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [topics, setTopics] = useState<Topic[]>([])
+  const [filteredTopics, setFilteredTopics] = useState<Topic[]>([])
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [viewQuestion, setViewQuestion] = useState<QuestionDetail | null>(null)
@@ -97,9 +113,49 @@ export default function AdminQuestionsPage() {
   const [deleteQuestionName, setDeleteQuestionName] = useState('')
   const [deleting, setDeleting] = useState(false)
 
+  // Fetch subjects and topics on mount
+  useEffect(() => {
+    fetchSubjects()
+    fetchTopics()
+  }, [])
+
+  // When subject changes, filter topics and reset topic selection
+  useEffect(() => {
+    if (subjectId === 'all') {
+      setFilteredTopics(topics)
+    } else {
+      setFilteredTopics(topics.filter(t => t.subjectId === subjectId))
+    }
+    setTopicId('all')
+  }, [subjectId, topics])
+
   useEffect(() => {
     fetchQuestions()
-  }, [page, difficulty])
+  }, [page, difficulty, subjectId, topicId])
+
+  const fetchSubjects = async () => {
+    try {
+      const res = await fetch('/api/admin/subjects')
+      if (!res.ok) return
+      const data = await res.json()
+      setSubjects(data.subjects || data || [])
+    } catch (e) {
+      console.error('Failed to fetch subjects', e)
+    }
+  }
+
+  const fetchTopics = async () => {
+    try {
+      const res = await fetch('/api/admin/topics')
+      if (!res.ok) return
+      const data = await res.json()
+      const topicList = data.topics || data || []
+      setTopics(topicList)
+      setFilteredTopics(topicList)
+    } catch (e) {
+      console.error('Failed to fetch topics', e)
+    }
+  }
 
   const fetchQuestions = async () => {
     try {
@@ -107,6 +163,8 @@ export default function AdminQuestionsPage() {
       const params = new URLSearchParams({ page: page.toString(), limit: '20' })
       if (difficulty !== 'all') params.append('difficulty', difficulty)
       if (search) params.append('search', search)
+      if (subjectId !== 'all') params.append('subjectId', subjectId)
+      if (topicId !== 'all') params.append('topicId', topicId)
 
       const response = await fetch(`/api/admin/questions?${params}`)
       if (!response.ok) throw new Error('Failed to fetch questions')
@@ -127,6 +185,16 @@ export default function AdminQuestionsPage() {
     setPage(1)
     fetchQuestions()
   }
+
+  const handleClearFilters = () => {
+    setSearch('')
+    setDifficulty('all')
+    setSubjectId('all')
+    setTopicId('all')
+    setPage(1)
+  }
+
+  const hasActiveFilters = search || difficulty !== 'all' || subjectId !== 'all' || topicId !== 'all'
 
   const handleView = async (questionId: string) => {
     setLoadingView(true)
@@ -212,21 +280,48 @@ export default function AdminQuestionsPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div className="lg:col-span-2">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search questions..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                />
-                <Button onClick={handleSearch} variant="outline">
-                  <Search className="w-4 h-4" />
-                </Button>
-              </div>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+            {/* Search */}
+            <div className="lg:col-span-2 flex gap-2">
+              <Input
+                placeholder="Search questions..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              />
+              <Button onClick={handleSearch} variant="outline">
+                <Search className="w-4 h-4" />
+              </Button>
             </div>
-            <Select value={difficulty} onValueChange={setDifficulty}>
+
+            {/* Subject filter */}
+            <Select value={subjectId} onValueChange={val => { setSubjectId(val); setPage(1) }}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Subjects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Subjects</SelectItem>
+                {subjects.map(s => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Topic filter — only shows topics for selected subject */}
+            <Select value={topicId} onValueChange={val => { setTopicId(val); setPage(1) }} disabled={filteredTopics.length === 0}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Topics" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Topics</SelectItem>
+                {filteredTopics.map(t => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Difficulty filter */}
+            <Select value={difficulty} onValueChange={val => { setDifficulty(val); setPage(1) }}>
               <SelectTrigger>
                 <SelectValue placeholder="Difficulty" />
               </SelectTrigger>
@@ -237,12 +332,21 @@ export default function AdminQuestionsPage() {
                 <SelectItem value="hard">Hard</SelectItem>
               </SelectContent>
             </Select>
-            {(search || difficulty !== 'all') && (
-              <Button variant="ghost" onClick={() => { setSearch(''); setDifficulty('all'); setPage(1) }}>
-                Clear Filters
-              </Button>
-            )}
           </div>
+
+          {/* Active filters + clear */}
+          {hasActiveFilters && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+              <span className="text-xs text-muted-foreground">Active filters:</span>
+              {search && <Badge variant="secondary" className="text-xs">Search: "{search}"</Badge>}
+              {subjectId !== 'all' && <Badge variant="secondary" className="text-xs">Subject: {subjects.find(s => s.id === subjectId)?.name}</Badge>}
+              {topicId !== 'all' && <Badge variant="secondary" className="text-xs">Topic: {filteredTopics.find(t => t.id === topicId)?.name}</Badge>}
+              {difficulty !== 'all' && <Badge variant="secondary" className="text-xs">Difficulty: {difficulty}</Badge>}
+              <Button variant="ghost" size="sm" onClick={handleClearFilters} className="text-xs h-6 ml-auto">
+                Clear all filters
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -278,7 +382,14 @@ export default function AdminQuestionsPage() {
                         <div className="flex flex-col items-center gap-2">
                           <Search className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-600">No questions found</p>
-                          <p className="text-sm text-gray-500">Add your first question to get started!</p>
+                          <p className="text-sm text-gray-500">
+                            {hasActiveFilters ? 'Try adjusting your filters' : 'Add your first question to get started!'}
+                          </p>
+                          {hasActiveFilters && (
+                            <Button variant="outline" size="sm" onClick={handleClearFilters}>
+                              Clear filters
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -366,7 +477,6 @@ export default function AdminQuestionsPage() {
             </div>
           ) : viewQuestion ? (
             <div className="space-y-6">
-              {/* Metadata */}
               <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
                 <div>
                   <p className="text-sm text-gray-600">Subject</p>
@@ -392,7 +502,6 @@ export default function AdminQuestionsPage() {
                 </div>
               </div>
 
-              {/* Question Statement */}
               <div>
                 <Label className="text-sm text-gray-600">Question</Label>
                 <div className="mt-2 text-base leading-relaxed">
@@ -400,7 +509,6 @@ export default function AdminQuestionsPage() {
                 </div>
               </div>
 
-              {/* Options */}
               <div className="space-y-3">
                 <Label className="text-sm text-gray-600">Options</Label>
                 {(['A', 'B', 'C', 'D'] as const).map((opt) => {
@@ -425,7 +533,6 @@ export default function AdminQuestionsPage() {
                 })}
               </div>
 
-              {/* Explanation */}
               {viewQuestion.explanation && (
                 <div>
                   <Label className="text-sm text-gray-600">Explanation</Label>
@@ -435,7 +542,6 @@ export default function AdminQuestionsPage() {
                 </div>
               )}
 
-              {/* Status */}
               <div className="flex items-center gap-2">
                 <Label className="text-sm text-gray-600">Status:</Label>
                 <Badge className={viewQuestion.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
