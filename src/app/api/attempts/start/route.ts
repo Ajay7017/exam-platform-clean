@@ -15,6 +15,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { examId } = startExamSchema.parse(body)
 
+    // ✅ NEW: Check phone number before anything else
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { phone: true }
+    })
+
+    if (!user?.phone || user.phone.trim() === '') {
+      return NextResponse.json(
+        { 
+          error: 'Phone number required',
+          code: 'PHONE_REQUIRED',
+          message: 'Please add your phone number to your profile before taking an exam.'
+        },
+        { status: 403 }
+      )
+    }
+
     // 1. Get exam with all questions
     const exam = await prisma.exam.findUnique({
       where: { id: examId },
@@ -62,7 +79,6 @@ export async function POST(request: NextRequest) {
     })
 
     if (existingAttempt) {
-      // Return existing attempt instead of error
       return NextResponse.json(
         { 
           error: 'You already have an active attempt',
@@ -73,7 +89,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 3. Check if exam is free or purchased (skip for now)
+    // 3. Check if exam is free or purchased
     if (!exam.isFree && exam.isPaid) {
       const purchase = await prisma.purchase.findFirst({
         where: {
@@ -148,7 +164,7 @@ export async function POST(request: NextRequest) {
         sequence: index + 1,
         statement: q.statement,
         imageUrl: q.imageUrl,
-        topic: q.topic.name,
+        topic: q.topic?.name || 'General',
         marks: q.marks,
         negativeMarks: q.negativeMarks,
         difficulty: q.difficulty,
@@ -156,10 +172,7 @@ export async function POST(request: NextRequest) {
           key: o.optionKey,
           text: o.text,
           imageUrl: o.imageUrl
-          // ❌ NO isCorrect field!
         }))
-        // ❌ NO explanation field!
-        // ❌ NO correctAnswer field!
       }))
     })
 

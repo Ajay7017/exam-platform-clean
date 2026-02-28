@@ -22,8 +22,8 @@ const questionSchema = z.object({
   subjectId: z.string().min(1, 'Subject is required'),
   topicId: z.string().optional(),
   topicName: z.string().optional(),
-  subTopicId: z.string().optional(),   // ✅ NEW
-  subTopicName: z.string().optional(), // ✅ NEW
+  subTopicId: z.string().optional(),
+  subTopicName: z.string().optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number().min(0.5),
   negativeMarks: z.number().min(0),
@@ -38,7 +38,6 @@ const questionSchema = z.object({
   (data) => data.topicId || data.topicName,
   { message: 'Topic is required', path: ['topicId'] }
 ).refine(
-  // ✅ NEW: subTopic required — either selected or named
   (data) => data.subTopicId || data.subTopicName,
   { message: 'SubTopic is required', path: ['subTopicId'] }
 );
@@ -58,7 +57,6 @@ interface Topic {
   subjectId: string;
 }
 
-// ✅ NEW
 interface SubTopic {
   id: string;
   name: string;
@@ -84,13 +82,14 @@ export function QuestionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [subTopics, setSubTopics] = useState<SubTopic[]>([]); // ✅ NEW
+  const [subTopics, setSubTopics] = useState<SubTopic[]>([]);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingTopics, setLoadingTopics] = useState(false);
-  const [loadingSubTopics, setLoadingSubTopics] = useState(false); // ✅ NEW
+  const [loadingSubTopics, setLoadingSubTopics] = useState(false);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [selectedTopicId, setSelectedTopicId] = useState<string>(''); // ✅ FIX: track separately
   const [topicMode, setTopicMode] = useState<'select' | 'create'>('select');
-  const [subTopicMode, setSubTopicMode] = useState<'select' | 'create'>('select'); // ✅ NEW
+  const [subTopicMode, setSubTopicMode] = useState<'select' | 'create'>('select');
   
   const isEditMode = !!questionId;
 
@@ -120,46 +119,97 @@ export function QuestionForm({
   });
 
   const watchSubjectId = watch('subjectId');
-  const watchTopicId = watch('topicId'); // ✅ NEW
+  const watchTopicId = watch('topicId');
 
-  // Fetch subjects on mount
+  // ✅ FIX: Single init effect — fetches subjects, topics, subtopics all at once.
+  // In edit mode (initialData has subjectId/topicId/subTopicId), all three are
+  // fetched in parallel so there's no race condition between chained effects.
   useEffect(() => {
-    const fetchSubjects = async () => {
+    const init = async () => {
       setLoadingSubjects(true);
+
       try {
-        const res = await fetch('/api/admin/subjects?isActive=true');
-        if (!res.ok) throw new Error('Failed to fetch subjects');
-        const data = await res.json();
-        setSubjects(data || []);
+        // Always fetch subjects
+        const subjectsRes = await fetch('/api/admin/subjects?isActive=true');
+        if (!subjectsRes.ok) throw new Error('Failed to fetch subjects');
+        const subjectsData = await subjectsRes.json();
+        setSubjects(subjectsData || []);
+
+        // If edit mode — also fetch topics and subtopics in parallel
+        if (initialData?.subjectId && initialData?.topicId) {
+          setSelectedSubjectId(initialData.subjectId);
+          setSelectedTopicId(initialData.topicId);
+          // re-set subjectId after subjects load so <select> can match the option
+          setValue('subjectId', initialData.subjectId);
+          setLoadingTopics(true);
+          setLoadingSubTopics(true);
+
+          const [topicsRes, subTopicsRes] = await Promise.all([
+            fetch(`/api/admin/topics?subjectId=${initialData.subjectId}&isActive=true`),
+            fetch(`/api/admin/subtopics?topicId=${initialData.topicId}&isActive=true`),
+          ]);
+
+          const topicsData = topicsRes.ok ? await topicsRes.json() : [];
+          const subTopicsData = subTopicsRes.ok ? await subTopicsRes.json() : [];
+
+          setTopics(topicsData || []);
+          setSubTopics(subTopicsData || []);
+
+          // Restore selected topic
+          if (topicsData?.length > 0) {
+            setTopicMode('select');
+            setValue('topicId', initialData.topicId);
+          } else {
+            setTopicMode('create');
+          }
+
+          // Restore selected subtopic
+          if (subTopicsData?.length > 0 && initialData.subTopicId) {
+            setSubTopicMode('select');
+            setValue('subTopicId', initialData.subTopicId);
+          } else {
+            setSubTopicMode(subTopicsData?.length > 0 ? 'select' : 'create');
+          }
+
+          setLoadingTopics(false);
+          setLoadingSubTopics(false);
+        }
       } catch (error) {
-        toast.error('Failed to load subjects');
+        toast.error('Failed to load form data');
       } finally {
         setLoadingSubjects(false);
       }
     };
-    fetchSubjects();
-  }, []);
 
-  // Fetch topics when subject changes
+    init();
+  }, []); // runs once on mount only
+
+  // Fetch topics when user manually changes subject
   useEffect(() => {
     if (watchSubjectId && watchSubjectId !== selectedSubjectId) {
       setSelectedSubjectId(watchSubjectId);
-      fetchTopicsForSubject(watchSubjectId);
-      // ✅ Reset subtopic when subject changes
+      setValue('topicId', '');
+      setValue('topicName', '');
       setSubTopics([]);
       setValue('subTopicId', '');
       setValue('subTopicName', '');
+      setSelectedTopicId('');
+      fetchTopicsForSubject(watchSubjectId);
     }
   }, [watchSubjectId]);
 
-  // ✅ NEW: Fetch subtopics when topic changes
+  // Fetch subtopics when user manually changes topic
   useEffect(() => {
-    if (watchTopicId) {
+    if (watchTopicId && watchTopicId !== selectedTopicId) {
+      setSelectedTopicId(watchTopicId);
+      setValue('subTopicId', '');
+      setValue('subTopicName', '');
       fetchSubTopicsForTopic(watchTopicId);
-    } else {
+    } else if (!watchTopicId && selectedTopicId) {
       setSubTopics([]);
       setValue('subTopicId', '');
       setValue('subTopicName', '');
+      setSelectedTopicId('');
     }
   }, [watchTopicId]);
 
@@ -181,7 +231,6 @@ export function QuestionForm({
     }
   };
 
-  // ✅ NEW
   const fetchSubTopicsForTopic = async (topicId: string) => {
     if (!topicId) { setSubTopics([]); return; }
     setLoadingSubTopics(true);
@@ -200,7 +249,7 @@ export function QuestionForm({
     }
   };
 
-  // Load question data if in edit mode
+  // Load question data if in edit mode and no initialData provided
   useEffect(() => {
     if (questionId && !initialData) {
       const fetchQuestion = async () => {
@@ -244,7 +293,6 @@ export function QuestionForm({
         throw new Error('Please select or create a topic');
       }
 
-      // ✅ NEW: handle subTopic
       if (subTopicMode === 'select' && data.subTopicId) {
         payload.subTopicId = data.subTopicId;
       } else if (subTopicMode === 'create' && data.subTopicName) {
@@ -273,13 +321,12 @@ export function QuestionForm({
       if (onSuccess) {
         onSuccess();
       } else if (!isEditMode) {
-        // Keep context but clear content
         reset({
           subjectId: data.subjectId,
           topicId: data.topicId,
           topicName: data.topicName,
-          subTopicId: data.subTopicId,     // ✅ NEW
-          subTopicName: data.subTopicName, // ✅ NEW
+          subTopicId: data.subTopicId,
+          subTopicName: data.subTopicName,
           difficulty: data.difficulty,
           marks: data.marks,
           negativeMarks: data.negativeMarks,
@@ -410,7 +457,7 @@ export function QuestionForm({
               )}
             </div>
 
-            {/* ✅ NEW: SubTopic */}
+            {/* SubTopic */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>SubTopic *</Label>
