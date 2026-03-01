@@ -24,14 +24,19 @@ export interface Question {
   statement: string;
   imageUrl: string | null;
   topic: string;
-  subTopic?: string;    // ✅ NEW
-  subTopicId?: string;  // ✅ NEW
+  subTopic?: string;
+  subTopicId?: string;
   difficulty: 'easy' | 'medium' | 'hard';
   marks: number;
   negativeMarks: number;
   options: QuestionOption[];
   correctAnswer: string;
   explanation: string;
+  // ✅ NEW: NAT fields
+  type: 'mcq' | 'numerical';
+  correctAnswerExact?: number | null;
+  correctAnswerMin?: number | null;
+  correctAnswerMax?: number | null;
 }
 
 export interface QuestionOption {
@@ -50,7 +55,8 @@ export type QuestionStatus =
 export interface ExamState {
   examId: string;
   currentQuestionIndex: number;
-  answers: Record<string, string>;
+  // ✅ UPDATED: answers now support string (MCQ) or number (NAT)
+  answers: Record<string, string | number>;
   questionStates: Record<string, QuestionStatus>;
   markedForReview: string[];
   visitedQuestions: string[];

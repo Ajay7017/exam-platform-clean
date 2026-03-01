@@ -10,11 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Loader2, Plus, Save, ArrowLeft } from 'lucide-react';
+import { Loader2, Plus, Save, ArrowLeft, Hash, ListChecks } from 'lucide-react';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 
 const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
 
+// ✅ UPDATED: schema now conditional based on questionType
 const questionSchema = z.object({
   statement: z.string().refine((v) => stripHtml(v).length >= 5, {
     message: 'Question statement is required (min 5 characters)',
@@ -27,20 +28,80 @@ const questionSchema = z.object({
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number().min(0.5),
   negativeMarks: z.number().min(0),
-  optionA: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option A is required' }),
-  optionB: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option B is required' }),
-  optionC: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option C is required' }),
-  optionD: z.string().refine((v) => stripHtml(v).length >= 1, { message: 'Option D is required' }),
-  correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
+
+  // ✅ EXISTING: MCQ fields — now optional
+  optionA: z.string().optional(),
+  optionB: z.string().optional(),
+  optionC: z.string().optional(),
+  optionD: z.string().optional(),
+  correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
+
+  // ✅ NEW: NAT fields
+  questionType: z.enum(['mcq', 'numerical']).default('mcq'),
+  numericalAnswerType: z.enum(['exact', 'range']).optional(),
+  correctAnswerExact: z.number().optional().nullable(),
+  correctAnswerMin: z.number().optional().nullable(),
+  correctAnswerMax: z.number().optional().nullable(),
+
 }).refine(
   (data) => data.topicId || data.topicName,
   { message: 'Topic is required', path: ['topicId'] }
 ).refine(
   (data) => data.subTopicId || data.subTopicName,
   { message: 'SubTopic is required', path: ['subTopicId'] }
-);
+).refine(
+  // MCQ needs all options
+  (data) => {
+    if (data.questionType === 'mcq') {
+      return (
+        stripHtml(data.optionA || '').length >= 1 &&
+        stripHtml(data.optionB || '').length >= 1 &&
+        stripHtml(data.optionC || '').length >= 1 &&
+        stripHtml(data.optionD || '').length >= 1 &&
+        !!data.correctAnswer
+      )
+    }
+    return true
+  },
+  { message: 'All 4 options and correct answer are required for MCQ', path: ['optionA'] }
+).refine(
+  // NAT exact needs a number
+  (data) => {
+    if (data.questionType === 'numerical' && data.numericalAnswerType === 'exact') {
+      return data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
+    }
+    return true
+  },
+  { message: 'Exact answer is required', path: ['correctAnswerExact'] }
+).refine(
+  // NAT range needs min and max
+  (data) => {
+    if (data.questionType === 'numerical' && data.numericalAnswerType === 'range') {
+      return (
+        data.correctAnswerMin !== null && data.correctAnswerMin !== undefined &&
+        data.correctAnswerMax !== null && data.correctAnswerMax !== undefined
+      )
+    }
+    return true
+  },
+  { message: 'Both min and max values are required for range', path: ['correctAnswerMin'] }
+).refine(
+  // NAT range min must be less than max
+  (data) => {
+    if (
+      data.questionType === 'numerical' &&
+      data.numericalAnswerType === 'range' &&
+      data.correctAnswerMin !== null && data.correctAnswerMin !== undefined &&
+      data.correctAnswerMax !== null && data.correctAnswerMax !== undefined
+    ) {
+      return data.correctAnswerMin < data.correctAnswerMax
+    }
+    return true
+  },
+  { message: 'Min value must be less than max value', path: ['correctAnswerMin'] }
+)
 
 type QuestionFormData = z.infer<typeof questionSchema>;
 
@@ -72,10 +133,10 @@ interface QuestionFormProps {
   mode?: 'standalone' | 'dialog';
 }
 
-export function QuestionForm({ 
-  questionId, 
-  initialData, 
-  onSuccess, 
+export function QuestionForm({
+  questionId,
+  initialData,
+  onSuccess,
   onCancel,
   mode = 'standalone'
 }: QuestionFormProps) {
@@ -87,10 +148,18 @@ export function QuestionForm({
   const [loadingTopics, setLoadingTopics] = useState(false);
   const [loadingSubTopics, setLoadingSubTopics] = useState(false);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
-  const [selectedTopicId, setSelectedTopicId] = useState<string>(''); // ✅ FIX: track separately
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
   const [topicMode, setTopicMode] = useState<'select' | 'create'>('select');
   const [subTopicMode, setSubTopicMode] = useState<'select' | 'create'>('select');
-  
+
+  // ✅ NEW: question type state
+  const [questionType, setQuestionType] = useState<'mcq' | 'numerical'>(
+    (initialData?.questionType as 'mcq' | 'numerical') || 'mcq'
+  );
+  const [numericalAnswerType, setNumericalAnswerType] = useState<'exact' | 'range'>(
+    (initialData?.numericalAnswerType as 'exact' | 'range') || 'exact'
+  );
+
   const isEditMode = !!questionId;
 
   const {
@@ -115,31 +184,39 @@ export function QuestionForm({
       optionC: '',
       optionD: '',
       explanation: '',
+      questionType: 'mcq',
+      numericalAnswerType: 'exact',
+      correctAnswerExact: null,
+      correctAnswerMin: null,
+      correctAnswerMax: null,
     },
   });
 
   const watchSubjectId = watch('subjectId');
   const watchTopicId = watch('topicId');
 
-  // ✅ FIX: Single init effect — fetches subjects, topics, subtopics all at once.
-  // In edit mode (initialData has subjectId/topicId/subTopicId), all three are
-  // fetched in parallel so there's no race condition between chained effects.
+  // ✅ Keep form value in sync with local state
+  useEffect(() => {
+    setValue('questionType', questionType);
+  }, [questionType, setValue]);
+
+  useEffect(() => {
+    setValue('numericalAnswerType', numericalAnswerType);
+  }, [numericalAnswerType, setValue]);
+
+  // ✅ EXISTING: init effect — untouched
   useEffect(() => {
     const init = async () => {
       setLoadingSubjects(true);
-
       try {
-        // Always fetch subjects
         const subjectsRes = await fetch('/api/admin/subjects?isActive=true');
         if (!subjectsRes.ok) throw new Error('Failed to fetch subjects');
         const subjectsData = await subjectsRes.json();
         setSubjects(subjectsData || []);
 
-        // If edit mode — also fetch topics and subtopics in parallel
         if (initialData?.subjectId && initialData?.topicId) {
           setSelectedSubjectId(initialData.subjectId);
           setSelectedTopicId(initialData.topicId);
-          // re-set subjectId after subjects load so <select> can match the option
           setValue('subjectId', initialData.subjectId);
           setLoadingTopics(true);
           setLoadingSubTopics(true);
@@ -155,7 +232,6 @@ export function QuestionForm({
           setTopics(topicsData || []);
           setSubTopics(subTopicsData || []);
 
-          // Restore selected topic
           if (topicsData?.length > 0) {
             setTopicMode('select');
             setValue('topicId', initialData.topicId);
@@ -163,7 +239,6 @@ export function QuestionForm({
             setTopicMode('create');
           }
 
-          // Restore selected subtopic
           if (subTopicsData?.length > 0 && initialData.subTopicId) {
             setSubTopicMode('select');
             setValue('subTopicId', initialData.subTopicId);
@@ -180,11 +255,10 @@ export function QuestionForm({
         setLoadingSubjects(false);
       }
     };
-
     init();
-  }, []); // runs once on mount only
+  }, []);
 
-  // Fetch topics when user manually changes subject
+  // ✅ EXISTING: subject change effect — untouched
   useEffect(() => {
     if (watchSubjectId && watchSubjectId !== selectedSubjectId) {
       setSelectedSubjectId(watchSubjectId);
@@ -198,7 +272,7 @@ export function QuestionForm({
     }
   }, [watchSubjectId]);
 
-  // Fetch subtopics when user manually changes topic
+  // ✅ EXISTING: topic change effect — untouched
   useEffect(() => {
     if (watchTopicId && watchTopicId !== selectedTopicId) {
       setSelectedTopicId(watchTopicId);
@@ -213,6 +287,7 @@ export function QuestionForm({
     }
   }, [watchTopicId]);
 
+  // ✅ EXISTING: fetch functions — untouched
   const fetchTopicsForSubject = async (subjectId: string) => {
     if (!subjectId) { setTopics([]); return; }
     setLoadingTopics(true);
@@ -249,7 +324,7 @@ export function QuestionForm({
     }
   };
 
-  // Load question data if in edit mode and no initialData provided
+  // ✅ EXISTING: edit mode fetch — untouched
   useEffect(() => {
     if (questionId && !initialData) {
       const fetchQuestion = async () => {
@@ -258,6 +333,13 @@ export function QuestionForm({
           const data = await res.json();
           if (data.question) {
             reset(data.question);
+            // ✅ Also restore question type in local state
+            if (data.question.questionType) {
+              setQuestionType(data.question.questionType);
+            }
+            if (data.question.numericalAnswerType) {
+              setNumericalAnswerType(data.question.numericalAnswerType);
+            }
           }
         } catch (e) {
           toast.error('Failed to load question');
@@ -275,15 +357,12 @@ export function QuestionForm({
         difficulty: data.difficulty,
         marks: data.marks,
         negativeMarks: data.negativeMarks,
-        optionA: data.optionA,
-        optionB: data.optionB,
-        optionC: data.optionC,
-        optionD: data.optionD,
-        correctAnswer: data.correctAnswer,
         explanation: data.explanation,
         isActive: data.isActive,
+        questionType,
       };
 
+      // ✅ EXISTING: topic logic — untouched
       if (topicMode === 'select' && data.topicId) {
         payload.topicId = data.topicId;
       } else if (topicMode === 'create' && data.topicName) {
@@ -293,6 +372,7 @@ export function QuestionForm({
         throw new Error('Please select or create a topic');
       }
 
+      // ✅ EXISTING: subtopic logic — untouched
       if (subTopicMode === 'select' && data.subTopicId) {
         payload.subTopicId = data.subTopicId;
       } else if (subTopicMode === 'create' && data.subTopicName) {
@@ -301,10 +381,32 @@ export function QuestionForm({
         throw new Error('Please select or create a subtopic');
       }
 
-      const url = isEditMode 
-        ? `/api/admin/questions/${questionId}` 
+      // ✅ EXISTING: MCQ payload — untouched
+      if (questionType === 'mcq') {
+        payload.optionA = data.optionA;
+        payload.optionB = data.optionB;
+        payload.optionC = data.optionC;
+        payload.optionD = data.optionD;
+        payload.correctAnswer = data.correctAnswer;
+      }
+
+      // ✅ NEW: NAT payload
+      if (questionType === 'numerical') {
+        if (numericalAnswerType === 'exact') {
+          payload.correctAnswerExact = data.correctAnswerExact;
+          payload.correctAnswerMin = null;
+          payload.correctAnswerMax = null;
+        } else {
+          payload.correctAnswerExact = null;
+          payload.correctAnswerMin = data.correctAnswerMin;
+          payload.correctAnswerMax = data.correctAnswerMax;
+        }
+      }
+
+      const url = isEditMode
+        ? `/api/admin/questions/${questionId}`
         : '/api/admin/questions';
-      
+
       const method = isEditMode ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -338,6 +440,11 @@ export function QuestionForm({
           correctAnswer: 'A',
           explanation: '',
           isActive: true,
+          questionType,
+          numericalAnswerType,
+          correctAnswerExact: null,
+          correctAnswerMin: null,
+          correctAnswerMax: null,
         });
       }
 
@@ -366,8 +473,8 @@ export function QuestionForm({
                 {isEditMode ? 'Edit Question' : 'Add New Question'}
               </CardTitle>
               <CardDescription>
-                {isEditMode 
-                  ? 'Update question details below' 
+                {isEditMode
+                  ? 'Update question details below'
                   : 'Enter question details below. Subject & Topic persist after saving.'}
               </CardDescription>
             </div>
@@ -378,13 +485,44 @@ export function QuestionForm({
           </div>
         </CardHeader>
       )}
-      
+
       <CardContent className={mode === 'dialog' ? 'p-0' : ''}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          
-          {/* Subject / Topic / SubTopic Row */}
+
+          {/* ✅ NEW: Question Type Toggle */}
+          <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-sm font-medium text-slate-600">Question Type:</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setQuestionType('mcq')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  questionType === 'mcq'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <ListChecks className="w-4 h-4" />
+                MCQ
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuestionType('numerical')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  questionType === 'numerical'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Hash className="w-4 h-4" />
+                Numerical (NAT)
+              </button>
+            </div>
+          </div>
+
+          {/* ✅ EXISTING: Subject / Topic / SubTopic Row — completely untouched */}
           <div className="grid gap-6 md:grid-cols-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
-            
+
             {/* Subject */}
             <div className="space-y-2">
               <Label>Subject *</Label>
@@ -446,7 +584,7 @@ export function QuestionForm({
               ) : (
                 <Input {...register('topicName')} placeholder="e.g. Thermodynamics" />
               )}
-              
+
               {(errors.topicId || errors.topicName) && (
                 <p className="text-xs text-red-500">
                   {errors.topicId?.message || errors.topicName?.message}
@@ -507,7 +645,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* Question Statement */}
+          {/* ✅ EXISTING: Question Statement — untouched */}
           <div className="space-y-2">
             <Label>Question Statement *</Label>
             <Controller
@@ -527,44 +665,133 @@ export function QuestionForm({
             )}
           </div>
 
-          {/* Options Grid */}
-          <div className="grid gap-4 md:grid-cols-2">
-            {(['A', 'B', 'C', 'D'] as const).map((opt) => (
-              <div key={opt} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Option {opt}</Label>
-                  <div className="flex items-center space-x-2">
-                    <input 
-                      type="radio" 
-                      value={opt} 
-                      {...register('correctAnswer')}
-                      className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+          {/* ✅ EXISTING: MCQ Options — only shown for MCQ */}
+          {questionType === 'mcq' && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {(['A', 'B', 'C', 'D'] as const).map((opt) => (
+                <div key={opt} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Option {opt}</Label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        value={opt}
+                        {...register('correctAnswer')}
+                        className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                      />
+                      <span className="text-xs text-muted-foreground">Correct</span>
+                    </div>
+                  </div>
+                  <Controller
+                    name={`option${opt}` as 'optionA' | 'optionB' | 'optionC' | 'optionD'}
+                    control={control}
+                    render={({ field }) => (
+                      <RichTextEditor
+                        value={field.value || ''}
+                        onChange={field.onChange}
+                        placeholder={`Option ${opt} text`}
+                        minHeight="60px"
+                      />
+                    )}
+                  />
+                  {errors[`option${opt}` as keyof QuestionFormData] && (
+                    <p className="text-xs text-red-500">
+                      {errors[`option${opt}` as keyof QuestionFormData]?.message as string}
+                    </p>
+                  )}
+                </div>
+              ))}
+              {errors.optionA?.message === 'All 4 options and correct answer are required for MCQ' && (
+                <p className="text-xs text-red-500 col-span-2">{errors.optionA.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* ✅ NEW: Numerical Answer Section */}
+          {questionType === 'numerical' && (
+            <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="flex items-center justify-between">
+                <Label className="text-blue-800 font-medium">Correct Answer</Label>
+                {/* Answer type toggle */}
+                <div className="flex rounded-lg border border-blue-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setNumericalAnswerType('exact')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      numericalAnswerType === 'exact'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-blue-600 hover:bg-blue-50'
+                    }`}
+                  >
+                    Exact Value
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNumericalAnswerType('range')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      numericalAnswerType === 'range'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-blue-600 hover:bg-blue-50'
+                    }`}
+                  >
+                    Range
+                  </button>
+                </div>
+              </div>
+
+              {/* Exact answer input */}
+              {numericalAnswerType === 'exact' && (
+                <div className="space-y-1">
+                  <Label className="text-sm text-blue-700">Answer Value</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    placeholder="e.g. 6.5"
+                    {...register('correctAnswerExact', { valueAsNumber: true })}
+                    className="max-w-xs"
+                  />
+                  {errors.correctAnswerExact && (
+                    <p className="text-xs text-red-500">{errors.correctAnswerExact.message}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Range answer inputs */}
+              {numericalAnswerType === 'range' && (
+                <div className="flex items-center gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-sm text-blue-700">Min Value</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 2.45"
+                      {...register('correctAnswerMin', { valueAsNumber: true })}
+                      className="max-w-[150px]"
                     />
-                    <span className="text-xs text-muted-foreground">Correct</span>
+                    {errors.correctAnswerMin && (
+                      <p className="text-xs text-red-500">{errors.correctAnswerMin.message}</p>
+                    )}
+                  </div>
+                  <span className="text-blue-400 mt-5">to</span>
+                  <div className="space-y-1">
+                    <Label className="text-sm text-blue-700">Max Value</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 2.55"
+                      {...register('correctAnswerMax', { valueAsNumber: true })}
+                      className="max-w-[150px]"
+                    />
+                    {errors.correctAnswerMax && (
+                      <p className="text-xs text-red-500">{errors.correctAnswerMax.message}</p>
+                    )}
                   </div>
                 </div>
-                <Controller
-                  name={`option${opt}` as 'optionA' | 'optionB' | 'optionC' | 'optionD'}
-                  control={control}
-                  render={({ field }) => (
-                    <RichTextEditor
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder={`Option ${opt} text`}
-                      minHeight="60px"
-                    />
-                  )}
-                />
-                {errors[`option${opt}` as keyof QuestionFormData] && (
-                  <p className="text-xs text-red-500">
-                    {errors[`option${opt}` as keyof QuestionFormData]?.message as string}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
 
-          {/* Difficulty / Marks / Negative */}
+          {/* ✅ EXISTING: Difficulty / Marks / Negative — untouched */}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Difficulty</Label>
@@ -587,7 +814,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* Explanation */}
+          {/* ✅ EXISTING: Explanation — untouched */}
           <div className="space-y-2">
             <Label>Explanation (Optional)</Label>
             <Controller
@@ -604,7 +831,7 @@ export function QuestionForm({
             />
           </div>
 
-          {/* Active Status for Edit Mode */}
+          {/* ✅ EXISTING: Active Status for Edit Mode — untouched */}
           {isEditMode && (
             <div className="flex items-center space-x-2">
               <input
@@ -630,7 +857,7 @@ export function QuestionForm({
               )}
               {isEditMode ? 'Update Question' : 'Save & Add Next Question'}
             </Button>
-            
+
             {mode === 'dialog' && (
               <Button type="button" variant="outline" onClick={handleCancel}>
                 Cancel

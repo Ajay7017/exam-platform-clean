@@ -71,13 +71,18 @@ interface Question {
 interface QuestionDetail extends Question {
   topic: string
   subject: string
-  subTopic?: string // ✅ NEW
+  subTopic?: string
   optionA: string
   optionB: string
   optionC: string
   optionD: string
   correctAnswer: string
   explanation?: string
+  // ✅ NEW: NAT fields
+  questionType?: 'mcq' | 'numerical'
+  correctAnswerExact?: number | null
+  correctAnswerMin?: number | null
+  correctAnswerMax?: number | null
 }
 
 export default function AdminQuestionsPage() {
@@ -535,26 +540,51 @@ export default function AdminQuestionsPage() {
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <Label className="text-sm text-gray-600">Options</Label>
-                {(['A', 'B', 'C', 'D'] as const).map((opt) => {
-                  const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail] as string
-                  const isCorrect = viewQuestion.correctAnswer === opt
-                  return (
-                    <div key={opt} className={`p-3 rounded-lg border-2 flex items-start gap-3 ${
-                      isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'
-                    }`}>
-                      <div className="flex items-center gap-2 mt-0.5 shrink-0">
-                        <span className="font-bold text-sm">{opt}.</span>
-                        {isCorrect && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+              {/* ✅ EXISTING: MCQ Options — only shown for MCQ */}
+              {(!viewQuestion.questionType || viewQuestion.questionType === 'mcq') && (
+                <div className="space-y-3">
+                  <Label className="text-sm text-gray-600">Options</Label>
+                  {(['A', 'B', 'C', 'D'] as const).map((opt) => {
+                    const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail] as string
+                    const isCorrect = viewQuestion.correctAnswer === opt
+                    return (
+                      <div key={opt} className={`p-3 rounded-lg border-2 flex items-start gap-3 ${
+                        isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'
+                      }`}>
+                        <div className="flex items-center gap-2 mt-0.5 shrink-0">
+                          <span className="font-bold text-sm">{opt}.</span>
+                          {isCorrect && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <SafeHtml html={optionText} />
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <SafeHtml html={optionText} />
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* ✅ NEW: NAT Answer — only shown for numerical */}
+              {viewQuestion.questionType === 'numerical' && (
+                <div className="space-y-2">
+                  <Label className="text-sm text-gray-600">Correct Answer</Label>
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    {viewQuestion.correctAnswerExact !== null && viewQuestion.correctAnswerExact !== undefined ? (
+                      <div>
+                        <p className="text-xs text-blue-600 font-medium mb-1">Exact Value</p>
+                        <p className="text-2xl font-bold text-blue-800">{viewQuestion.correctAnswerExact}</p>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-blue-600 font-medium mb-1">Accepted Range</p>
+                        <p className="text-2xl font-bold text-blue-800">
+                          {viewQuestion.correctAnswerMin} &nbsp;to&nbsp; {viewQuestion.correctAnswerMax}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {viewQuestion.explanation && (
                 <div>

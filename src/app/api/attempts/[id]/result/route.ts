@@ -17,7 +17,6 @@ export async function GET(
 
     const attemptId = params.id
 
-    // Get attempt with exam and questions
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       include: {
@@ -27,12 +26,8 @@ export async function GET(
               include: {
                 question: {
                   include: {
-                    options: {
-                      orderBy: { sequence: 'asc' }
-                    },
-                    topic: {
-                      select: { name: true }
-                    }
+                    options: { orderBy: { sequence: 'asc' } },
+                    topic: { select: { name: true } }
                   }
                 }
               },
@@ -47,20 +42,14 @@ export async function GET(
       return NextResponse.json({ error: 'Attempt not found' }, { status: 404 })
     }
 
-    // Verify ownership
     if (attempt.userId !== session.user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Check if exam is submitted
     if (attempt.status !== 'completed') {
-      return NextResponse.json(
-        { error: 'Exam not yet submitted' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Exam not yet submitted' }, { status: 400 })
     }
 
-    // Get leaderboard entry for rank
     const leaderboardEntry = await prisma.leaderboardEntry.findFirst({
       where: { attemptId },
     })
@@ -69,25 +58,63 @@ export async function GET(
       where: { examId: attempt.examId },
     })
 
-    // Parse answers
     const userAnswers = (attempt.answers as Record<string, any>) || {}
 
-    // Build question results with correct answers and explanations
+    // ✅ UPDATED: handles both MCQ and NAT questions
     const questionResults = attempt.exam.questions.map((eq) => {
       const question = eq.question
-      const correctOption = question.options.find(o => o.isCorrect)
       const userResponse = userAnswers[question.id]
+      const isNumerical = question.type === 'numerical'
 
+      if (isNumerical) {
+        // ✅ NEW: NAT grading for results
+        const userNum = userResponse?.numericalAnswer ?? null
+        let isCorrect = false
+
+        if (userNum !== null && userNum !== undefined) {
+          if (question.correctAnswerExact !== null && question.correctAnswerExact !== undefined) {
+            isCorrect = userNum === question.correctAnswerExact
+          } else if (question.correctAnswerMin !== null && question.correctAnswerMax !== null) {
+            isCorrect = userNum >= question.correctAnswerMin! && userNum <= question.correctAnswerMax!
+          }
+        }
+
+        // Build correct answer display string
+        const correctAnswerDisplay = question.correctAnswerExact !== null && question.correctAnswerExact !== undefined
+          ? String(question.correctAnswerExact)
+          : `${question.correctAnswerMin} to ${question.correctAnswerMax}`
+
+        return {
+          questionId: question.id,
+          statement: question.statement,
+          imageUrl: question.imageUrl,
+          topic: question.topic.name,
+          // ✅ NEW: NAT type info
+          questionType: 'numerical',
+          options: [], // no options for NAT
+          yourAnswer: userNum !== null && userNum !== undefined ? String(userNum) : null,
+          correctAnswer: correctAnswerDisplay,
+          isCorrect,
+          explanation: question.explanation,
+          markedForReview: userResponse?.markedForReview || false,
+          marks: question.marks,
+          negativeMarks: question.negativeMarks,
+        }
+      }
+
+      // ✅ EXISTING: MCQ grading — untouched
+      const correctOption = question.options.find(o => o.isCorrect)
       return {
         questionId: question.id,
         statement: question.statement,
         imageUrl: question.imageUrl,
-        topic: question.topic.name, // FIX: Access topic.name
+        topic: question.topic.name,
+        questionType: 'mcq',
         options: question.options.map((opt) => ({
           key: opt.optionKey,
           text: opt.text,
           imageUrl: opt.imageUrl,
-          isCorrect: opt.isCorrect, // Now visible after submission
+          isCorrect: opt.isCorrect,
         })),
         yourAnswer: userResponse?.selectedOption || null,
         correctAnswer: correctOption?.optionKey || null,
@@ -99,25 +126,19 @@ export async function GET(
       }
     })
 
-    // Calculate topic-wise performance
+    // ✅ EXISTING: topic performance — untouched
     const topicMap = new Map<string, { correct: number; wrong: number; total: number }>()
 
     questionResults.forEach((qr) => {
-      const topic = qr.topic || 'Other' // Use the topic we already extracted
-
+      const topic = qr.topic || 'Other'
       if (!topicMap.has(topic)) {
         topicMap.set(topic, { correct: 0, wrong: 0, total: 0 })
       }
-
       const stats = topicMap.get(topic)!
       stats.total++
-
       if (qr.yourAnswer) {
-        if (qr.isCorrect) {
-          stats.correct++
-        } else {
-          stats.wrong++
-        }
+        if (qr.isCorrect) stats.correct++
+        else stats.wrong++
       }
     })
 
@@ -131,7 +152,6 @@ export async function GET(
       })
     )
 
-    // Calculate percentile
     const percentile = totalAttempts > 0 && leaderboardEntry?.rank
       ? ((totalAttempts - leaderboardEntry.rank + 1) / totalAttempts) * 100
       : null

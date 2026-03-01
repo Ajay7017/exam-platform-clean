@@ -6,11 +6,19 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
 const batchSaveSchema = z.object({
-  answers: z.array(z.object({
-    questionId: z.string().cuid(),
-    selectedOption: z.enum(['A', 'B', 'C', 'D']).nullable(),
-    markedForReview: z.boolean().optional()
-  })).min(1).max(200)
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string().cuid(),
+        // MCQ option — A/B/C/D or null (cleared)
+        selectedOption: z.enum(['A', 'B', 'C', 'D']).nullable().optional(),
+        // NAT numerical answer or null (cleared)
+        numericalAnswer: z.number().nullable().optional(),
+        markedForReview: z.boolean().optional(),
+      })
+    )
+    .min(1)
+    .max(200),
 })
 
 export async function POST(
@@ -29,8 +37,8 @@ export async function POST(
         userId: true,
         status: true,
         expiresAt: true,
-        answers: true
-      }
+        answers: true,
+      },
     })
 
     if (!attempt || attempt.userId !== session.user.id) {
@@ -44,28 +52,30 @@ export async function POST(
       )
     }
 
-    // Merge new answers with existing
     const existingAnswers = (attempt.answers as Record<string, any>) || {}
     const timestamp = new Date().toISOString()
 
     newAnswers.forEach(answer => {
+      // Always write the record — including when selectedOption/numericalAnswer
+      // are null, because that means the user explicitly cleared their answer.
+      // Skipping nulls would leave stale data in the DB.
       existingAnswers[answer.questionId] = {
-        selectedOption: answer.selectedOption,
+        selectedOption: answer.selectedOption ?? null,
+        numericalAnswer: answer.numericalAnswer ?? null,
         markedForReview: answer.markedForReview || false,
-        answeredAt: timestamp
+        answeredAt: timestamp,
       }
     })
 
     await prisma.attempt.update({
       where: { id: attemptId },
-      data: { answers: existingAnswers }
+      data: { answers: existingAnswers },
     })
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      saved: newAnswers.length 
+      saved: newAnswers.length,
     })
-
   } catch (error) {
     return handleApiError(error)
   }

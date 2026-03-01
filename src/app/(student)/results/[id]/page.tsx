@@ -3,14 +3,14 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { SafeHtml } from '@/lib/utils/safe-html';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LeaderboardCard } from '@/components/student/LeaderboardCard';
+import { OptimizedImage } from '@/components/ui/optimized-image';
 import {
-  Download,
-  Share2,
   RefreshCw,
   CheckCircle,
   XCircle,
@@ -21,17 +21,12 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
   Legend,
+  Tooltip,
+  ResponsiveContainer,
 } from 'recharts';
 
 const COLORS = {
@@ -49,19 +44,13 @@ export default function ResultPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchResult();
-  }, [attemptId]);
+  useEffect(() => { fetchResult() }, [attemptId]);
 
   const fetchResult = async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/attempts/${attemptId}/result`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to load results');
-      }
-
+      if (!response.ok) throw new Error('Failed to load results');
       const data = await response.json();
       setResult(data);
     } catch (err: any) {
@@ -93,10 +82,7 @@ export default function ResultPage() {
               <AlertCircle className="w-5 h-5" />
               <p>{error || 'Results not found'}</p>
             </div>
-            <Button 
-              onClick={() => router.push('/dashboard')} 
-              className="mt-4"
-            >
+            <Button onClick={() => router.push('/dashboard')} className="mt-4">
               Back to Dashboard
             </Button>
           </CardContent>
@@ -133,11 +119,9 @@ export default function ResultPage() {
           </div>
           <p className="text-muted-foreground mt-1">{result.examTitle}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => router.push('/dashboard')}>
-            Dashboard
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => router.push('/dashboard')}>
+          Dashboard
+        </Button>
       </div>
 
       {/* Score Card */}
@@ -150,29 +134,18 @@ export default function ResultPage() {
                 <span className="text-5xl font-bold text-primary">
                   {result.score?.toFixed(2) || 0}
                 </span>
-                <span className="text-2xl text-muted-foreground">
-                  / {result.totalMarks}
-                </span>
+                <span className="text-2xl text-muted-foreground">/ {result.totalMarks}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="text-lg px-3 py-1">
                   {result.percentage?.toFixed(2) || 0}%
                 </Badge>
-                {result.percentage >= 80 && (
-                  <Badge className="bg-green-600">Excellent</Badge>
-                )}
-                {result.percentage >= 60 && result.percentage < 80 && (
-                  <Badge className="bg-blue-600">Good</Badge>
-                )}
-                {result.percentage >= 40 && result.percentage < 60 && (
-                  <Badge className="bg-yellow-600">Average</Badge>
-                )}
-                {result.percentage < 40 && (
-                  <Badge className="bg-red-600">Needs Improvement</Badge>
-                )}
+                {result.percentage >= 80 && <Badge className="bg-green-600">Excellent</Badge>}
+                {result.percentage >= 60 && result.percentage < 80 && <Badge className="bg-blue-600">Good</Badge>}
+                {result.percentage >= 40 && result.percentage < 60 && <Badge className="bg-yellow-600">Average</Badge>}
+                {result.percentage < 40 && <Badge className="bg-red-600">Needs Improvement</Badge>}
               </div>
             </div>
-
             <div className="text-right space-y-4">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Clock className="w-4 h-4" />
@@ -198,32 +171,27 @@ export default function ResultPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              Correct Answers
+              <CheckCircle className="w-4 h-4 text-green-600" />Correct Answers
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-green-600">{result.correctAnswers}</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <XCircle className="w-4 h-4 text-red-600" />
-              Wrong Answers
+              <XCircle className="w-4 h-4 text-red-600" />Wrong Answers
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-red-600">{result.wrongAnswers}</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Circle className="w-4 h-4 text-gray-600" />
-              Unattempted
+              <Circle className="w-4 h-4 text-gray-600" />Unattempted
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -232,7 +200,6 @@ export default function ResultPage() {
         </Card>
       </div>
 
-      {/* Tabs - UPDATED to include Leaderboard */}
       <Tabs defaultValue="summary" className="space-y-4">
         <TabsList>
           <TabsTrigger value="summary">Summary</TabsTrigger>
@@ -240,14 +207,11 @@ export default function ResultPage() {
           <TabsTrigger value="solutions">Solutions</TabsTrigger>
         </TabsList>
 
+        {/* Summary tab */}
         <TabsContent value="summary" className="space-y-6">
-          {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Pie Chart */}
             <Card>
-              <CardHeader>
-                <CardTitle>Answer Distribution</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Answer Distribution</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
@@ -265,11 +229,9 @@ export default function ResultPage() {
                         <Cell
                           key={`cell-${index}`}
                           fill={
-                            entry.name === 'Correct'
-                              ? COLORS.correct
-                              : entry.name === 'Wrong'
-                              ? COLORS.wrong
-                              : COLORS.unattempted
+                            entry.name === 'Correct' ? COLORS.correct
+                            : entry.name === 'Wrong' ? COLORS.wrong
+                            : COLORS.unattempted
                           }
                         />
                       ))}
@@ -280,12 +242,8 @@ export default function ResultPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-
-            {/* Topic-wise Performance */}
             <Card>
-              <CardHeader>
-                <CardTitle>Topic-wise Performance</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Topic-wise Performance</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {result.topicWisePerformance?.map((topic: any) => (
@@ -310,16 +268,17 @@ export default function ResultPage() {
           </div>
         </TabsContent>
 
-        {/* ✅ NEW: Leaderboard Tab */}
+        {/* Leaderboard tab */}
         <TabsContent value="leaderboard" className="space-y-4">
-          <LeaderboardCard 
-            type="exam" 
-            examId={result.examId} 
+          <LeaderboardCard
+            type="exam"
+            examId={result.examId}
             limit={25}
             showTitle={true}
           />
         </TabsContent>
 
+        {/* Solutions tab */}
         <TabsContent value="solutions" className="space-y-4">
           {result.questionResults?.map((q: any, index: number) => (
             <Card key={q.questionId} className="border-2">
@@ -328,6 +287,11 @@ export default function ResultPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">Question {index + 1}</span>
+                      {q.questionType === 'numerical' && (
+                        <Badge variant="outline" className="text-blue-600 text-xs">
+                          Numerical
+                        </Badge>
+                      )}
                       {q.isCorrect ? (
                         <CheckCircle className="w-5 h-5 text-green-600" />
                       ) : q.yourAnswer ? (
@@ -336,51 +300,98 @@ export default function ResultPage() {
                         <Circle className="w-5 h-5 text-gray-400" />
                       )}
                     </div>
-                    <p className="mt-2">{q.statement}</p>
+                    
+                    {/* ✅ FIXED: Render SafeHtml AND the imageUrl directly below it */}
+                    <div className="mt-2 text-base leading-relaxed space-y-4">
+                      <SafeHtml html={q.statement} />
+                      
+                      {q.imageUrl && (
+                        <div className="mt-4 flex justify-start">
+                          <OptimizedImage 
+                            src={q.imageUrl} 
+                            alt={`Question ${index + 1} image`} 
+                            className="max-w-full rounded-lg border shadow-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  {q.options?.map((opt: any) => (
-                    <div
-                      key={opt.key}
-                      className={`p-3 rounded-lg border-2 ${
-                        opt.isCorrect
-                          ? 'border-green-500 bg-green-50'
-                          : opt.key === q.yourAnswer && !q.isCorrect
-                          ? 'border-red-500 bg-red-50'
-                          : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">{opt.key}.</span>
-                        <span>{opt.text}</span>
-                        {opt.isCorrect && (
-                          <CheckCircle className="w-4 h-4 text-green-600 ml-auto" />
-                        )}
-                        {opt.key === q.yourAnswer && !q.isCorrect && (
-                          <XCircle className="w-4 h-4 text-red-600 ml-auto" />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
 
-                <div className="pt-4 border-t space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Your Answer:</strong> {q.yourAnswer || 'Not Attempted'}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Correct Answer:</strong> {q.correctAnswer}
-                  </p>
-                  {q.explanation && (
-                    <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm font-semibold text-blue-900">Explanation:</p>
-                      <p className="text-sm text-blue-800 mt-1">{q.explanation}</p>
+                {/* MCQ options */}
+                {q.questionType === 'mcq' && (
+                  <div className="space-y-2">
+                    {q.options?.map((opt: any) => (
+                      <div
+                        key={opt.key}
+                        className={`p-3 rounded-lg border-2 ${
+                          opt.isCorrect
+                            ? 'border-green-500 bg-green-50'
+                            : opt.key === q.yourAnswer && !q.isCorrect
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{opt.key}.</span>
+                          <SafeHtml html={opt.text} className="flex-1" />
+                          {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto" />}
+                          {opt.key === q.yourAnswer && !q.isCorrect && (
+                            <XCircle className="w-4 h-4 text-red-600 ml-auto" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* NAT answer display */}
+                {q.questionType === 'numerical' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className={`p-4 rounded-lg border-2 ${
+                      q.yourAnswer
+                        ? q.isCorrect ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'
+                        : 'border-gray-200 bg-gray-50'
+                    }`}>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Your Answer</p>
+                      <p className={`text-2xl font-bold ${
+                        q.yourAnswer
+                          ? q.isCorrect ? 'text-green-700' : 'text-red-700'
+                          : 'text-gray-400'
+                      }`}>
+                        {q.yourAnswer || 'Not Attempted'}
+                      </p>
                     </div>
-                  )}
-                </div>
+                    <div className="p-4 rounded-lg border-2 border-green-500 bg-green-50">
+                      <p className="text-xs font-medium text-gray-500 mb-1">Correct Answer</p>
+                      <p className="text-2xl font-bold text-green-700">{q.correctAnswer}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* MCQ your/correct answer text + explanation */}
+                {q.questionType === 'mcq' && (
+                  <div className="pt-4 border-t space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Your Answer:</strong> {q.yourAnswer || 'Not Attempted'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Correct Answer:</strong> {q.correctAnswer}
+                    </p>
+                  </div>
+                )}
+
+                {q.explanation && (
+                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <p className="text-sm font-semibold text-blue-900">Explanation:</p>
+                    <div className="text-sm text-blue-800 mt-1">
+                      <SafeHtml html={q.explanation} />
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

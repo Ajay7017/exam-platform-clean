@@ -9,11 +9,6 @@ const questionSchema = z.object({
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number(),
   negativeMarks: z.number(),
-  optionA: z.string().min(1),
-  optionB: z.string().min(1),
-  optionC: z.string().min(1),
-  optionD: z.string().min(1),
-  correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
   topicId: z.string().optional(),
@@ -21,15 +16,50 @@ const questionSchema = z.object({
   topicName: z.string().optional(),
   subTopicId: z.string().optional(),
   subTopicName: z.string().optional(),
+
+  // ✅ EXISTING: MCQ fields — now optional
+  optionA: z.string().optional(),
+  optionB: z.string().optional(),
+  optionC: z.string().optional(),
+  optionD: z.string().optional(),
+  correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
+
+  // ✅ NEW: NAT fields
+  questionType: z.enum(['mcq', 'numerical']).default('mcq'),
+  correctAnswerExact: z.number().optional().nullable(),
+  correctAnswerMin: z.number().optional().nullable(),
+  correctAnswerMax: z.number().optional().nullable(),
+
 }).refine(
   (data) => data.topicId || (data.subjectId && data.topicName),
   { message: "Either topicId or (subjectId + topicName) must be provided", path: ["topicId"] }
 ).refine(
   (data) => data.subTopicId || data.subTopicName,
   { message: "Either subTopicId or subTopicName must be provided", path: ["subTopicId"] }
+).refine(
+  // ✅ MCQ must have options and correct answer
+  (data) => {
+    if (data.questionType === 'mcq' || !data.questionType) {
+      return data.optionA && data.optionB && data.optionC && data.optionD && data.correctAnswer
+    }
+    return true
+  },
+  { message: "MCQ questions require all 4 options and a correct answer", path: ["optionA"] }
+).refine(
+  // ✅ NAT must have either exact or range answer
+  (data) => {
+    if (data.questionType === 'numerical') {
+      const hasExact = data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
+      const hasRange = data.correctAnswerMin !== null && data.correctAnswerMin !== undefined
+                    && data.correctAnswerMax !== null && data.correctAnswerMax !== undefined
+      return hasExact || hasRange
+    }
+    return true
+  },
+  { message: "Numerical questions require either an exact answer or a min/max range", path: ["correctAnswerExact"] }
 )
 
-// GET: List questions
+// GET: List questions — untouched
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin()
@@ -38,7 +68,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const search = searchParams.get('search') || ''
     const difficulty = searchParams.get('difficulty')
-    const subjectId = searchParams.get('subjectId') // ✅ ADDED
+    const subjectId = searchParams.get('subjectId')
     const topicId = searchParams.get('topicId')
     const subTopicId = searchParams.get('subTopicId')
 
@@ -47,7 +77,7 @@ export async function GET(request: NextRequest) {
     if (difficulty && difficulty !== 'all') where.difficulty = difficulty
     if (topicId) where.topicId = topicId
     if (subTopicId) where.subTopicId = subTopicId
-    if (subjectId) where.topic = { subjectId } // ✅ ADDED — filters through relation
+    if (subjectId) where.topic = { subjectId }
 
     const [questions, total] = await Promise.all([
       prisma.question.findMany({
@@ -80,6 +110,11 @@ export async function GET(request: NextRequest) {
         isActive: q.isActive,
         explanation: q.explanation,
         options: q.options,
+        // ✅ NEW: include type and numerical fields in response
+        questionType: q.type,
+        correctAnswerExact: q.correctAnswerExact,
+        correctAnswerMin: q.correctAnswerMin,
+        correctAnswerMax: q.correctAnswerMax,
         createdAt: q.createdAt,
       })),
       pagination: { total, totalPages: Math.ceil(total / limit), page }
@@ -97,6 +132,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = questionSchema.parse(body)
 
+    // ✅ EXISTING: Topic resolution — completely untouched
     let topicId: string
 
     if (data.topicId) {
@@ -134,6 +170,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Either topicId or (subjectId + topicName) must be provided' }, { status: 400 })
     }
 
+    // ✅ EXISTING: SubTopic resolution — completely untouched
     let subTopicId: string | undefined
 
     if (data.subTopicId) {
@@ -164,6 +201,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const isNumerical = data.questionType === 'numerical'
+
+    // ✅ Build question create data based on type
     const question = await prisma.question.create({
       data: {
         statement: data.statement,
@@ -174,14 +214,24 @@ export async function POST(request: NextRequest) {
         difficulty: data.difficulty,
         explanation: data.explanation || '',
         isActive: data.isActive ?? true,
-        options: {
-          create: [
-            { text: data.optionA, optionKey: 'A', sequence: 1, isCorrect: data.correctAnswer === 'A' },
-            { text: data.optionB, optionKey: 'B', sequence: 2, isCorrect: data.correctAnswer === 'B' },
-            { text: data.optionC, optionKey: 'C', sequence: 3, isCorrect: data.correctAnswer === 'C' },
-            { text: data.optionD, optionKey: 'D', sequence: 4, isCorrect: data.correctAnswer === 'D' },
-          ]
-        }
+
+        // ✅ NEW: type and numerical fields
+        type: data.questionType ?? 'mcq',
+        correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
+        correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
+        correctAnswerMax: isNumerical ? (data.correctAnswerMax ?? null) : null,
+
+        // ✅ EXISTING: options only created for MCQ
+        ...(!isNumerical && {
+          options: {
+            create: [
+              { text: data.optionA!, optionKey: 'A', sequence: 1, isCorrect: data.correctAnswer === 'A' },
+              { text: data.optionB!, optionKey: 'B', sequence: 2, isCorrect: data.correctAnswer === 'B' },
+              { text: data.optionC!, optionKey: 'C', sequence: 3, isCorrect: data.correctAnswer === 'C' },
+              { text: data.optionD!, optionKey: 'D', sequence: 4, isCorrect: data.correctAnswer === 'D' },
+            ]
+          }
+        })
       },
       include: {
         topic: { include: { subject: true } },
@@ -190,8 +240,8 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       questionId: question.id,
       question: {
         id: question.id,
@@ -207,6 +257,10 @@ export async function POST(request: NextRequest) {
         difficulty: question.difficulty,
         isActive: question.isActive,
         explanation: question.explanation,
+        questionType: question.type,
+        correctAnswerExact: question.correctAnswerExact,
+        correctAnswerMin: question.correctAnswerMin,
+        correctAnswerMax: question.correctAnswerMax,
       }
     }, { status: 201 })
 
@@ -215,7 +269,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Validation failed', details: error.errors }, { status: 400 })
     }
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })

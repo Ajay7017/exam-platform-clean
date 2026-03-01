@@ -12,7 +12,6 @@ export async function GET(
     const session = await requireAuth()
     const attemptId = params.id
 
-    // Fetch attempt with questions
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       include: {
@@ -46,7 +45,6 @@ export async function GET(
       )
     }
 
-    // Verify ownership
     if (attempt.userId !== session.user.id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -54,7 +52,6 @@ export async function GET(
       )
     }
 
-    // Check if already submitted
     if (attempt.status === 'completed') {
       return NextResponse.json(
         { error: 'Exam already submitted', attemptId: attempt.id },
@@ -62,7 +59,6 @@ export async function GET(
       )
     }
 
-    // Check if expired
     if (new Date() > attempt.expiresAt) {
       return NextResponse.json(
         { error: 'Exam time expired', attemptId: attempt.id },
@@ -70,10 +66,38 @@ export async function GET(
       )
     }
 
-    // Prepare questions WITHOUT answers
     const questions = attempt.exam.questions.map(eq => eq.question)
 
-    // Return exam data
+    // Transform the raw DB answers JSON into the flat map the client uses.
+    //
+    // DB shape:  { [questionId]: { selectedOption, numericalAnswer, markedForReview, answeredAt } }
+    // Client expects: { [questionId]: string | number | null }
+    //
+    // Without this transform, on page refresh the client stores the whole object
+    // as the answer value, so option comparison (answers[id] === "A") always fails
+    // and every question shows as unanswered in the palette.
+    const rawAnswers = (attempt.answers as Record<string, any>) || {}
+    const savedAnswers: Record<string, string | number | null> = {}
+    const savedMarkedForReview: Record<string, boolean> = {}
+
+    for (const [questionId, response] of Object.entries(rawAnswers)) {
+      if (response && typeof response === 'object') {
+        // Pick the right answer field based on what's populated
+        if (response.numericalAnswer !== null && response.numericalAnswer !== undefined) {
+          savedAnswers[questionId] = response.numericalAnswer
+        } else if (response.selectedOption !== null && response.selectedOption !== undefined) {
+          savedAnswers[questionId] = response.selectedOption
+        } else {
+          // Explicitly cleared — include as null so the client knows it was visited
+          savedAnswers[questionId] = null
+        }
+
+        if (response.markedForReview) {
+          savedMarkedForReview[questionId] = true
+        }
+      }
+    }
+
     return NextResponse.json({
       attemptId: attempt.id,
       examId: attempt.exam.id,
@@ -89,7 +113,9 @@ export async function GET(
       allowReview: attempt.exam.allowReview,
       startedAt: attempt.startedAt.toISOString(),
       expiresAt: attempt.expiresAt.toISOString(),
-      savedAnswers: attempt.answers || {}, // Previously saved answers
+      // Flat maps — ready to drop straight into React state
+      savedAnswers,
+      savedMarkedForReview,
       questions: questions.map((q, index) => ({
         id: q.id,
         sequence: index + 1,
@@ -99,11 +125,12 @@ export async function GET(
         marks: q.marks,
         negativeMarks: q.negativeMarks,
         difficulty: q.difficulty,
+        type: q.type ?? 'mcq',
         options: q.options.map(o => ({
           key: o.optionKey,
           text: o.text,
           imageUrl: o.imageUrl
-          // ❌ NO isCorrect field!
+          // isCorrect intentionally omitted — student must not see the answer
         }))
       }))
     })

@@ -10,6 +10,8 @@ interface ExamContextType {
   initializeExam: (examId: string, questionIds: string[], duration: number) => void;
   goToQuestion: (index: number) => void;
   selectAnswer: (questionId: string, option: string) => void;
+  // ✅ NEW: for NAT questions
+  selectNumericalAnswer: (questionId: string, value: number) => void;
   clearAnswer: (questionId: string) => void;
   markForReview: (questionId: string) => void;
   unmarkForReview: (questionId: string) => void;
@@ -37,7 +39,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
     const interval = setInterval(() => {
       console.log('Auto-saving exam state...');
       setExamState({ ...examState });
-    }, 30000); // 30 seconds
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [examState, setExamState]);
@@ -76,7 +78,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
         visitedQuestions: [...examState.visitedQuestions, questionId],
         questionStates: {
           ...examState.questionStates,
-          [questionId]: examState.answers[questionId] ? 'answered' : 'not-answered',
+          [questionId]: examState.answers[questionId] !== undefined ? 'answered' : 'not-answered',
         },
       });
     } else {
@@ -87,6 +89,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ✅ EXISTING: MCQ answer - untouched
   const selectAnswer = (questionId: string, option: string) => {
     if (!examState) return;
 
@@ -97,6 +100,25 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
       answers: {
         ...examState.answers,
         [questionId]: option,
+      },
+      questionStates: {
+        ...examState.questionStates,
+        [questionId]: isMarked ? 'answered-marked' : 'answered',
+      },
+    });
+  };
+
+  // ✅ NEW: NAT answer
+  const selectNumericalAnswer = (questionId: string, value: number) => {
+    if (!examState) return;
+
+    const isMarked = examState.markedForReview.includes(questionId);
+
+    setExamState({
+      ...examState,
+      answers: {
+        ...examState.answers,
+        [questionId]: value,
       },
       questionStates: {
         ...examState.questionStates,
@@ -126,7 +148,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
   const markForReview = (questionId: string) => {
     if (!examState) return;
 
-    const hasAnswer = !!examState.answers[questionId];
+    const hasAnswer = examState.answers[questionId] !== undefined;
 
     setExamState({
       ...examState,
@@ -141,7 +163,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
   const unmarkForReview = (questionId: string) => {
     if (!examState) return;
 
-    const hasAnswer = !!examState.answers[questionId];
+    const hasAnswer = examState.answers[questionId] !== undefined;
 
     setExamState({
       ...examState,
@@ -169,7 +191,6 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
   };
 
   const submitExam = () => {
-    // Will handle submission in the component
     console.log('Exam submitted!');
   };
 
@@ -205,6 +226,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
         initializeExam,
         goToQuestion,
         selectAnswer,
+        selectNumericalAnswer,
         clearAnswer,
         markForReview,
         unmarkForReview,

@@ -12,7 +12,6 @@ export async function POST(
     const session = await requireAuth()
     const attemptId = params.id
 
-    // 1. Quick validation - Get minimal attempt data
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       select: {
@@ -24,27 +23,20 @@ export async function POST(
     })
 
     if (!attempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 })
     }
 
     if (attempt.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
     if (attempt.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Attempt already submitted' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Attempt already submitted' }, { status: 400 })
     }
 
-    // 2. Immediately mark as completed to prevent double submission
+    // Mark as completed immediately so the client can proceed.
+    // The heavy grading work runs in the background — the client polls for
+    // results or sees a "processing" state.
     await prisma.attempt.update({
       where: { id: attemptId },
       data: {
@@ -53,8 +45,13 @@ export async function POST(
       }
     })
 
-    // 3. Return success immediately - processing happens in background
-    const response = NextResponse.json({
+    // Fire-and-forget — do NOT await. The response goes back to the client
+    // while grading runs in the background.
+    processExamResults(attemptId, attempt.examId, attempt.userId).catch(error => {
+      console.error('[Background] Processing error:', error)
+    })
+
+    return NextResponse.json({
       success: true,
       attemptId: attempt.id,
       examId: attempt.examId,
@@ -62,29 +59,16 @@ export async function POST(
       processing: true
     })
 
-    // 4. Start background processing (non-blocking)
-    // This runs after the response is sent
-    processExamResults(attemptId, attempt.examId, attempt.userId).catch(error => {
-      console.error('Background processing error:', error)
-    })
-
-    return response
-
   } catch (error) {
     console.error('Submit error:', error)
     return handleApiError(error)
   }
 }
 
-/**
- * Background processing function - runs after response is sent
- * Calculates scores, ranks, and updates leaderboard
- */
 async function processExamResults(attemptId: string, examId: string, userId: string) {
-  try {
-    console.log(`[Background] Processing results for attempt ${attemptId}`)
+  console.log(`[Background] Processing results for attempt ${attemptId}`)
 
-    // Get complete attempt data with all questions
+  try {
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       include: {
@@ -95,9 +79,7 @@ async function processExamResults(attemptId: string, examId: string, userId: str
                 question: {
                   include: {
                     options: true,
-                    topic: {
-                      select: { name: true }
-                    }
+                    topic: { select: { name: true } }
                   }
                 }
               },
@@ -113,29 +95,19 @@ async function processExamResults(attemptId: string, examId: string, userId: str
       return
     }
 
-    // Calculate score
     const userAnswers = (attempt.answers as Record<string, any>) || {}
-    
+
     let score = 0
     let correctCount = 0
     let wrongCount = 0
     let unattempted = 0
 
-    const topicStats = new Map<string, {
-      correct: number
-      wrong: number
-      total: number
-    }>()
+    const topicStats = new Map<string, { correct: number; wrong: number; total: number }>()
 
     for (const examQuestion of attempt.exam.questions) {
       const question = examQuestion.question
-      const correctOption = question.options.find(o => o.isCorrect)
-      const correctAnswer = correctOption?.optionKey || null
-      
       const userResponse = userAnswers[question.id]
-      const userAnswer = userResponse?.selectedOption || null
 
-      // Update topic stats
       const topicName = question.topic.name
       if (!topicStats.has(topicName)) {
         topicStats.set(topicName, { correct: 0, wrong: 0, total: 0 })
@@ -143,125 +115,162 @@ async function processExamResults(attemptId: string, examId: string, userId: str
       const stats = topicStats.get(topicName)!
       stats.total++
 
-      // Calculate marks
-      if (userAnswer === null) {
-        unattempted++
-      } else if (userAnswer === correctAnswer) {
-        correctCount++
-        score += question.marks
-        stats.correct++
+      if (question.type === 'numerical') {
+        // ── NAT grading ──────────────────────────────────────────────────────
+        const userNum = userResponse?.numericalAnswer ?? null
+
+        if (userNum === null || userNum === undefined) {
+          unattempted++
+        } else if (
+          question.correctAnswerExact !== null &&
+          question.correctAnswerExact !== undefined
+        ) {
+          // Exact match
+          if (userNum === question.correctAnswerExact) {
+            correctCount++
+            score += question.marks
+            stats.correct++
+          } else {
+            wrongCount++
+            score -= question.negativeMarks
+            stats.wrong++
+          }
+        } else if (
+          question.correctAnswerMin !== null &&
+          question.correctAnswerMin !== undefined &&
+          question.correctAnswerMax !== null &&
+          question.correctAnswerMax !== undefined
+        ) {
+          // Range match
+          if (userNum >= question.correctAnswerMin && userNum <= question.correctAnswerMax) {
+            correctCount++
+            score += question.marks
+            stats.correct++
+          } else {
+            wrongCount++
+            score -= question.negativeMarks
+            stats.wrong++
+          }
+        } else {
+          // No valid answer key configured — treat as unattempted
+          unattempted++
+        }
+
       } else {
-        wrongCount++
-        score -= question.negativeMarks
-        stats.wrong++
+        // ── MCQ grading ──────────────────────────────────────────────────────
+        const correctOption = question.options.find(o => o.isCorrect)
+        const correctAnswer = correctOption?.optionKey ?? null
+        const userAnswer = userResponse?.selectedOption ?? null
+
+        if (userAnswer === null) {
+          unattempted++
+        } else if (userAnswer === correctAnswer) {
+          correctCount++
+          score += question.marks
+          stats.correct++
+        } else {
+          wrongCount++
+          score -= question.negativeMarks
+          stats.wrong++
+        }
       }
     }
 
-    // Calculate time taken
     const timeTaken = Math.floor(
       (new Date(attempt.submittedAt!).getTime() - attempt.startedAt.getTime()) / 1000
     )
 
-    // Calculate percentage
-    const percentage = (score / attempt.exam.totalMarks) * 100
+    const percentage = attempt.exam.totalMarks > 0
+      ? (score / attempt.exam.totalMarks) * 100
+      : 0
 
-    // Calculate rank (Optimized - count better attempts)
-    const betterAttemptsCount = await prisma.attempt.count({
+    // ── Atomic rank calculation ───────────────────────────────────────────────
+    //
+    // The original code ran two separate COUNT queries, which created a race
+    // condition: another attempt could be submitted between the two queries,
+    // making betterAttemptsCount and totalCompletedAttempts inconsistent.
+    //
+    // Solution: fetch all completed scores in one query, compute rank in memory.
+    // This is safe for exam sizes up to tens of thousands of attempts and avoids
+    // the need for a database-level lock.
+    const completedAttempts = await prisma.attempt.findMany({
       where: {
-        examId: attempt.examId,
+        examId,
         status: 'completed',
-        OR: [
-          { score: { gt: score } },
-          {
-            score: score,
-            timeSpentSec: { lt: timeTaken }
-          }
-        ]
-      }
+        id: { not: attemptId } // exclude current attempt — it's already 'completed' in DB
+      },
+      select: { score: true, timeSpentSec: true },
+      orderBy: [{ score: 'desc' }, { timeSpentSec: 'asc' }]
     })
 
-    const userRank = betterAttemptsCount + 1
+    // Rank = number of attempts that beat this one + 1.
+    // Tie-breaking: same score but lower time = better rank.
+    const betterCount = completedAttempts.filter(a => {
+      if (a.score > score) return true
+      if (a.score === score && (a.timeSpentSec ?? Infinity) < timeTaken) return true
+      return false
+    }).length
 
-    // Get total attempts for percentile
-    const totalCompletedAttempts = await prisma.attempt.count({
-      where: {
-        examId: attempt.examId,
-        status: 'completed'
-      }
-    })
+    const userRank = betterCount + 1
+    const totalAttempts = completedAttempts.length + 1 // include current attempt
 
-    const totalAttempts = totalCompletedAttempts
-    const percentile = totalAttempts > 1 
-      ? ((totalAttempts - userRank) / (totalAttempts - 1)) * 100 
+    const percentile = totalAttempts > 1
+      ? ((totalAttempts - userRank) / (totalAttempts - 1)) * 100
       : 100
 
-    // Update attempt with results
-    await prisma.attempt.update({
-      where: { id: attemptId },
-      data: {
-        score,
-        percentage,
-        correctAnswers: correctCount,
-        wrongAnswers: wrongCount,
-        unattempted,
-        timeSpentSec: timeTaken,
-        rank: userRank,
-        percentile: percentile
-      }
-    })
-
-    // Update leaderboard
-    const existingEntry = await prisma.leaderboardEntry.findUnique({
-      where: {
-        examId_userId: {
-          examId: attempt.examId,
-          userId: attempt.userId
-        }
-      }
-    })
-
-    const shouldUpdate = !existingEntry || score > existingEntry.score
-
-    if (shouldUpdate) {
-      await prisma.leaderboardEntry.upsert({
-        where: {
-          examId_userId: {
-            examId: attempt.examId,
-            userId: attempt.userId
-          }
-        },
-        create: {
-          examId: attempt.examId,
-          userId: attempt.userId,
-          attemptId: attempt.id,
+    // ── Persist results and leaderboard in one transaction ───────────────────
+    await prisma.$transaction(async (tx) => {
+      await tx.attempt.update({
+        where: { id: attemptId },
+        data: {
           score,
           percentage,
+          correctAnswers: correctCount,
+          wrongAnswers: wrongCount,
+          unattempted,
+          timeSpentSec: timeTaken,
           rank: userRank,
-          timeTaken,
-          submittedAt: attempt.submittedAt!
-        },
-        update: {
-          attemptId: attempt.id,
-          score,
-          percentage,
-          rank: userRank,
-          timeTaken,
-          submittedAt: attempt.submittedAt!
+          percentile,
         }
       })
-    }
 
-    console.log(`[Background] Successfully processed attempt ${attemptId} - Score: ${score}, Rank: ${userRank}`)
+      // Only update the leaderboard if this is the user's best score
+      const existingEntry = await tx.leaderboardEntry.findUnique({
+        where: { examId_userId: { examId, userId } }
+      })
+
+      if (!existingEntry || score > existingEntry.score) {
+        await tx.leaderboardEntry.upsert({
+          where: { examId_userId: { examId, userId } },
+          create: {
+            examId,
+            userId,
+            attemptId,
+            score,
+            percentage,
+            rank: userRank,
+            timeTaken,
+            submittedAt: attempt.submittedAt!
+          },
+          update: {
+            attemptId,
+            score,
+            percentage,
+            rank: userRank,
+            timeTaken,
+            submittedAt: attempt.submittedAt!
+          }
+        })
+      }
+    })
+
+    console.log(
+      `[Background] Done — attempt ${attemptId} | score: ${score} | rank: ${userRank}/${totalAttempts}`
+    )
 
   } catch (error) {
     console.error('[Background] Processing error:', error)
-    
-    // Mark attempt as having an error
-    await prisma.attempt.update({
-      where: { id: attemptId },
-      data: {
-        status: 'completed' // Keep as completed but log the error
-      }
-    }).catch(err => console.error('Failed to update error status:', err))
+    // Don't re-throw — the attempt is already marked completed.
+    // The score fields will just be null/0 and can be reprocessed if needed.
   }
 }

@@ -120,7 +120,6 @@ function ResizableImageView({ node, updateAttributes, selected }: {
           draggable={false}
         />
 
-        {/* Right-edge resize handle */}
         {selected && (
           <div
             onMouseDown={handleMouseDown}
@@ -150,7 +149,6 @@ function ResizableImageView({ node, updateAttributes, selected }: {
           </div>
         )}
 
-        {/* Width label */}
         {selected && width && (
           <div style={{
             position: 'absolute',
@@ -237,6 +235,12 @@ export function RichTextEditor({
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Track whether the last HTML change originated from the editor itself (user
+  // typing) or from the outside (parent reset). This prevents the sync effect
+  // from calling setContent while the user is mid-type, which would reset the
+  // cursor position.
+  const isInternalChange = useRef(false);
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -254,6 +258,8 @@ export function RichTextEditor({
     content: value || '',
     editable: !disabled,
     onUpdate: ({ editor }) => {
+      // Mark as internal so the sync effect below knows not to fight back
+      isInternalChange.current = true;
       const html = editor.getHTML();
       onChange(html === '<p></p>' ? '' : html);
     },
@@ -286,14 +292,37 @@ export function RichTextEditor({
     },
   });
 
+  // ── Sync external value changes into the editor ──────────────────────────
+  //
+  // This runs whenever the parent changes `value` (e.g. react-hook-form reset).
+  // We skip the sync when the change came from the editor itself (isInternalChange)
+  // to avoid resetting the cursor mid-type.
+  //
+  // The key fix: we now handle ALL values (empty AND non-empty), not just empty.
+  // Before this fix, when reset() set statement='' the editor cleared, but when
+  // the next question's value arrived it was never pushed back into the editor,
+  // so the form still held the previous question's stale content at submit time.
   useEffect(() => {
     if (!editor) return;
+
+    // If this value change came from the editor's own onUpdate, skip — the
+    // editor already has this content and we'd just be setting it again.
+    if (isInternalChange.current) {
+      isInternalChange.current = false;
+      return;
+    }
+
     const incoming = value || '';
-    if (incoming === '' || incoming === '<p></p>') {
-      const current = editor.getHTML();
-      if (current !== '<p></p>' && current !== '') {
-        editor.commands.setContent('');
-      }
+    const current = editor.getHTML();
+
+    // Normalise empty states so '<p></p>' and '' are treated the same
+    const normalise = (html: string) =>
+      html === '<p></p>' || html === '' ? '' : html;
+
+    if (normalise(incoming) !== normalise(current)) {
+      // setContent replaces the entire document — safe here because we only
+      // reach this branch when the parent explicitly changed the value
+      editor.commands.setContent(incoming, false /* don't emit update */)
     }
   }, [value, editor]);
 

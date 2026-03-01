@@ -4,28 +4,55 @@ import { requireAdmin } from '@/lib/auth-utils'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+// ✅ UPDATED: schema now handles both MCQ and NAT
 const questionUpdateSchema = z.object({
   statement: z.string().min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   marks: z.number(),
   negativeMarks: z.number(),
-  optionA: z.string().min(1),
-  optionB: z.string().min(1),
-  optionC: z.string().min(1),
-  optionD: z.string().min(1),
-  correctAnswer: z.enum(['A', 'B', 'C', 'D']),
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
-  // Topic — either topicId OR (subjectId + topicName)
   topicId: z.string().optional(),
   subjectId: z.string().optional(),
   topicName: z.string().optional(),
-  // SubTopic — either subTopicId OR subTopicName (both optional)
   subTopicId: z.string().optional(),
   subTopicName: z.string().optional(),
+
+  // ✅ EXISTING: MCQ fields — now optional
+  optionA: z.string().optional(),
+  optionB: z.string().optional(),
+  optionC: z.string().optional(),
+  optionD: z.string().optional(),
+  correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
+
+  // ✅ NEW: NAT fields
+  questionType: z.enum(['mcq', 'numerical']).default('mcq'),
+  correctAnswerExact: z.number().optional().nullable(),
+  correctAnswerMin: z.number().optional().nullable(),
+  correctAnswerMax: z.number().optional().nullable(),
+
 }).refine(
   (data) => data.topicId || (data.subjectId && data.topicName),
   { message: 'Either topicId or (subjectId + topicName) must be provided', path: ['topicId'] }
+).refine(
+  (data) => {
+    if (data.questionType === 'mcq') {
+      return data.optionA && data.optionB && data.optionC && data.optionD && data.correctAnswer
+    }
+    return true
+  },
+  { message: 'MCQ questions require all 4 options and correct answer', path: ['optionA'] }
+).refine(
+  (data) => {
+    if (data.questionType === 'numerical') {
+      const hasExact = data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
+      const hasRange = data.correctAnswerMin !== null && data.correctAnswerMin !== undefined
+                    && data.correctAnswerMax !== null && data.correctAnswerMax !== undefined
+      return hasExact || hasRange
+    }
+    return true
+  },
+  { message: 'Numerical questions require exact answer or min/max range', path: ['correctAnswerExact'] }
 )
 
 // GET: Fetch single question
@@ -53,18 +80,30 @@ export async function GET(
       id: question.id,
       statement: question.statement,
       subjectId: question.topic.subjectId,
+      subjectName: question.topic.subject.name,
       topicId: question.topicId,
+      topic: question.topic.name,
       subTopicId: question.subTopicId || '',
+      subTopic: question.subTopic?.name || '',
       difficulty: question.difficulty,
       marks: question.marks,
       negativeMarks: question.negativeMarks,
       explanation: question.explanation || '',
       isActive: question.isActive,
+
+      // ✅ EXISTING: MCQ options
       optionA: question.options.find(o => o.optionKey === 'A')?.text || '',
       optionB: question.options.find(o => o.optionKey === 'B')?.text || '',
       optionC: question.options.find(o => o.optionKey === 'C')?.text || '',
       optionD: question.options.find(o => o.optionKey === 'D')?.text || '',
       correctAnswer: question.options.find(o => o.isCorrect)?.optionKey || 'A',
+
+      // ✅ NEW: NAT fields
+      questionType: question.type ?? 'mcq',
+      correctAnswerExact: question.correctAnswerExact,
+      correctAnswerMin: question.correctAnswerMin,
+      correctAnswerMax: question.correctAnswerMax,
+
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
     }
@@ -101,7 +140,6 @@ export async function PUT(
 
     const data = parsed
 
-    // Check question exists
     const existingQuestion = await prisma.question.findUnique({
       where: { id: params.id },
       include: { options: true }
@@ -111,7 +149,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
-    // --- Resolve topicId ---
+    // ✅ EXISTING: Resolve topicId — untouched
     let topicId: string
 
     if (data.topicId) {
@@ -121,7 +159,6 @@ export async function PUT(
       }
       topicId = data.topicId
     } else {
-      // subjectId + topicName
       const subject = await prisma.subject.findUnique({ where: { id: data.subjectId! } })
       if (!subject) {
         return NextResponse.json({ error: 'Subject not found' }, { status: 400 })
@@ -151,7 +188,7 @@ export async function PUT(
       topicId = topic.id
     }
 
-    // --- Resolve subTopicId (optional) ---
+    // ✅ EXISTING: Resolve subTopicId — untouched
     let subTopicId: string | null = null
 
     if (data.subTopicId) {
@@ -185,7 +222,9 @@ export async function PUT(
       subTopicId = subTopic.id
     }
 
-    // --- Update question + options in transaction ---
+    const isNumerical = data.questionType === 'numerical'
+
+    // ✅ UPDATED: transaction handles both MCQ and NAT
     const updatedQuestion = await prisma.$transaction(async (tx) => {
       const question = await tx.question.update({
         where: { id: params.id },
@@ -198,23 +237,31 @@ export async function PUT(
           difficulty: data.difficulty,
           explanation: data.explanation || '',
           isActive: data.isActive ?? true,
+          // ✅ NEW: update type and numerical fields
+          type: data.questionType ?? 'mcq',
+          correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
+          correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
+          correctAnswerMax: isNumerical ? (data.correctAnswerMax ?? null) : null,
         }
       })
 
-      const optionUpdates = [
-        { key: 'A', text: data.optionA, isCorrect: data.correctAnswer === 'A' },
-        { key: 'B', text: data.optionB, isCorrect: data.correctAnswer === 'B' },
-        { key: 'C', text: data.optionC, isCorrect: data.correctAnswer === 'C' },
-        { key: 'D', text: data.optionD, isCorrect: data.correctAnswer === 'D' },
-      ]
+      // ✅ EXISTING: only update options for MCQ
+      if (!isNumerical) {
+        const optionUpdates = [
+          { key: 'A', text: data.optionA!, isCorrect: data.correctAnswer === 'A' },
+          { key: 'B', text: data.optionB!, isCorrect: data.correctAnswer === 'B' },
+          { key: 'C', text: data.optionC!, isCorrect: data.correctAnswer === 'C' },
+          { key: 'D', text: data.optionD!, isCorrect: data.correctAnswer === 'D' },
+        ]
 
-      for (const opt of optionUpdates) {
-        const existing = existingQuestion.options.find(o => o.optionKey === opt.key)
-        if (existing) {
-          await tx.option.update({
-            where: { id: existing.id },
-            data: { text: opt.text, isCorrect: opt.isCorrect }
-          })
+        for (const opt of optionUpdates) {
+          const existing = existingQuestion.options.find(o => o.optionKey === opt.key)
+          if (existing) {
+            await tx.option.update({
+              where: { id: existing.id },
+              data: { text: opt.text, isCorrect: opt.isCorrect }
+            })
+          }
         }
       }
 
@@ -233,7 +280,7 @@ export async function PUT(
   }
 }
 
-// DELETE: Delete question
+// ✅ EXISTING: DELETE — completely untouched
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }

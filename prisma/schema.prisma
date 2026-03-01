@@ -137,7 +137,7 @@ model Question {
   imageUrl      String?
   topicId       String
   topic         Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  subTopicId    String?    // ✅ NEW: nullable for backward compat
+  subTopicId    String?
   subTopic      SubTopic?  @relation(fields: [subTopicId], references: [id], onDelete: SetNull)
   marks         Int        @default(1)
   negativeMarks Float      @default(0.25)
@@ -147,6 +147,12 @@ model Question {
   version       Int        @default(1)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+
+  // ✅ NEW: NAT Question Fields
+  type                String  @default("mcq") // "mcq" | "numerical"
+  correctAnswerExact  Float?
+  correctAnswerMin    Float?
+  correctAnswerMax    Float?
   
   options       Option[]
   examQuestions ExamQuestion[]
