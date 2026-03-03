@@ -4,6 +4,8 @@ import { useEditor, EditorContent, Node, mergeAttributes } from '@tiptap/react';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { toast } from 'sonner';
@@ -234,11 +236,6 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Track whether the last HTML change originated from the editor itself (user
-  // typing) or from the outside (parent reset). This prevents the sync effect
-  // from calling setContent while the user is mid-type, which would reset the
-  // cursor position.
   const isInternalChange = useRef(false);
 
   const editor = useEditor({
@@ -251,6 +248,9 @@ export function RichTextEditor({
         horizontalRule: false,
       }),
       Underline,
+      // ── Proper TipTap sub/sup extensions (replaces Unicode hack) ──
+      Subscript,
+      Superscript,
       Placeholder.configure({ placeholder }),
       MathNode,
       ResizableImage,
@@ -258,7 +258,6 @@ export function RichTextEditor({
     content: value || '',
     editable: !disabled,
     onUpdate: ({ editor }) => {
-      // Mark as internal so the sync effect below knows not to fight back
       isInternalChange.current = true;
       const html = editor.getHTML();
       onChange(html === '<p></p>' ? '' : html);
@@ -293,36 +292,18 @@ export function RichTextEditor({
   });
 
   // ── Sync external value changes into the editor ──────────────────────────
-  //
-  // This runs whenever the parent changes `value` (e.g. react-hook-form reset).
-  // We skip the sync when the change came from the editor itself (isInternalChange)
-  // to avoid resetting the cursor mid-type.
-  //
-  // The key fix: we now handle ALL values (empty AND non-empty), not just empty.
-  // Before this fix, when reset() set statement='' the editor cleared, but when
-  // the next question's value arrived it was never pushed back into the editor,
-  // so the form still held the previous question's stale content at submit time.
   useEffect(() => {
     if (!editor) return;
-
-    // If this value change came from the editor's own onUpdate, skip — the
-    // editor already has this content and we'd just be setting it again.
     if (isInternalChange.current) {
       isInternalChange.current = false;
       return;
     }
-
     const incoming = value || '';
     const current = editor.getHTML();
-
-    // Normalise empty states so '<p></p>' and '' are treated the same
     const normalise = (html: string) =>
       html === '<p></p>' || html === '' ? '' : html;
-
     if (normalise(incoming) !== normalise(current)) {
-      // setContent replaces the entire document — safe here because we only
-      // reach this branch when the parent explicitly changed the value
-      editor.commands.setContent(incoming, false /* don't emit update */)
+      editor.commands.setContent(incoming, false);
     }
   }, [value, editor]);
 
@@ -386,6 +367,8 @@ export function RichTextEditor({
       }`}
     >
       <div className="flex items-center gap-0.5 border-b border-input px-2 py-1.5 bg-muted/40 rounded-t-md flex-wrap">
+
+        {/* ── Text formatting ── */}
         <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} isActive={editor.isActive('bold')} title="Bold" disabled={disabled}>
           <Bold className="w-3.5 h-3.5" />
         </ToolbarButton>
@@ -398,46 +381,49 @@ export function RichTextEditor({
 
         <div className="w-px h-4 bg-border mx-1" />
 
+        {/* ── Subscript / Superscript — now real HTML tags via TipTap extensions ── */}
         <ToolbarButton
-          onClick={() => {
-            const { from, to } = editor.state.selection;
-            const text = editor.state.doc.textBetween(from, to);
-            if (text) {
-              editor.chain().focus().insertContent(text.split('').map((c) => subscriptMap[c] || c).join('')).run();
-            } else {
-              toast('Select text first to convert to subscript');
-            }
-          }}
-          title="Subscript (select text first)" disabled={disabled}
+          onClick={() => editor.chain().focus().toggleSubscript().run()}
+          isActive={editor.isActive('subscript')}
+          title="Subscript — select text then click, or click then type"
+          disabled={disabled}
         >
-          <span className="text-xs font-bold leading-none">X<sub>2</sub></span>
+          {/* Visual: X with a properly positioned subscript 2 */}
+          <span className="text-xs font-bold leading-none" style={{ fontFamily: 'serif' }}>
+            X<sub style={{ fontSize: '0.65em' }}>2</sub>
+          </span>
         </ToolbarButton>
 
         <ToolbarButton
-          onClick={() => {
-            const { from, to } = editor.state.selection;
-            const text = editor.state.doc.textBetween(from, to);
-            if (text) {
-              editor.chain().focus().insertContent(text.split('').map((c) => superscriptMap[c] || c).join('')).run();
-            } else {
-              toast('Select text first to convert to superscript');
-            }
-          }}
-          title="Superscript (select text first)" disabled={disabled}
+          onClick={() => editor.chain().focus().toggleSuperscript().run()}
+          isActive={editor.isActive('superscript')}
+          title="Superscript — select text then click, or click then type"
+          disabled={disabled}
         >
-          <span className="text-xs font-bold leading-none">X<sup>2</sup></span>
+          {/* Visual: X with a properly positioned superscript 2 */}
+          <span className="text-xs font-bold leading-none" style={{ fontFamily: 'serif' }}>
+            X<sup style={{ fontSize: '0.65em' }}>2</sup>
+          </span>
         </ToolbarButton>
 
         <div className="w-px h-4 bg-border mx-1" />
 
+        {/* ── Symbol Picker ── */}
         <SymbolPicker onInsert={(s) => editor.chain().focus().insertContent(s).run()} disabled={disabled} />
 
         <div className="w-px h-4 bg-border mx-1" />
 
+        {/* ── Chemistry / Physics Picker (NEW) ── */}
+        <ChemistryPicker editor={editor} disabled={disabled} />
+
+        <div className="w-px h-4 bg-border mx-1" />
+
+        {/* ── Math Keyboard ── */}
         <MathKeyboard onInsert={insertMath} disabled={disabled} />
 
         <div className="w-px h-4 bg-border mx-1" />
 
+        {/* ── Image upload ── */}
         <ToolbarButton
           onClick={() => fileInputRef.current?.click()}
           title="Insert image (click image then drag right edge to resize)"
@@ -507,6 +493,315 @@ function SymbolPicker({ onInsert, disabled }: { onInsert: (s: string) => void; d
                 {s.label}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Chemistry / Physics Picker ───────────────────────────────────────────────
+//
+// Each entry is either:
+//   { label, insert: string }          → inserts plain text at cursor
+//   { label, insert: 'SUB:...' }       → wraps "..." in <sub> tag
+//   { label, insert: 'SUP:...' }       → wraps "..." in <sup> tag
+//   { label, insert: 'HTML:...' }      → inserts raw HTML string
+//
+// The HTML: prefix lets us combine normal text + sub/sup in one click,
+// e.g. "NO₃⁻" is really  NO<sub>3</sub><sup>−</sup>
+
+type ChemEntry = {
+  label: string;      // what the button displays
+  title: string;      // tooltip
+  insert: string;     // plain string OR prefixed command (see above)
+};
+
+type ChemCategory = {
+  key: string;
+  label: string;
+  entries: ChemEntry[];
+};
+
+const CHEM_CATEGORIES: ChemCategory[] = [
+  {
+    key: 'ions',
+    label: '⚗ Ions',
+    entries: [
+      { label: 'H⁺',    title: 'Hydrogen ion',        insert: 'HTML:H<sup>+</sup>' },
+      { label: 'OH⁻',   title: 'Hydroxide',           insert: 'HTML:OH<sup>−</sup>' },
+      { label: 'Na⁺',   title: 'Sodium ion',          insert: 'HTML:Na<sup>+</sup>' },
+      { label: 'K⁺',    title: 'Potassium ion',       insert: 'HTML:K<sup>+</sup>' },
+      { label: 'Ca²⁺',  title: 'Calcium ion',         insert: 'HTML:Ca<sup>2+</sup>' },
+      { label: 'Mg²⁺',  title: 'Magnesium ion',       insert: 'HTML:Mg<sup>2+</sup>' },
+      { label: 'Fe²⁺',  title: 'Iron(II)',             insert: 'HTML:Fe<sup>2+</sup>' },
+      { label: 'Fe³⁺',  title: 'Iron(III)',            insert: 'HTML:Fe<sup>3+</sup>' },
+      { label: 'Cu²⁺',  title: 'Copper(II)',           insert: 'HTML:Cu<sup>2+</sup>' },
+      { label: 'Zn²⁺',  title: 'Zinc ion',            insert: 'HTML:Zn<sup>2+</sup>' },
+      { label: 'Al³⁺',  title: 'Aluminium ion',       insert: 'HTML:Al<sup>3+</sup>' },
+      { label: 'NH₄⁺',  title: 'Ammonium',            insert: 'HTML:NH<sub>4</sub><sup>+</sup>' },
+      { label: 'Cl⁻',   title: 'Chloride',            insert: 'HTML:Cl<sup>−</sup>' },
+      { label: 'F⁻',    title: 'Fluoride',            insert: 'HTML:F<sup>−</sup>' },
+      { label: 'Br⁻',   title: 'Bromide',             insert: 'HTML:Br<sup>−</sup>' },
+      { label: 'I⁻',    title: 'Iodide',              insert: 'HTML:I<sup>−</sup>' },
+      { label: 'S²⁻',   title: 'Sulfide',             insert: 'HTML:S<sup>2−</sup>' },
+      { label: 'O²⁻',   title: 'Oxide',               insert: 'HTML:O<sup>2−</sup>' },
+      { label: 'NO₃⁻',  title: 'Nitrate',             insert: 'HTML:NO<sub>3</sub><sup>−</sup>' },
+      { label: 'NO₂⁻',  title: 'Nitrite',             insert: 'HTML:NO<sub>2</sub><sup>−</sup>' },
+      { label: 'SO₄²⁻', title: 'Sulfate',             insert: 'HTML:SO<sub>4</sub><sup>2−</sup>' },
+      { label: 'SO₃²⁻', title: 'Sulfite',             insert: 'HTML:SO<sub>3</sub><sup>2−</sup>' },
+      { label: 'CO₃²⁻', title: 'Carbonate',           insert: 'HTML:CO<sub>3</sub><sup>2−</sup>' },
+      { label: 'HCO₃⁻', title: 'Bicarbonate',         insert: 'HTML:HCO<sub>3</sub><sup>−</sup>' },
+      { label: 'PO₄³⁻', title: 'Phosphate',           insert: 'HTML:PO<sub>4</sub><sup>3−</sup>' },
+      { label: 'HPO₄²⁻',title: 'Hydrogen phosphate',  insert: 'HTML:HPO<sub>4</sub><sup>2−</sup>' },
+      { label: 'CrO₄²⁻',title: 'Chromate',            insert: 'HTML:CrO<sub>4</sub><sup>2−</sup>' },
+      { label: 'MnO₄⁻', title: 'Permanganate',        insert: 'HTML:MnO<sub>4</sub><sup>−</sup>' },
+      { label: 'CN⁻',   title: 'Cyanide',             insert: 'HTML:CN<sup>−</sup>' },
+      { label: 'SCN⁻',  title: 'Thiocyanate',         insert: 'HTML:SCN<sup>−</sup>' },
+    ],
+  },
+  {
+    key: 'compounds',
+    label: '🧪 Compounds',
+    entries: [
+      { label: 'H₂O',   title: 'Water',               insert: 'HTML:H<sub>2</sub>O' },
+      { label: 'CO₂',   title: 'Carbon dioxide',      insert: 'HTML:CO<sub>2</sub>' },
+      { label: 'CO',    title: 'Carbon monoxide',     insert: 'HTML:CO' },
+      { label: 'H₂',    title: 'Hydrogen gas',        insert: 'HTML:H<sub>2</sub>' },
+      { label: 'O₂',    title: 'Oxygen gas',          insert: 'HTML:O<sub>2</sub>' },
+      { label: 'N₂',    title: 'Nitrogen gas',        insert: 'HTML:N<sub>2</sub>' },
+      { label: 'Cl₂',   title: 'Chlorine gas',        insert: 'HTML:Cl<sub>2</sub>' },
+      { label: 'HCl',   title: 'Hydrochloric acid',   insert: 'HTML:HCl' },
+      { label: 'H₂SO₄', title: 'Sulfuric acid',       insert: 'HTML:H<sub>2</sub>SO<sub>4</sub>' },
+      { label: 'HNO₃',  title: 'Nitric acid',         insert: 'HTML:HNO<sub>3</sub>' },
+      { label: 'NaOH',  title: 'Sodium hydroxide',    insert: 'HTML:NaOH' },
+      { label: 'NaCl',  title: 'Sodium chloride',     insert: 'HTML:NaCl' },
+      { label: 'CaCO₃', title: 'Calcium carbonate',   insert: 'HTML:CaCO<sub>3</sub>' },
+      { label: 'CaO',   title: 'Calcium oxide',       insert: 'HTML:CaO' },
+      { label: 'NH₃',   title: 'Ammonia',             insert: 'HTML:NH<sub>3</sub>' },
+      { label: 'CH₄',   title: 'Methane',             insert: 'HTML:CH<sub>4</sub>' },
+      { label: 'C₂H₅OH',title: 'Ethanol',             insert: 'HTML:C<sub>2</sub>H<sub>5</sub>OH' },
+      { label: 'C₆H₁₂O₆',title:'Glucose',            insert: 'HTML:C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>' },
+      { label: 'Fe₂O₃', title: 'Iron(III) oxide',     insert: 'HTML:Fe<sub>2</sub>O<sub>3</sub>' },
+      { label: 'Al₂O₃', title: 'Aluminium oxide',     insert: 'HTML:Al<sub>2</sub>O<sub>3</sub>' },
+      { label: 'MgO',   title: 'Magnesium oxide',     insert: 'HTML:MgO' },
+      { label: 'KMnO₄', title: 'Potassium permanganate', insert: 'HTML:KMnO<sub>4</sub>' },
+      { label: 'K₂Cr₂O₇',title:'Potassium dichromate',insert:'HTML:K<sub>2</sub>Cr<sub>2</sub>O<sub>7</sub>'},
+      { label: 'H₂O₂',  title: 'Hydrogen peroxide',  insert: 'HTML:H<sub>2</sub>O<sub>2</sub>' },
+      { label: 'SO₂',   title: 'Sulfur dioxide',      insert: 'HTML:SO<sub>2</sub>' },
+      { label: 'SO₃',   title: 'Sulfur trioxide',     insert: 'HTML:SO<sub>3</sub>' },
+    ],
+  },
+  {
+    key: 'orbitals',
+    label: '🔬 Orbitals',
+    entries: [
+      { label: '1s¹',   title: '1s¹',   insert: 'HTML:1s<sup>1</sup>' },
+      { label: '1s²',   title: '1s²',   insert: 'HTML:1s<sup>2</sup>' },
+      { label: '2s¹',   title: '2s¹',   insert: 'HTML:2s<sup>1</sup>' },
+      { label: '2s²',   title: '2s²',   insert: 'HTML:2s<sup>2</sup>' },
+      { label: '2p¹',   title: '2p¹',   insert: 'HTML:2p<sup>1</sup>' },
+      { label: '2p²',   title: '2p²',   insert: 'HTML:2p<sup>2</sup>' },
+      { label: '2p³',   title: '2p³',   insert: 'HTML:2p<sup>3</sup>' },
+      { label: '2p⁴',   title: '2p⁴',   insert: 'HTML:2p<sup>4</sup>' },
+      { label: '2p⁵',   title: '2p⁵',   insert: 'HTML:2p<sup>5</sup>' },
+      { label: '2p⁶',   title: '2p⁶',   insert: 'HTML:2p<sup>6</sup>' },
+      { label: '3s¹',   title: '3s¹',   insert: 'HTML:3s<sup>1</sup>' },
+      { label: '3s²',   title: '3s²',   insert: 'HTML:3s<sup>2</sup>' },
+      { label: '3p¹',   title: '3p¹',   insert: 'HTML:3p<sup>1</sup>' },
+      { label: '3p⁶',   title: '3p⁶',   insert: 'HTML:3p<sup>6</sup>' },
+      { label: '3d¹',   title: '3d¹',   insert: 'HTML:3d<sup>1</sup>' },
+      { label: '3d⁵',   title: '3d⁵',   insert: 'HTML:3d<sup>5</sup>' },
+      { label: '3d¹⁰',  title: '3d¹⁰',  insert: 'HTML:3d<sup>10</sup>' },
+      { label: '4s¹',   title: '4s¹',   insert: 'HTML:4s<sup>1</sup>' },
+      { label: '4s²',   title: '4s²',   insert: 'HTML:4s<sup>2</sup>' },
+      { label: '4p⁶',   title: '4p⁶',   insert: 'HTML:4p<sup>6</sup>' },
+      { label: '4d¹⁰',  title: '4d¹⁰',  insert: 'HTML:4d<sup>10</sup>' },
+      { label: '4f¹⁴',  title: '4f¹⁴',  insert: 'HTML:4f<sup>14</sup>' },
+      { label: 'dxy',   title: 'dxy orbital',   insert: 'HTML:d<sub>xy</sub>' },
+      { label: 'dyz',   title: 'dyz orbital',   insert: 'HTML:d<sub>yz</sub>' },
+      { label: 'dxz',   title: 'dxz orbital',   insert: 'HTML:d<sub>xz</sub>' },
+      { label: 'dx²-y²',title: 'dx²-y² orbital',insert: 'HTML:d<sub>x²−y²</sub>' },
+      { label: 'dz²',   title: 'dz² orbital',   insert: 'HTML:d<sub>z²</sub>' },
+      { label: 'px',    title: 'px orbital',    insert: 'HTML:p<sub>x</sub>' },
+      { label: 'py',    title: 'py orbital',    insert: 'HTML:p<sub>y</sub>' },
+      { label: 'pz',    title: 'pz orbital',    insert: 'HTML:p<sub>z</sub>' },
+    ],
+  },
+  {
+    key: 'arrows',
+    label: '→ Arrows',
+    entries: [
+      { label: '→',   title: 'Reaction arrow (forward)',       insert: ' → ' },
+      { label: '←',   title: 'Reaction arrow (backward)',      insert: ' ← ' },
+      { label: '⇌',   title: 'Reversible reaction / equilibrium', insert: ' ⇌ ' },
+      { label: '⇒',   title: 'Implies / yields',              insert: ' ⇒ ' },
+      { label: '⇔',   title: 'Double implies',                insert: ' ⇔ ' },
+      { label: '↑',   title: 'Gas evolved (upward arrow)',     insert: '↑' },
+      { label: '↓',   title: 'Precipitate formed (downward)',  insert: '↓' },
+      { label: '↔',   title: 'Resonance arrow',               insert: ' ↔ ' },
+      { label: '⟶',   title: 'Long forward arrow',            insert: ' ⟶ ' },
+      { label: '⟵',   title: 'Long backward arrow',           insert: ' ⟵ ' },
+      { label: '⟷',   title: 'Long double arrow',             insert: ' ⟷ ' },
+      { label: '△',   title: 'Heat (triangle above arrow)',    insert: 'Δ' },
+      { label: 'hν',  title: 'Photon / light energy',         insert: 'hν' },
+      { label: '→Δ',  title: 'Reaction with heat',            insert: 'HTML:&nbsp;→<sup>Δ</sup>&nbsp;' },
+      { label: '→hν', title: 'Reaction with light',           insert: 'HTML:&nbsp;→<sup>hν</sup>&nbsp;' },
+    ],
+  },
+  {
+    key: 'physics',
+    label: '⚡ Physics',
+    entries: [
+      { label: 'e⁻',    title: 'Electron',              insert: 'HTML:e<sup>−</sup>' },
+      { label: 'e⁺',    title: 'Positron',              insert: 'HTML:e<sup>+</sup>' },
+      { label: 'α',     title: 'Alpha particle',        insert: 'α' },
+      { label: 'β',     title: 'Beta particle',         insert: 'β' },
+      { label: 'γ',     title: 'Gamma ray',             insert: 'γ' },
+      { label: 'ν',     title: 'Nu (frequency)',        insert: 'ν' },
+      { label: 'λ',     title: 'Lambda (wavelength)',   insert: 'λ' },
+      { label: 'ρ',     title: 'Rho (density)',         insert: 'ρ' },
+      { label: 'ω',     title: 'Omega (angular vel.)',  insert: 'ω' },
+      { label: 'τ',     title: 'Tau (time constant)',   insert: 'τ' },
+      { label: 'η',     title: 'Eta (efficiency)',      insert: 'η' },
+      { label: 'ε₀',    title: 'Permittivity of free space', insert: 'HTML:ε<sub>0</sub>' },
+      { label: 'μ₀',    title: 'Permeability of free space', insert: 'HTML:μ<sub>0</sub>' },
+      { label: 'kB',    title: 'Boltzmann constant',   insert: 'HTML:k<sub>B</sub>' },
+      { label: 'NA',    title: "Avogadro's number",     insert: 'HTML:N<sub>A</sub>' },
+      { label: 'c',     title: 'Speed of light',        insert: 'c' },
+      { label: 'ħ',     title: 'h-bar (reduced Planck)', insert: 'ħ' },
+      { label: '°C',    title: 'Degrees Celsius',       insert: '°C' },
+      { label: '°K',    title: 'Kelvin',                insert: 'K' },
+      { label: 'Å',     title: 'Angstrom',              insert: 'Å' },
+      { label: 'μm',    title: 'Micrometre',            insert: 'μm' },
+      { label: 'nm',    title: 'Nanometre',             insert: 'nm' },
+      { label: 'eV',    title: 'Electronvolt',          insert: 'eV' },
+      { label: 'J/K',   title: 'Joules per Kelvin',     insert: 'J/K' },
+      { label: 'mol⁻¹', title: 'per mole',              insert: 'HTML:mol<sup>−1</sup>' },
+      { label: 'kg/m³', title: 'kilograms per cubic metre', insert: 'kg/m³' },
+      { label: 'ms⁻¹',  title: 'metres per second',    insert: 'HTML:ms<sup>−1</sup>' },
+      { label: 'ms⁻²',  title: 'metres per second²',   insert: 'HTML:ms<sup>−2</sup>' },
+      { label: 'Ω',     title: 'Ohm',                  insert: 'Ω' },
+      { label: 'μF',    title: 'Microfarad',            insert: 'μF' },
+    ],
+  },
+  {
+    key: 'states',
+    label: '(s) States',
+    entries: [
+      { label: '(s)',   title: 'Solid state',           insert: '(s)' },
+      { label: '(l)',   title: 'Liquid state',          insert: '(l)' },
+      { label: '(g)',   title: 'Gas state',             insert: '(g)' },
+      { label: '(aq)',  title: 'Aqueous solution',      insert: '(aq)' },
+      { label: '(ppt)', title: 'Precipitate',           insert: '(ppt)' },
+      { label: '⊕',    title: 'Positive charge circle', insert: '⊕' },
+      { label: '⊖',    title: 'Negative charge circle', insert: '⊖' },
+      { label: 'δ+',   title: 'Partial positive',      insert: 'HTML:δ<sup>+</sup>' },
+      { label: 'δ−',   title: 'Partial negative',      insert: 'HTML:δ<sup>−</sup>' },
+      { label: '∝',    title: 'Proportional to',       insert: '∝' },
+      { label: '≡',    title: 'Identical to',          insert: '≡' },
+      { label: '∴',    title: 'Therefore',             insert: '∴' },
+      { label: '∵',    title: 'Because',               insert: '∵' },
+    ],
+  },
+];
+
+function ChemistryPicker({ editor, disabled }: { editor: any; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('ions');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleInsert = (entry: ChemEntry) => {
+    if (!editor) return;
+
+    if (entry.insert.startsWith('HTML:')) {
+      // Insert raw HTML — TipTap will parse sub/sup tags correctly
+      const html = entry.insert.slice(5);
+      editor.chain().focus().insertContent(html, {
+        parseOptions: { preserveWhitespace: 'full' },
+      }).run();
+    } else {
+      // Plain text insertion
+      editor.chain().focus().insertContent(entry.insert).run();
+    }
+
+    // Keep panel open so users can insert multiple symbols quickly
+  };
+
+  const activeCategory = CHEM_CATEGORIES.find(c => c.key === activeTab)!;
+
+  return (
+    <div ref={ref} className="relative">
+      <ToolbarButton
+        onClick={() => setOpen(o => !o)}
+        title="Chemistry & Physics symbols"
+        disabled={disabled}
+        isActive={open}
+      >
+        {/* Flask icon using text — distinguishable from Ω and Σ */}
+        <span className="text-xs font-bold leading-none">⚗</span>
+      </ToolbarButton>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border rounded-lg shadow-xl"
+          style={{ width: '420px' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/40 rounded-t-lg">
+            <span className="text-sm font-semibold">Chemistry &amp; Physics</span>
+            <span className="text-xs text-muted-foreground">Click to insert • panel stays open</span>
+          </div>
+
+          {/* Category tabs */}
+          <div className="flex gap-0.5 px-2 pt-2 flex-wrap">
+            {CHEM_CATEGORIES.map(cat => (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => setActiveTab(cat.key)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors font-medium ${
+                  activeTab === cat.key
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Symbol grid */}
+          <div className="p-2 max-h-52 overflow-y-auto">
+            <div className="grid grid-cols-6 gap-1">
+              {activeCategory.entries.map((entry) => (
+                <button
+                  key={entry.insert}
+                  type="button"
+                  onClick={() => handleInsert(entry)}
+                  title={entry.title}
+                  className="flex items-center justify-center px-1 py-2 text-xs rounded border border-border bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors font-mono leading-none"
+                  style={{ minHeight: '36px' }}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer hint */}
+          <div className="px-3 py-1.5 border-t border-border bg-muted/30 rounded-b-lg">
+            <p className="text-xs text-muted-foreground">
+              Tip: Use <strong>X₂</strong> / <strong>X²</strong> toolbar buttons for custom sub/superscript on any selected text
+            </p>
           </div>
         </div>
       )}
@@ -693,16 +988,3 @@ function MathKeyboard({ onInsert, disabled }: {
     </div>
   );
 }
-
-// ─── Unicode Maps ─────────────────────────────────────────────────────────────
-const superscriptMap: Record<string, string> = {
-  '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹',
-  'a':'ᵃ','b':'ᵇ','c':'ᶜ','d':'ᵈ','e':'ᵉ','f':'ᶠ','g':'ᵍ','h':'ʰ','i':'ⁱ','j':'ʲ',
-  'k':'ᵏ','l':'ˡ','m':'ᵐ','n':'ⁿ','o':'ᵒ','p':'ᵖ','r':'ʳ','s':'ˢ','t':'ᵗ','u':'ᵘ',
-  'v':'ᵛ','w':'ʷ','x':'ˣ','y':'ʸ','z':'ᶻ','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾',
-};
-const subscriptMap: Record<string, string> = {
-  '0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉',
-  'a':'ₐ','e':'ₑ','i':'ᵢ','o':'ₒ','u':'ᵤ','r':'ᵣ','v':'ᵥ','x':'ₓ','+':'₊','-':'₋',
-  '=':'₌','(':'₍',')':'₎',
-};

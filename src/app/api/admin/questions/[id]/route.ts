@@ -280,6 +280,30 @@ export async function PUT(
   }
 }
 
+// PATCH: Inline status toggle
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await requireAdmin()
+    const body = await request.json()
+    const { isActive } = z.object({ isActive: z.boolean() }).parse(body)
+
+    const question = await prisma.question.findUnique({ where: { id: params.id } })
+    if (!question) {
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+    }
+
+    await prisma.question.update({ where: { id: params.id }, data: { isActive } })
+
+    return NextResponse.json({ success: true, isActive })
+  } catch (error) {
+    console.error('PATCH QUESTION ERROR:', error)
+    return NextResponse.json({ error: 'Failed to update status' }, { status: 500 })
+  }
+}
+
 // ✅ EXISTING: DELETE — completely untouched
 export async function DELETE(
   request: NextRequest,

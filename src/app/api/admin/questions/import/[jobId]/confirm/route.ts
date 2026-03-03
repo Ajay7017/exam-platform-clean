@@ -13,7 +13,6 @@ export async function POST(
 
     const { jobId } = await context.params
 
-    // Read subTopicId from request body (optional)
     let subTopicId: string | null = null
     try {
       const body = await request.json()
@@ -40,7 +39,6 @@ export async function POST(
       data: { status: 'processing', successCount: 0, failedCount: 0 }
     })
 
-    // Start background processing (non-blocking)
     processImportInBackground(jobId, subTopicId).catch(err => {
       console.error('Background process error:', err)
     })
@@ -70,27 +68,42 @@ async function processImportInBackground(jobId: string, subTopicId: string | nul
       try {
         const q = questions[i]
 
+        // ✅ Determine question type — default to 'mcq' for backward compatibility
+        const isNumerical = q.questionType === 'numerical'
+
         await prisma.question.create({
           data: {
             statement: q.statement,
-            imageUrl: null, // Images added later via edit button
+            imageUrl: null,
             topicId: job.topicId,
-            subTopicId: subTopicId || null, // ✅ Attach subtopic if provided
+            subTopicId: subTopicId || null,
             marks: q.marks,
             negativeMarks: q.negativeMarks,
             difficulty: q.difficulty,
             explanation: q.explanation || null,
             isActive: true,
             version: 1,
-            options: {
-              create: q.options.map((opt: any, idx: number) => ({
-                text: opt.text,
-                imageUrl: null,
-                isCorrect: opt.key === q.correctAnswer,
-                optionKey: opt.key,
-                sequence: idx + 1,
-              }))
-            }
+
+            // ✅ NEW: set type field
+            type: isNumerical ? 'numerical' : 'mcq',
+
+            // ✅ NEW: NAT answer fields — only set for numerical, null for MCQ
+            correctAnswerExact: isNumerical ? (q.correctAnswerExact ?? null) : null,
+            correctAnswerMin: isNumerical ? (q.correctAnswerMin ?? null) : null,
+            correctAnswerMax: isNumerical ? (q.correctAnswerMax ?? null) : null,
+
+            // ✅ Options — only created for MCQ, skipped for NAT
+            ...(!isNumerical && {
+              options: {
+                create: q.options.map((opt: any, idx: number) => ({
+                  text: opt.text,
+                  imageUrl: null,
+                  isCorrect: opt.key === q.correctAnswer,
+                  optionKey: opt.key,
+                  sequence: idx + 1,
+                }))
+              }
+            })
           }
         })
 

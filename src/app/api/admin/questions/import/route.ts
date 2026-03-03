@@ -1,4 +1,3 @@
-// src/app/api/admin/questions/import/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
@@ -31,7 +30,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate subject, topic (and optional subtopic)
     const subject = await prisma.subject.findUnique({
       where: { id: subjectId },
       select: { name: true }
@@ -64,17 +62,18 @@ export async function POST(request: NextRequest) {
       subTopicName = subTopic.name
     }
 
-    // Parse Word document (text only)
     const wordBytes = await wordFile.arrayBuffer()
     const wordBuffer = Buffer.from(wordBytes)
     const { questions, errors: parseErrors } = await parseWordDocument(wordBuffer)
 
-    // Validate
     const { valid, errors: validationErrors } = validateQuestions(questions)
     const allErrors = [...parseErrors, ...validationErrors]
     const canProceed = questions.length > 0 && valid
 
-    // Create ImportJob
+    // ✅ Include questionType in summary breakdown
+    const mcqCount = questions.filter(q => q.questionType === 'mcq').length
+    const numericalCount = questions.filter(q => q.questionType === 'numerical').length
+
     const job = await prisma.importJob.create({
       data: {
         adminId,
@@ -95,13 +94,14 @@ export async function POST(request: NextRequest) {
       preview: questions.slice(0, 10),
       summary: {
         totalQuestions: questions.length,
+        mcqCount,           // ✅ NEW
+        numericalCount,     // ✅ NEW
         subjectName: subject.name,
         topicName: topic.name,
         subTopicName: subTopicName || null,
       },
       errors: allErrors,
       canProceed,
-      // Pass subTopicId along so confirm step can use it
       subTopicId: subTopicId || null,
     })
 

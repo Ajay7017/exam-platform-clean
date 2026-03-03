@@ -1,4 +1,3 @@
-// src/app/(admin)/admin/exams/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -8,35 +7,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 import { toast } from 'sonner'
 import {
-  Plus,
-  Search,
-  Edit,
-  Trash2,
-  Eye,
-  Users,
-  Clock,
-  FileQuestion,
-  Loader2,
-  ToggleLeft,
-  ToggleRight,
+  Plus, Search, Edit, Trash2, Eye, Users, Clock, FileQuestion,
+  Loader2, LayoutGrid, List, Gift, Radio, Globe, EyeOff,
 } from 'lucide-react'
 
 interface Exam {
@@ -64,191 +47,325 @@ interface Stats {
   totalAttempts: number
 }
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+/** Deterministic gradient per subject name */
+const SUBJECT_GRADIENTS = [
+  'from-violet-500 to-purple-700',
+  'from-blue-500 to-cyan-700',
+  'from-emerald-500 to-teal-700',
+  'from-orange-500 to-amber-700',
+  'from-pink-500 to-rose-700',
+  'from-indigo-500 to-blue-700',
+  'from-teal-500 to-green-700',
+  'from-red-500 to-orange-700',
+]
+
+function getSubjectGradient(subject: string) {
+  let hash = 0
+  for (let i = 0; i < subject.length; i++) hash = subject.charCodeAt(i) + ((hash << 5) - hash)
+  return SUBJECT_GRADIENTS[Math.abs(hash) % SUBJECT_GRADIENTS.length]
+}
+
+function getSubjectInitial(subject: string) {
+  return subject?.trim()?.[0]?.toUpperCase() || '?'
+}
+
+function getDifficultyColor(d: string) {
+  switch (d) {
+    case 'easy': return 'bg-green-100 text-green-700'
+    case 'medium': return 'bg-yellow-100 text-yellow-700'
+    case 'hard': return 'bg-red-100 text-red-700'
+    default: return 'bg-gray-100 text-gray-700'
+  }
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
 export default function AdminExamsPage() {
   const router = useRouter()
   const [exams, setExams] = useState<Exam[]>([])
-  const [stats, setStats] = useState<Stats>({
-    total: 0,
-    free: 0,
-    paid: 0,
-    published: 0,
-    totalAttempts: 0,
-  })
+  const [stats, setStats] = useState<Stats>({ total: 0, free: 0, paid: 0, published: 0, totalAttempts: 0 })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')
-  
-  // Delete confirmation
+  const [publishFilter, setPublishFilter] = useState('all') // ✅ NEW
+
+  // ✅ NEW: view mode — persisted to localStorage
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('examViewMode') as 'grid' | 'list') || 'grid'
+    }
+    return 'grid'
+  })
+
+  // publish toggle loading per exam
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  // delete
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [examToDelete, setExamToDelete] = useState<Exam | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Fetch exams
+  useEffect(() => { fetchExams() }, [])
+
+  // ✅ Persist view mode
   useEffect(() => {
-    fetchExams()
-  }, [])
+    localStorage.setItem('examViewMode', viewMode)
+  }, [viewMode])
 
   const fetchExams = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/admin/exams')
-      if (!response.ok) throw new Error('Failed to fetch exams')
-      
-      const data = await response.json()
-      setExams(data.exams || [])
-      
-      // Calculate stats
-      const examsArray = data.exams || []
+      const res = await fetch('/api/admin/exams')
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      const arr: Exam[] = data.exams || []
+      setExams(arr)
       setStats({
-        total: examsArray.length,
-        free: examsArray.filter((e: Exam) => e.isFree).length,
-        paid: examsArray.filter((e: Exam) => !e.isFree).length,
-        published: examsArray.filter((e: Exam) => e.isPublished).length,
-        totalAttempts: examsArray.reduce((sum: number, e: Exam) => sum + e.totalAttempts, 0),
+        total: arr.length,
+        free: arr.filter(e => e.isFree).length,
+        paid: arr.filter(e => !e.isFree).length,
+        published: arr.filter(e => e.isPublished).length,
+        totalAttempts: arr.reduce((s, e) => s + e.totalAttempts, 0),
       })
-    } catch (error) {
-      console.error('Failed to fetch exams:', error)
+    } catch {
       toast.error('Failed to load exams')
     } finally {
       setLoading(false)
     }
   }
 
-  // Filter exams
-  const filteredExams = exams.filter((exam) => {
-    const matchesSearch = exam.title.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesSubject = subjectFilter === 'all' || exam.subjectSlug === subjectFilter
-    const matchesDifficulty = difficultyFilter === 'all' || exam.difficulty === difficultyFilter
-    return matchesSearch && matchesSubject && matchesDifficulty
+  // ── filtering ─────────────────────────────────────────────────────────────
+  const filteredExams = exams.filter(e => {
+    const matchSearch = e.title.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchSubject = subjectFilter === 'all' || e.subjectSlug === subjectFilter
+    const matchDiff = difficultyFilter === 'all' || e.difficulty === difficultyFilter
+    // ✅ NEW publish filter
+    const matchPublish =
+      publishFilter === 'all' ||
+      (publishFilter === 'published' && e.isPublished) ||
+      (publishFilter === 'draft' && !e.isPublished)
+    return matchSearch && matchSubject && matchDiff && matchPublish
   })
 
-  // Get unique subjects
-  const subjects = Array.from(new Set(exams.map(e => ({ slug: e.subjectSlug, name: e.subject }))))
+  const subjects = Array.from(
+    new Map(exams.map(e => [e.subjectSlug, e.subject])).entries()
+  ).map(([slug, name]) => ({ slug, name }))
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'easy':
-        return 'bg-green-100 text-green-700'
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-700'
-      case 'hard':
-        return 'bg-red-100 text-red-700'
-      default:
-        return 'bg-gray-100 text-gray-700'
+  // ── actions ───────────────────────────────────────────────────────────────
+  const handleTogglePublish = async (exam: Exam) => {
+    setTogglingId(exam.id)
+    try {
+      const res = await fetch(`/api/admin/exams/${exam.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublished: !exam.isPublished }),
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+      // optimistic update
+      setExams(prev => prev.map(e => e.id === exam.id ? { ...e, isPublished: !e.isPublished } : e))
+      setStats(prev => ({
+        ...prev,
+        published: exam.isPublished ? prev.published - 1 : prev.published + 1,
+      }))
+      toast.success(exam.isPublished ? 'Exam unpublished' : 'Exam published')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update exam')
+    } finally {
+      setTogglingId(null)
     }
   }
 
-  const handleCreateExam = () => {
-    router.push('/admin/exams/new')
-  }
-
-  const handleEditExam = (examId: string) => {
-    router.push(`/admin/exams/${examId}/edit`)
-  }
-
-  const handleViewExam = (examId: string) => {
-    router.push(`/admin/exams/${examId}`)
-  }
-
-  const confirmDelete = (exam: Exam) => {
-    setExamToDelete(exam)
-    setDeleteDialogOpen(true)
-  }
+  const confirmDelete = (exam: Exam) => { setExamToDelete(exam); setDeleteDialogOpen(true) }
 
   const handleDelete = async () => {
     if (!examToDelete) return
-
     setDeleting(true)
     try {
-      const response = await fetch(`/api/admin/exams/${examToDelete.id}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to delete exam')
-      }
-
+      const res = await fetch(`/api/admin/exams/${examToDelete.id}`, { method: 'DELETE' })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
       toast.success('Exam deleted successfully')
       setDeleteDialogOpen(false)
       setExamToDelete(null)
-      await fetchExams()
-    } catch (error: any) {
-      console.error('Failed to delete exam:', error)
-      toast.error(error.message || 'Failed to delete exam')
+      fetchExams()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete exam')
     } finally {
       setDeleting(false)
     }
   }
 
-  const handleTogglePublish = async (exam: Exam) => {
-    try {
-      const response = await fetch(`/api/admin/exams/${exam.id}/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPublished: !exam.isPublished }) // ADDED BODY
-      })
+  // ── sub-components ────────────────────────────────────────────────────────
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to toggle publish status')
-      }
-
-      toast.success(exam.isPublished ? 'Exam unpublished' : 'Exam published')
-      await fetchExams()
-    } catch (error: any) {
-      console.error('Failed to toggle publish:', error)
-      toast.error(error.message || 'Failed to update exam')
-    }
+  /** Redesigned card header — no more flat blue block */
+  function ExamCardHeader({ exam }: { exam: Exam }) {
+    const gradient = getSubjectGradient(exam.subject)
+    const initial = getSubjectInitial(exam.subject)
+    return (
+      <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
+        {/* subtle dot pattern */}
+        <div
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
+            backgroundSize: '18px 18px',
+          }}
+        />
+        {/* subject initial avatar */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+          <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+            <span className="text-2xl font-bold text-white">{initial}</span>
+          </div>
+          <span className="text-white/80 text-xs font-medium tracking-wide uppercase">
+            {exam.subject}
+          </span>
+        </div>
+        {/* badges */}
+        <div className="absolute top-3 left-3">
+          <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
+        </div>
+        <div className="absolute top-3 right-3">
+          <Badge className={exam.isPublished ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
+            {exam.isPublished ? 'Published' : 'Draft'}
+          </Badge>
+        </div>
+      </div>
+    )
   }
 
+  /** Grid card */
+  function ExamCard({ exam }: { exam: Exam }) {
+    const toggling = togglingId === exam.id
+    return (
+      <Card className="hover:shadow-lg transition-shadow overflow-hidden">
+        <CardContent className="p-0">
+          <ExamCardHeader exam={exam} />
+          <div className="p-4">
+            <h3 className="font-semibold text-gray-900 truncate mb-1" title={exam.title}>
+              {exam.title}
+            </h3>
+            <p className="text-sm text-gray-500 mb-3">{exam.subject}</p>
+
+            <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+              <div className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" /><span>{exam.duration}min</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <FileQuestion className="h-3.5 w-3.5" /><span>{exam.totalQuestions} Q</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" /><span>{exam.totalAttempts}</span>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              {exam.isFree
+                ? <span className="text-base font-bold text-green-600">Free</span>
+                : <span className="text-base font-bold text-gray-900">₹{(exam.price / 100).toFixed(2)}</span>
+              }
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/exams/${exam.id}`)}>
+                <Eye className="h-3 w-3 mr-1" />View
+              </Button>
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/exams/${exam.id}/edit`)}>
+                <Edit className="h-3 w-3 mr-1" />Edit
+              </Button>
+              {/* ✅ Clearer publish toggle */}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={toggling}
+                onClick={() => handleTogglePublish(exam)}
+                className={exam.isPublished ? 'text-orange-600 border-orange-300 hover:bg-orange-50' : 'text-green-600 border-green-300 hover:bg-green-50'}
+              >
+                {toggling
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : exam.isPublished
+                    ? <><EyeOff className="h-3 w-3 mr-1" />Unpublish</>
+                    : <><Globe className="h-3 w-3 mr-1" />Publish</>
+                }
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => confirmDelete(exam)}>
+                <Trash2 className="h-3 w-3 text-red-600" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="p-8 space-y-6">
+    <div className="space-y-6">
+
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Exam Management</h1>
-          <p className="mt-2 text-gray-600">
-            Manage all exams and mock tests ({stats.total} total)
-          </p>
+          <p className="mt-1 text-gray-600">Manage all exams and mock tests ({stats.total} total)</p>
         </div>
-        <Button onClick={handleCreateExam}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create New Exam
+        <Button onClick={() => router.push('/admin/exams/new')}>
+          <Plus className="mr-2 h-4 w-4" />Create New Exam
         </Button>
       </div>
 
-      {/* Filters */}
+      {/* Stats Cards — ✅ distinct icons */}
+      <div className="grid gap-4 md:grid-cols-4">
+        {[
+          { label: 'Total Exams', value: stats.total, icon: FileQuestion, color: 'bg-blue-100 text-blue-600' },
+          { label: 'Free Exams', value: stats.free, icon: Gift, color: 'bg-green-100 text-green-600' },
+          { label: 'Published', value: stats.published, icon: Radio, color: 'bg-yellow-100 text-yellow-600' },
+          { label: 'Total Attempts', value: stats.totalAttempts.toLocaleString(), icon: Users, color: 'bg-red-100 text-red-600' },
+        ].map(({ label, value, icon: Icon, color }) => (
+          <Card key={label}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">{label}</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+                </div>
+                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${color}`}>
+                  <Icon className="h-6 w-6" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filters + View Toggle */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col md:flex-row gap-3">
+            {/* Search */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 placeholder="Search exams by title..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={e => setSearchQuery(e.target.value)}
                 className="pl-9"
               />
             </div>
+
+            {/* Subject */}
             <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="All Subjects" />
-              </SelectTrigger>
+              <SelectTrigger className="w-44"><SelectValue placeholder="All Subjects" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Subjects</SelectItem>
-                {subjects.map((subject) => (
-                  <SelectItem key={subject.slug} value={subject.slug}>
-                    {subject.name}
-                  </SelectItem>
-                ))}
+                {subjects.map(s => <SelectItem key={s.slug} value={s.slug}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
+
+            {/* Difficulty */}
             <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="All Difficulties" />
-              </SelectTrigger>
+              <SelectTrigger className="w-44"><SelectValue placeholder="All Difficulties" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Difficulties</SelectItem>
                 <SelectItem value="easy">Easy</SelectItem>
@@ -256,78 +373,39 @@ export default function AdminExamsPage() {
                 <SelectItem value="hard">Hard</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* ✅ NEW: Publish filter */}
+            <Select value={publishFilter} onValueChange={setPublishFilter}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="All Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="published">Published</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* ✅ NEW: View toggle */}
+            <div className="flex gap-1 border rounded-md p-1 h-10 self-start">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Grid view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-2 rounded transition-colors ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                title="List view"
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Exams</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {stats.total}
-                </p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-                <FileQuestion className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Free Exams</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {stats.free}
-                </p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-                <FileQuestion className="h-6 w-6 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Published</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {stats.published}
-                </p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
-                <FileQuestion className="h-6 w-6 text-yellow-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Attempts</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {stats.totalAttempts.toLocaleString()}
-                </p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <Users className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Exams Grid */}
+      {/* Content */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -341,139 +419,120 @@ export default function AdminExamsPage() {
               {exams.length === 0 ? 'Create your first exam to get started' : 'Try adjusting your filters'}
             </p>
             {exams.length === 0 && (
-              <Button onClick={handleCreateExam}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create First Exam
+              <Button onClick={() => router.push('/admin/exams/new')}>
+                <Plus className="mr-2 h-4 w-4" />Create First Exam
               </Button>
             )}
           </CardContent>
         </Card>
-      ) : (
+
+      ) : viewMode === 'grid' ? (
+        /* ── GRID VIEW ── */
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredExams.map((exam) => (
-            <Card key={exam.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="p-0">
-                {/* Exam Image */}
-                <div className="relative h-40 bg-gradient-to-br from-blue-500 to-blue-700">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <FileQuestion className="h-16 w-16 text-white opacity-50" />
-                  </div>
-                  <div className="absolute top-3 left-3">
-                    <Badge className={getDifficultyColor(exam.difficulty)}>
-                      {exam.difficulty}
-                    </Badge>
-                  </div>
-                  <div className="absolute top-3 right-3">
-                    <Badge variant={exam.isPublished ? 'default' : 'secondary'}>
-                      {exam.isPublished ? 'Published' : 'Draft'}
-                    </Badge>
-                  </div>
-                </div>
-
-                {/* Exam Info */}
-                <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 line-clamp-2 mb-1">
-                    {exam.title}
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-3">{exam.subject}</p>
-
-                  <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      <span>{exam.duration}min</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <FileQuestion className="h-4 w-4" />
-                      <span>{exam.totalQuestions} Q</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      <span>{exam.totalAttempts}</span>
-                    </div>
-                  </div>
-
-                  {/* Price */}
-                  <div className="mb-4">
-                    {exam.isFree ? (
-                      <span className="text-lg font-bold text-green-600">Free</span>
-                    ) : (
-                      <span className="text-lg font-bold text-gray-900">
-                        ₹{(exam.price / 100).toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleViewExam(exam.id)}  // Changed from exam.slug
-                      className="flex-1"
-                    >
-                      <Eye className="mr-1 h-3 w-3" />
-                      View
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditExam(exam.id)}
-                      className="flex-1"
-                    >
-                      <Edit className="mr-1 h-3 w-3" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleTogglePublish(exam)}
-                    >
-                      {exam.isPublished ? (
-                        <ToggleRight className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <ToggleLeft className="h-4 w-4 text-gray-400" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => confirmDelete(exam)}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-600" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+          {filteredExams.map(exam => <ExamCard key={exam.id} exam={exam} />)}
         </div>
+
+      ) : (
+        /* ── LIST / TABLE VIEW ── */
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Exam</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Difficulty</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Questions</TableHead>
+                  <TableHead>Attempts</TableHead>
+                  <TableHead>Price</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredExams.map(exam => {
+                  const toggling = togglingId === exam.id
+                  return (
+                    <TableRow key={exam.id}>
+                      <TableCell className="font-medium max-w-[200px] truncate" title={exam.title}>
+                        {exam.title}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${getSubjectGradient(exam.subject)} flex items-center justify-center`}>
+                            <span className="text-white text-xs font-bold">{getSubjectInitial(exam.subject)}</span>
+                          </div>
+                          {exam.subject}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
+                      </TableCell>
+                      <TableCell>{exam.duration}min</TableCell>
+                      <TableCell>{exam.totalQuestions}</TableCell>
+                      <TableCell>{exam.totalAttempts}</TableCell>
+                      <TableCell>
+                        {exam.isFree
+                          ? <span className="text-green-600 font-medium">Free</span>
+                          : <span>₹{(exam.price / 100).toFixed(2)}</span>
+                        }
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={exam.isPublished ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
+                          {exam.isPublished ? 'Published' : 'Draft'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => router.push(`/admin/exams/${exam.id}`)}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => router.push(`/admin/exams/${exam.id}/edit`)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={toggling}
+                            onClick={() => handleTogglePublish(exam)}
+                            title={exam.isPublished ? 'Unpublish' : 'Publish'}
+                          >
+                            {toggling
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : exam.isPublished
+                                ? <EyeOff className="h-4 w-4 text-orange-500" />
+                                : <Globe className="h-4 w-4 text-green-600" />
+                            }
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => confirmDelete(exam)}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Dialog — untouched logic */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Exam?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>&quot;{examToDelete?.title}&quot;</strong>? 
+              Are you sure you want to delete <strong>&quot;{examToDelete?.title}&quot;</strong>?
               This action cannot be undone and will delete all related attempt data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
+            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+              {deleting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</> : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,6 +1,5 @@
 'use client'
 
-// src/app/(admin)/admin/questions/import/page.tsx
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -11,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { Upload, FileText, CheckCircle, XCircle, Loader2, AlertCircle, Info } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -21,8 +21,12 @@ interface SubTopic { id: string; name: string; topicId: string }
 
 interface PreviewQuestion {
   statement: string
+  questionType: 'mcq' | 'numerical' // ✅ NEW
   options: { key: string; text: string }[]
-  correctAnswer: string
+  correctAnswer?: string
+  correctAnswerExact?: number
+  correctAnswerMin?: number
+  correctAnswerMax?: number
   marks: number
   negativeMarks: number
   difficulty: string
@@ -33,7 +37,6 @@ export default function QuestionImportPage() {
   const router = useRouter()
   const [step, setStep] = useState<'upload' | 'preview' | 'importing'>('upload')
 
-  // Step 1: Upload
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [subTopics, setSubTopics] = useState<SubTopic[]>([])
@@ -43,7 +46,6 @@ export default function QuestionImportPage() {
   const [wordFile, setWordFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
 
-  // Step 2: Preview
   const [importJobId, setImportJobId] = useState('')
   const [subTopicIdForConfirm, setSubTopicIdForConfirm] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<PreviewQuestion[]>([])
@@ -51,7 +53,6 @@ export default function QuestionImportPage() {
   const [errors, setErrors] = useState<string[]>([])
   const [confirming, setConfirming] = useState(false)
 
-  // Step 3: Importing
   const [importProgress, setImportProgress] = useState(0)
   const [importStatus, setImportStatus] = useState<any>(null)
 
@@ -92,9 +93,7 @@ export default function QuestionImportPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setSubjects(data.filter((s: any) => s.isActive))
-    } catch {
-      toast.error('Failed to load subjects')
-    }
+    } catch { toast.error('Failed to load subjects') }
   }
 
   const fetchTopics = async (subjectId: string) => {
@@ -103,9 +102,7 @@ export default function QuestionImportPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setTopics(data.filter((t: any) => t.isActive))
-    } catch {
-      toast.error('Failed to load topics')
-    }
+    } catch { toast.error('Failed to load topics') }
   }
 
   const fetchSubTopics = async (topicId: string) => {
@@ -114,9 +111,7 @@ export default function QuestionImportPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setSubTopics(data.filter((s: any) => s.isActive))
-    } catch {
-      toast.error('Failed to load subtopics')
-    }
+    } catch { toast.error('Failed to load subtopics') }
   }
 
   const handleParseAndPreview = async () => {
@@ -206,9 +201,7 @@ export default function QuestionImportPage() {
       } else if (data.status === 'failed') {
         toast.error('Import failed. Please check errors.')
       }
-    } catch {
-      console.error('Status check error')
-    }
+    } catch { console.error('Status check error') }
   }
 
   const handleStartOver = () => {
@@ -224,6 +217,42 @@ export default function QuestionImportPage() {
     setErrors([])
     setImportProgress(0)
     setImportStatus(null)
+  }
+
+  // ✅ Helper: render answer for preview
+  const renderAnswer = (q: PreviewQuestion) => {
+    if (q.questionType === 'numerical') {
+      if (q.correctAnswerExact !== undefined) {
+        return (
+          <div className="ml-8 mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-600 font-medium">Exact Answer</p>
+            <p className="text-lg font-bold text-blue-800">{q.correctAnswerExact}</p>
+          </div>
+        )
+      }
+      return (
+        <div className="ml-8 mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-xs text-blue-600 font-medium">Accepted Range</p>
+          <p className="text-lg font-bold text-blue-800">{q.correctAnswerMin} to {q.correctAnswerMax}</p>
+        </div>
+      )
+    }
+    return (
+      <div className="ml-8 space-y-2 mt-2">
+        {q.options.map(opt => (
+          <div
+            key={opt.key}
+            className={`flex items-center gap-2 p-2 rounded ${
+              opt.key === q.correctAnswer ? 'bg-green-50 border border-green-200' : ''
+            }`}
+          >
+            <span className="font-medium">{opt.key})</span>
+            <span className="flex-1">{opt.text}</span>
+            {opt.key === q.correctAnswer && <CheckCircle className="w-4 h-4 text-green-600" />}
+          </div>
+        ))}
+      </div>
+    )
   }
 
   return (
@@ -250,7 +279,9 @@ export default function QuestionImportPage() {
                     ? <CheckCircle className="w-5 h-5" />
                     : idx + 1}
                 </div>
-                <span className="ml-2 font-medium capitalize">{s === 'importing' ? 'Import' : s.charAt(0).toUpperCase() + s.slice(1)}</span>
+                <span className="ml-2 font-medium capitalize">
+                  {s === 'importing' ? 'Import' : s.charAt(0).toUpperCase() + s.slice(1)}
+                </span>
               </div>
             </div>
           ))}
@@ -260,32 +291,25 @@ export default function QuestionImportPage() {
       {/* Step 1: Upload */}
       {step === 'upload' && (
         <div className="bg-white rounded-lg border p-8 max-w-2xl mx-auto">
-          {/* Info banner */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex gap-3">
             <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
             <div className="text-sm text-blue-800">
               <p className="font-medium mb-1">Text-only import</p>
-              <p>Images are not required during import. After importing, use the <strong>Edit</strong> button on any question in the Question Bank to add images.</p>
+              <p>Images are not required during import. After importing, use the <strong>Edit</strong> button on any question to add images.</p>
             </div>
           </div>
 
           <div className="space-y-6">
-            {/* Subject */}
             <div className="space-y-2">
               <Label>Subject *</Label>
               <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select subject" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
                 <SelectContent>
-                  {subjects.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
+                  {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Topic */}
             <div className="space-y-2">
               <Label>Topic *</Label>
               <Select value={selectedTopic} onValueChange={setSelectedTopic} disabled={!selectedSubject}>
@@ -293,60 +317,33 @@ export default function QuestionImportPage() {
                   <SelectValue placeholder={selectedSubject ? 'Select topic' : 'Select subject first'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {topics.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
+                  {topics.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* SubTopic (optional) */}
             <div className="space-y-2">
-              <Label>
-                SubTopic <span className="text-gray-400 font-normal">(optional)</span>
-              </Label>
-              <Select
-                value={selectedSubTopic}
-                onValueChange={setSelectedSubTopic}
-                disabled={!selectedTopic}
-              >
+              <Label>SubTopic <span className="text-gray-400 font-normal">(optional)</span></Label>
+              <Select value={selectedSubTopic} onValueChange={setSelectedSubTopic} disabled={!selectedTopic}>
                 <SelectTrigger>
                   <SelectValue placeholder={selectedTopic ? 'Select subtopic (optional)' : 'Select topic first'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {subTopics.map(st => (
-                    <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
-                  ))}
+                  {subTopics.map(st => <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               {selectedSubTopic && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedSubTopic('')}
-                  className="text-xs text-gray-500 hover:text-gray-700 underline"
-                >
+                <button type="button" onClick={() => setSelectedSubTopic('')} className="text-xs text-gray-500 hover:text-gray-700 underline">
                   Clear subtopic
                 </button>
               )}
             </div>
 
-            {/* Word File */}
             <div className="space-y-2">
               <Label>Word Document (.docx) *</Label>
-              <input
-                ref={wordFileRef}
-                type="file"
-                accept=".docx"
-                onChange={e => setWordFile(e.target.files?.[0] || null)}
-                className="hidden"
-              />
+              <input ref={wordFileRef} type="file" accept=".docx" onChange={e => setWordFile(e.target.files?.[0] || null)} className="hidden" />
               <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => wordFileRef.current?.click()}
-                  className="flex-1"
-                >
+                <Button type="button" variant="outline" onClick={() => wordFileRef.current?.click()} className="flex-1">
                   <FileText className="w-4 h-4 mr-2" />
                   {wordFile ? wordFile.name : 'Choose Word file'}
                 </Button>
@@ -358,10 +355,13 @@ export default function QuestionImportPage() {
               </div>
             </div>
 
-            {/* Format hint */}
-            <div className="p-4 bg-gray-50 rounded-lg text-sm text-gray-600 space-y-1">
+            {/* ✅ UPDATED: Format hint showing both MCQ and NAT formats */}
+            <div className="p-4 bg-gray-50 rounded-lg text-sm text-gray-600 space-y-3">
               <p className="font-medium text-gray-700">Expected .docx format per question:</p>
-              <pre className="text-xs bg-white border rounded p-2 overflow-x-auto">{`Question text here
+
+              <div>
+                <p className="text-xs font-semibold text-purple-700 mb-1">MCQ Question:</p>
+                <pre className="text-xs bg-white border rounded p-2 overflow-x-auto">{`Question text here
 A) Option A
 B) Option B
 C) Option C
@@ -372,7 +372,22 @@ NEGATIVE: 1
 DIFFICULTY: easy
 EXPLANATION: Optional explanation
 ---`}</pre>
-              <p className="text-xs text-gray-500">Separate questions with <code>---</code> on its own line</p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-blue-700 mb-1">Numerical (NAT) Question:</p>
+                <pre className="text-xs bg-white border rounded p-2 overflow-x-auto">{`Question text here
+TYPE: NAT
+ANSWER: 42
+MARKS: 4
+NEGATIVE: 1
+DIFFICULTY: medium
+EXPLANATION: Optional explanation
+---`}</pre>
+                <p className="text-xs text-gray-500 mt-1">For range answers use: <code>ANSWER: 40-44</code></p>
+              </div>
+
+              <p className="text-xs text-gray-500">Separate questions with <code>---</code> on its own line. MCQ and NAT questions can be mixed in the same document.</p>
             </div>
 
             <Button
@@ -395,14 +410,19 @@ EXPLANATION: Optional explanation
         <div className="space-y-6">
           <div className="bg-white rounded-lg border p-6">
             <h2 className="text-xl font-semibold mb-4">Import Summary</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* ✅ UPDATED: show MCQ/NAT breakdown */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div>
                 <p className="text-sm text-gray-600">Total Questions</p>
                 <p className="text-2xl font-bold">{summary?.totalQuestions}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Subject</p>
-                <p className="text-lg font-medium">{summary?.subjectName}</p>
+                <p className="text-sm text-gray-600">MCQ</p>
+                <p className="text-2xl font-bold text-purple-600">{summary?.mcqCount ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Numerical</p>
+                <p className="text-2xl font-bold text-blue-600">{summary?.numericalCount ?? 0}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Topic</p>
@@ -438,23 +458,21 @@ EXPLANATION: Optional explanation
                 <div key={idx} className="border-b pb-6 last:border-0">
                   <div className="flex items-start gap-2 mb-3">
                     <span className="font-bold text-gray-700 shrink-0">Q{idx + 1}.</span>
-                    <p className="text-gray-900">{q.statement}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {/* ✅ NEW: type badge in preview */}
+                        {q.questionType === 'numerical' ? (
+                          <Badge className="bg-blue-100 text-blue-800 text-xs"># Numerical</Badge>
+                        ) : (
+                          <Badge className="bg-purple-100 text-purple-800 text-xs">≡ MCQ</Badge>
+                        )}
+                      </div>
+                      <p className="text-gray-900">{q.statement}</p>
+                    </div>
                   </div>
 
-                  <div className="ml-8 space-y-2">
-                    {q.options.map(opt => (
-                      <div
-                        key={opt.key}
-                        className={`flex items-center gap-2 p-2 rounded ${
-                          opt.key === q.correctAnswer ? 'bg-green-50 border border-green-200' : ''
-                        }`}
-                      >
-                        <span className="font-medium">{opt.key})</span>
-                        <span className="flex-1">{opt.text}</span>
-                        {opt.key === q.correctAnswer && <CheckCircle className="w-4 h-4 text-green-600" />}
-                      </div>
-                    ))}
-                  </div>
+                  {/* ✅ Render options (MCQ) or answer (NAT) */}
+                  {renderAnswer(q)}
 
                   <div className="ml-8 mt-3 flex gap-4 text-sm text-gray-500">
                     <span>Marks: <strong>{q.marks}</strong></span>

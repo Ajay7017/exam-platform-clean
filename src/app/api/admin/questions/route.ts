@@ -60,6 +60,7 @@ const questionSchema = z.object({
 )
 
 // GET: List questions — untouched
+// GET: List questions
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin()
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
     const subjectId = searchParams.get('subjectId')
     const topicId = searchParams.get('topicId')
     const subTopicId = searchParams.get('subTopicId')
+    const questionType = searchParams.get('questionType') // ✅ NEW
 
     const where: any = {}
     if (search) where.statement = { contains: search, mode: 'insensitive' }
@@ -78,6 +80,7 @@ export async function GET(request: NextRequest) {
     if (topicId) where.topicId = topicId
     if (subTopicId) where.subTopicId = subTopicId
     if (subjectId) where.topic = { subjectId }
+    if (questionType && questionType !== 'all') where.type = questionType // ✅ NEW
 
     const [questions, total] = await Promise.all([
       prisma.question.findMany({
@@ -110,8 +113,7 @@ export async function GET(request: NextRequest) {
         isActive: q.isActive,
         explanation: q.explanation,
         options: q.options,
-        // ✅ NEW: include type and numerical fields in response
-        questionType: q.type,
+        questionType: q.type, // ✅ already existed, confirming it's here
         correctAnswerExact: q.correctAnswerExact,
         correctAnswerMin: q.correctAnswerMin,
         correctAnswerMax: q.correctAnswerMax,

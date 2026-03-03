@@ -1,4 +1,3 @@
-// src/app/(admin)/admin/questions/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,40 +8,24 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { QuestionForm } from '@/components/admin/QuestionForm'
 import { toast } from 'sonner'
-import { Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2 } from 'lucide-react'
+import {
+  Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2,
+  ToggleLeft, ToggleRight, X,
+} from 'lucide-react'
 
 function stripHtml(html: string) {
   return html
@@ -51,21 +34,29 @@ function stripHtml(html: string) {
     .trim()
 }
 
+function getTypeBadge(type?: 'mcq' | 'numerical') {
+  if (type === 'numerical') {
+    return <Badge className="bg-blue-100 text-blue-800 text-xs font-medium"># Numerical</Badge>
+  }
+  return <Badge className="bg-purple-100 text-purple-800 text-xs font-medium">≡ MCQ</Badge>
+}
+
 interface Subject { id: string; name: string }
 interface Topic { id: string; name: string; subjectId: string }
-interface SubTopic { id: string; name: string; topicId: string } // ✅ NEW
+interface SubTopic { id: string; name: string; topicId: string }
 
 interface Question {
   id: string
   statement: string
   topicName: string
-  subTopicName?: string // ✅ NEW
+  subTopicName?: string
   subjectName: string
   marks: number
   negativeMarks: number
   difficulty: string
   isActive: boolean
   createdAt: string
+  questionType?: 'mcq' | 'numerical'
 }
 
 interface QuestionDetail extends Question {
@@ -78,7 +69,6 @@ interface QuestionDetail extends Question {
   optionD: string
   correctAnswer: string
   explanation?: string
-  // ✅ NEW: NAT fields
   questionType?: 'mcq' | 'numerical'
   correctAnswerExact?: number | null
   correctAnswerMin?: number | null
@@ -95,13 +85,22 @@ export default function AdminQuestionsPage() {
   const [difficulty, setDifficulty] = useState('all')
   const [subjectId, setSubjectId] = useState('all')
   const [topicId, setTopicId] = useState('all')
-  const [subTopicId, setSubTopicId] = useState('all') // ✅ NEW
+  const [subTopicId, setSubTopicId] = useState('all')
+  const [questionType, setQuestionType] = useState('all')
 
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [filteredTopics, setFilteredTopics] = useState<Topic[]>([])
-  const [subTopics, setSubTopics] = useState<SubTopic[]>([])           // ✅ NEW
-  const [filteredSubTopics, setFilteredSubTopics] = useState<SubTopic[]>([]) // ✅ NEW
+  const [subTopics, setSubTopics] = useState<SubTopic[]>([])
+  const [filteredSubTopics, setFilteredSubTopics] = useState<SubTopic[]>([])
+
+  // ✅ NEW: bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkActionLoading, setBulkActionLoading] = useState(false)
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
+
+  // ✅ NEW: inline toggle loading per question
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [viewQuestion, setViewQuestion] = useState<QuestionDetail | null>(null)
@@ -119,10 +118,9 @@ export default function AdminQuestionsPage() {
   useEffect(() => {
     fetchSubjects()
     fetchTopics()
-    fetchAllSubTopics() // ✅ NEW
+    fetchAllSubTopics()
   }, [])
 
-  // Filter topics by subject
   useEffect(() => {
     if (subjectId === 'all') {
       setFilteredTopics(topics)
@@ -130,10 +128,9 @@ export default function AdminQuestionsPage() {
       setFilteredTopics(topics.filter(t => t.subjectId === subjectId))
     }
     setTopicId('all')
-    setSubTopicId('all') // ✅ NEW: reset subtopic when subject changes
+    setSubTopicId('all')
   }, [subjectId, topics])
 
-  // ✅ NEW: Filter subtopics by topic
   useEffect(() => {
     if (topicId === 'all') {
       setFilteredSubTopics(subTopics)
@@ -145,7 +142,12 @@ export default function AdminQuestionsPage() {
 
   useEffect(() => {
     fetchQuestions()
-  }, [page, difficulty, subjectId, topicId, subTopicId]) // ✅ added subTopicId
+  }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
+
+  // ✅ Clear selection when page/filters change
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
 
   const fetchSubjects = async () => {
     try {
@@ -153,9 +155,7 @@ export default function AdminQuestionsPage() {
       if (!res.ok) return
       const data = await res.json()
       setSubjects(data.subjects || data || [])
-    } catch (e) {
-      console.error('Failed to fetch subjects', e)
-    }
+    } catch (e) { console.error('Failed to fetch subjects', e) }
   }
 
   const fetchTopics = async () => {
@@ -166,12 +166,9 @@ export default function AdminQuestionsPage() {
       const list = data.topics || data || []
       setTopics(list)
       setFilteredTopics(list)
-    } catch (e) {
-      console.error('Failed to fetch topics', e)
-    }
+    } catch (e) { console.error('Failed to fetch topics', e) }
   }
 
-  // ✅ NEW
   const fetchAllSubTopics = async () => {
     try {
       const res = await fetch('/api/admin/subtopics')
@@ -179,9 +176,7 @@ export default function AdminQuestionsPage() {
       const data = await res.json()
       setSubTopics(data || [])
       setFilteredSubTopics(data || [])
-    } catch (e) {
-      console.error('Failed to fetch subtopics', e)
-    }
+    } catch (e) { console.error('Failed to fetch subtopics', e) }
   }
 
   const fetchQuestions = async () => {
@@ -192,7 +187,8 @@ export default function AdminQuestionsPage() {
       if (search) params.append('search', search)
       if (subjectId !== 'all') params.append('subjectId', subjectId)
       if (topicId !== 'all') params.append('topicId', topicId)
-      if (subTopicId !== 'all') params.append('subTopicId', subTopicId) // ✅ NEW
+      if (subTopicId !== 'all') params.append('subTopicId', subTopicId)
+      if (questionType !== 'all') params.append('questionType', questionType)
 
       const response = await fetch(`/api/admin/questions?${params}`)
       if (!response.ok) throw new Error('Failed to fetch questions')
@@ -214,11 +210,96 @@ export default function AdminQuestionsPage() {
     setDifficulty('all')
     setSubjectId('all')
     setTopicId('all')
-    setSubTopicId('all') // ✅ NEW
+    setSubTopicId('all')
+    setQuestionType('all')
     setPage(1)
   }
 
-  const hasActiveFilters = search || difficulty !== 'all' || subjectId !== 'all' || topicId !== 'all' || subTopicId !== 'all' // ✅ NEW
+  const hasActiveFilters = search || difficulty !== 'all' || subjectId !== 'all' || topicId !== 'all' || subTopicId !== 'all' || questionType !== 'all'
+
+  // ✅ NEW: checkbox handlers
+  const allCurrentIds = questions.map(q => q.id)
+  const allSelected = allCurrentIds.length > 0 && allCurrentIds.every(id => selectedIds.has(id))
+  const someSelected = selectedIds.size > 0
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(allCurrentIds))
+    }
+  }
+
+  const handleSelectOne = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
+
+  // ✅ NEW: inline status toggle
+  const handleInlineToggle = async (question: Question) => {
+    setTogglingId(question.id)
+    try {
+      const res = await fetch(`/api/admin/questions/${question.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !question.isActive }),
+      })
+      if (!res.ok) throw new Error()
+      setQuestions(prev =>
+        prev.map(q => q.id === question.id ? { ...q, isActive: !q.isActive } : q)
+      )
+      toast.success(`Question marked as ${!question.isActive ? 'Active' : 'Inactive'}`)
+    } catch {
+      toast.error('Failed to update status')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  // ✅ NEW: bulk toggle
+  const handleBulkToggle = async (isActive: boolean) => {
+    setBulkActionLoading(true)
+    try {
+      const res = await fetch('/api/admin/questions/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds), isActive }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(data.message)
+      setSelectedIds(new Set())
+      fetchQuestions()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to update questions')
+    } finally {
+      setBulkActionLoading(false)
+    }
+  }
+
+  // ✅ NEW: bulk delete confirm
+  const handleBulkDeleteConfirm = async () => {
+    setBulkActionLoading(true)
+    try {
+      const res = await fetch('/api/admin/questions/bulk', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(data.message)
+      setSelectedIds(new Set())
+      setBulkDeleteDialogOpen(false)
+      fetchQuestions()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to delete questions')
+    } finally {
+      setBulkActionLoading(false)
+    }
+  }
 
   const handleView = async (questionId: string) => {
     setLoadingView(true)
@@ -302,8 +383,7 @@ export default function AdminQuestionsPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6"> {/* ✅ 6 cols now */}
-            {/* Search */}
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-7">
             <div className="lg:col-span-2 flex gap-2">
               <Input
                 placeholder="Search questions..."
@@ -315,8 +395,14 @@ export default function AdminQuestionsPage() {
                 <Search className="w-4 h-4" />
               </Button>
             </div>
-
-            {/* Subject */}
+            <Select value={questionType} onValueChange={val => { setQuestionType(val); setPage(1) }}>
+              <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="mcq">MCQ</SelectItem>
+                <SelectItem value="numerical">Numerical</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={subjectId} onValueChange={val => { setSubjectId(val); setPage(1) }}>
               <SelectTrigger><SelectValue placeholder="All Subjects" /></SelectTrigger>
               <SelectContent>
@@ -324,34 +410,20 @@ export default function AdminQuestionsPage() {
                 {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
-
-            {/* Topic */}
-            <Select
-              value={topicId}
-              onValueChange={val => { setTopicId(val); setPage(1) }}
-              disabled={filteredTopics.length === 0}
-            >
+            <Select value={topicId} onValueChange={val => { setTopicId(val); setPage(1) }} disabled={filteredTopics.length === 0}>
               <SelectTrigger><SelectValue placeholder="All Topics" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Topics</SelectItem>
                 {filteredTopics.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
               </SelectContent>
             </Select>
-
-            {/* ✅ NEW: SubTopic */}
-            <Select
-              value={subTopicId}
-              onValueChange={val => { setSubTopicId(val); setPage(1) }}
-              disabled={filteredSubTopics.length === 0}
-            >
+            <Select value={subTopicId} onValueChange={val => { setSubTopicId(val); setPage(1) }} disabled={filteredSubTopics.length === 0}>
               <SelectTrigger><SelectValue placeholder="All SubTopics" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All SubTopics</SelectItem>
                 {filteredSubTopics.map(st => <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>)}
               </SelectContent>
             </Select>
-
-            {/* Difficulty */}
             <Select value={difficulty} onValueChange={val => { setDifficulty(val); setPage(1) }}>
               <SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger>
               <SelectContent>
@@ -363,22 +435,68 @@ export default function AdminQuestionsPage() {
             </Select>
           </div>
 
-          {/* Active filters */}
           {hasActiveFilters && (
             <div className="flex items-center gap-2 mt-3 pt-3 border-t flex-wrap">
               <span className="text-xs text-muted-foreground">Active filters:</span>
               {search && <Badge variant="secondary" className="text-xs">Search: "{search}"</Badge>}
+              {questionType !== 'all' && <Badge variant="secondary" className="text-xs">Type: {questionType === 'mcq' ? 'MCQ' : 'Numerical'}</Badge>}
               {subjectId !== 'all' && <Badge variant="secondary" className="text-xs">Subject: {subjects.find(s => s.id === subjectId)?.name}</Badge>}
               {topicId !== 'all' && <Badge variant="secondary" className="text-xs">Topic: {filteredTopics.find(t => t.id === topicId)?.name}</Badge>}
-              {subTopicId !== 'all' && <Badge variant="secondary" className="text-xs">SubTopic: {filteredSubTopics.find(st => st.id === subTopicId)?.name}</Badge>} {/* ✅ NEW */}
+              {subTopicId !== 'all' && <Badge variant="secondary" className="text-xs">SubTopic: {filteredSubTopics.find(st => st.id === subTopicId)?.name}</Badge>}
               {difficulty !== 'all' && <Badge variant="secondary" className="text-xs">Difficulty: {difficulty}</Badge>}
-              <Button variant="ghost" size="sm" onClick={handleClearFilters} className="text-xs h-6 ml-auto">
-                Clear all filters
-              </Button>
+              <Button variant="ghost" size="sm" onClick={handleClearFilters} className="text-xs h-6 ml-auto">Clear all filters</Button>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* ✅ NEW: Sticky Bulk Action Bar — only shows when items selected */}
+      {someSelected && (
+        <div className="sticky top-4 z-20 flex items-center gap-3 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3">
+          <span className="text-sm font-medium text-gray-700">
+            {selectedIds.size} selected
+          </span>
+          <div className="h-4 w-px bg-gray-300" />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkActionLoading}
+            onClick={() => handleBulkToggle(true)}
+            className="text-green-700 border-green-300 hover:bg-green-50"
+          >
+            {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleRight className="w-3 h-3 mr-1" />}
+            Mark Active
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkActionLoading}
+            onClick={() => handleBulkToggle(false)}
+            className="text-gray-600 border-gray-300 hover:bg-gray-50"
+          >
+            {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleLeft className="w-3 h-3 mr-1" />}
+            Mark Inactive
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkActionLoading}
+            onClick={() => setBulkDeleteDialogOpen(true)}
+            className="text-red-600 border-red-300 hover:bg-red-50"
+          >
+            <Trash2 className="w-3 h-3 mr-1" />
+            Delete Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto text-gray-400 hover:text-gray-600"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
 
       {/* Questions Table */}
       {loading ? (
@@ -393,12 +511,19 @@ export default function AdminQuestionsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">
-                      <input type="checkbox" className="rounded border-gray-300" />
+                      {/* ✅ NEW: wired select-all checkbox */}
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-300 cursor-pointer"
+                        checked={allSelected}
+                        onChange={handleSelectAll}
+                      />
                     </TableHead>
                     <TableHead>Question</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Subject</TableHead>
                     <TableHead>Topic</TableHead>
-                    <TableHead>SubTopic</TableHead> {/* ✅ NEW */}
+                    <TableHead>SubTopic</TableHead>
                     <TableHead>Marks</TableHead>
                     <TableHead>Difficulty</TableHead>
                     <TableHead>Status</TableHead>
@@ -409,7 +534,7 @@ export default function AdminQuestionsPage() {
                 <TableBody>
                   {questions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-12"> {/* ✅ 10 cols */}
+                      <TableCell colSpan={11} className="text-center py-12">
                         <div className="flex flex-col items-center gap-2">
                           <Search className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-600">No questions found</p>
@@ -424,18 +549,28 @@ export default function AdminQuestionsPage() {
                     </TableRow>
                   ) : (
                     questions.map(question => (
-                      <TableRow key={question.id}>
+                      <TableRow
+                        key={question.id}
+                        className={selectedIds.has(question.id) ? 'bg-blue-50' : ''}
+                      >
+                        {/* ✅ NEW: wired individual checkbox */}
                         <TableCell>
-                          <input type="checkbox" className="rounded border-gray-300" />
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 cursor-pointer"
+                            checked={selectedIds.has(question.id)}
+                            onChange={() => handleSelectOne(question.id)}
+                          />
                         </TableCell>
                         <TableCell className="max-w-xs">
                           <p className="font-medium truncate text-sm" title={stripHtml(question.statement)}>
                             {stripHtml(question.statement) || '(Image/rich content question)'}
                           </p>
                         </TableCell>
+                        <TableCell>{getTypeBadge(question.questionType)}</TableCell>
                         <TableCell>{question.subjectName}</TableCell>
                         <TableCell>{question.topicName}</TableCell>
-                        <TableCell className="text-gray-500 text-sm"> {/* ✅ NEW */}
+                        <TableCell className="text-gray-500 text-sm">
                           {question.subTopicName || <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell>
@@ -449,11 +584,31 @@ export default function AdminQuestionsPage() {
                             {question.difficulty}
                           </Badge>
                         </TableCell>
+
+                        {/* ✅ NEW: Inline status toggle — click badge to toggle */}
                         <TableCell>
-                          <Badge className={question.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                            {question.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
+                          <button
+                            onClick={() => handleInlineToggle(question)}
+                            disabled={togglingId === question.id}
+                            className="focus:outline-none"
+                            title={`Click to mark as ${question.isActive ? 'Inactive' : 'Active'}`}
+                          >
+                            {togglingId === question.id ? (
+                              <Badge className="bg-gray-100 text-gray-500 cursor-wait">
+                                <Loader2 className="w-3 h-3 animate-spin mr-1" />...
+                              </Badge>
+                            ) : (
+                              <Badge className={`cursor-pointer transition-opacity hover:opacity-75 ${
+                                question.isActive
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {question.isActive ? 'Active' : 'Inactive'}
+                              </Badge>
+                            )}
+                          </button>
                         </TableCell>
+
                         <TableCell className="text-sm text-gray-600">
                           {new Date(question.createdAt).toLocaleDateString()}
                         </TableCell>
@@ -488,7 +643,7 @@ export default function AdminQuestionsPage() {
         </>
       )}
 
-      {/* VIEW DIALOG */}
+      {/* VIEW DIALOG — untouched */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -502,45 +657,17 @@ export default function AdminQuestionsPage() {
           ) : viewQuestion ? (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                <div>
-                  <p className="text-sm text-gray-600">Subject</p>
-                  <p className="font-medium">{viewQuestion.subject}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Topic</p>
-                  <p className="font-medium">{viewQuestion.topic}</p>
-                </div>
-                {/* ✅ NEW */}
-                {viewQuestion.subTopic && (
-                  <div>
-                    <p className="text-sm text-gray-600">SubTopic</p>
-                    <p className="font-medium">{viewQuestion.subTopic}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-sm text-gray-600">Difficulty</p>
-                  <Badge className={getDifficultyColor(viewQuestion.difficulty)}>
-                    {viewQuestion.difficulty}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Marks</p>
-                  <p className="font-medium">
-                    <span className="text-green-600">+{viewQuestion.marks}</span>
-                    {' / '}
-                    <span className="text-red-600">-{viewQuestion.negativeMarks}</span>
-                  </p>
-                </div>
+                <div><p className="text-sm text-gray-600">Subject</p><p className="font-medium">{viewQuestion.subject}</p></div>
+                <div><p className="text-sm text-gray-600">Topic</p><p className="font-medium">{viewQuestion.topic}</p></div>
+                {viewQuestion.subTopic && <div><p className="text-sm text-gray-600">SubTopic</p><p className="font-medium">{viewQuestion.subTopic}</p></div>}
+                <div><p className="text-sm text-gray-600">Question Type</p><div className="mt-1">{getTypeBadge(viewQuestion.questionType)}</div></div>
+                <div><p className="text-sm text-gray-600">Difficulty</p><Badge className={getDifficultyColor(viewQuestion.difficulty)}>{viewQuestion.difficulty}</Badge></div>
+                <div><p className="text-sm text-gray-600">Marks</p><p className="font-medium"><span className="text-green-600">+{viewQuestion.marks}</span>{' / '}<span className="text-red-600">-{viewQuestion.negativeMarks}</span></p></div>
               </div>
-
               <div>
                 <Label className="text-sm text-gray-600">Question</Label>
-                <div className="mt-2 text-base leading-relaxed">
-                  <SafeHtml html={viewQuestion.statement} />
-                </div>
+                <div className="mt-2 text-base leading-relaxed"><SafeHtml html={viewQuestion.statement} /></div>
               </div>
-
-              {/* ✅ EXISTING: MCQ Options — only shown for MCQ */}
               {(!viewQuestion.questionType || viewQuestion.questionType === 'mcq') && (
                 <div className="space-y-3">
                   <Label className="text-sm text-gray-600">Options</Label>
@@ -548,67 +675,45 @@ export default function AdminQuestionsPage() {
                     const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail] as string
                     const isCorrect = viewQuestion.correctAnswer === opt
                     return (
-                      <div key={opt} className={`p-3 rounded-lg border-2 flex items-start gap-3 ${
-                        isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'
-                      }`}>
+                      <div key={opt} className={`p-3 rounded-lg border-2 flex items-start gap-3 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
                         <div className="flex items-center gap-2 mt-0.5 shrink-0">
                           <span className="font-bold text-sm">{opt}.</span>
                           {isCorrect && <CheckCircle2 className="w-5 h-5 text-green-600" />}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <SafeHtml html={optionText} />
-                        </div>
+                        <div className="flex-1 min-w-0"><SafeHtml html={optionText} /></div>
                       </div>
                     )
                   })}
                 </div>
               )}
-
-              {/* ✅ NEW: NAT Answer — only shown for numerical */}
               {viewQuestion.questionType === 'numerical' && (
                 <div className="space-y-2">
                   <Label className="text-sm text-gray-600">Correct Answer</Label>
                   <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                     {viewQuestion.correctAnswerExact !== null && viewQuestion.correctAnswerExact !== undefined ? (
-                      <div>
-                        <p className="text-xs text-blue-600 font-medium mb-1">Exact Value</p>
-                        <p className="text-2xl font-bold text-blue-800">{viewQuestion.correctAnswerExact}</p>
-                      </div>
+                      <div><p className="text-xs text-blue-600 font-medium mb-1">Exact Value</p><p className="text-2xl font-bold text-blue-800">{viewQuestion.correctAnswerExact}</p></div>
                     ) : (
-                      <div>
-                        <p className="text-xs text-blue-600 font-medium mb-1">Accepted Range</p>
-                        <p className="text-2xl font-bold text-blue-800">
-                          {viewQuestion.correctAnswerMin} &nbsp;to&nbsp; {viewQuestion.correctAnswerMax}
-                        </p>
-                      </div>
+                      <div><p className="text-xs text-blue-600 font-medium mb-1">Accepted Range</p><p className="text-2xl font-bold text-blue-800">{viewQuestion.correctAnswerMin} &nbsp;to&nbsp; {viewQuestion.correctAnswerMax}</p></div>
                     )}
                   </div>
                 </div>
               )}
-
               {viewQuestion.explanation && (
                 <div>
                   <Label className="text-sm text-gray-600">Explanation</Label>
-                  <div className="mt-2 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200">
-                    <SafeHtml html={viewQuestion.explanation} />
-                  </div>
+                  <div className="mt-2 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200"><SafeHtml html={viewQuestion.explanation} /></div>
                 </div>
               )}
-
               <div className="flex items-center gap-2">
                 <Label className="text-sm text-gray-600">Status:</Label>
-                <Badge className={viewQuestion.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                  {viewQuestion.isActive ? 'Active' : 'Inactive'}
-                </Badge>
+                <Badge className={viewQuestion.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>{viewQuestion.isActive ? 'Active' : 'Inactive'}</Badge>
               </div>
             </div>
-          ) : (
-            <p>Failed to load question</p>
-          )}
+          ) : <p>Failed to load question</p>}
         </DialogContent>
       </Dialog>
 
-      {/* EDIT DIALOG */}
+      {/* EDIT DIALOG — untouched */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -627,7 +732,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DELETE DIALOG */}
+      {/* SINGLE DELETE DIALOG — untouched */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -643,9 +748,35 @@ export default function AdminQuestionsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteConfirm} disabled={deleting} className="bg-red-600 hover:bg-red-700">
-              {deleting
+              {deleting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</> : <><Trash2 className="w-4 h-4 mr-2" />Delete Question</>}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ✅ NEW: BULK DELETE DIALOG */}
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} question{selectedIds.size > 1 ? 's' : ''}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You are about to delete <strong>{selectedIds.size}</strong> selected question{selectedIds.size > 1 ? 's' : ''}.
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+                Questions used in exams will be <strong>skipped</strong> automatically. The rest will be permanently deleted.
+              </div>
+              <p className="mt-3 text-red-600">This action cannot be undone.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkActionLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDeleteConfirm}
+              disabled={bulkActionLoading}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {bulkActionLoading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>
-                : <><Trash2 className="w-4 h-4 mr-2" />Delete Question</>
+                : <><Trash2 className="w-4 h-4 mr-2" />Delete {selectedIds.size} Question{selectedIds.size > 1 ? 's' : ''}</>
               }
             </AlertDialogAction>
           </AlertDialogFooter>
