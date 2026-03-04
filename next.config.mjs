@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 1. Ignore strict checks so Vercel builds your app despite the warnings
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -8,7 +7,6 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
 
-  // 2. Your existing configuration (preserved)
   images: {
     remotePatterns: [
       {
@@ -29,6 +27,29 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   compress: true,
+
+  webpack: (config, { isServer }) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      path: false,
+      canvas: false,
+    };
+
+    if (isServer) {
+      // Stub out ketcher entirely on server builds —
+      // prevents paper → canvas → jsdom from being resolved
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'ketcher-standalone': false,
+        'ketcher-react': false,
+        'ketcher-core': false,
+        'paper': false,
+      };
+    }
+
+    return config;
+  },
 };
 
 export default nextConfig;

@@ -1,35 +1,27 @@
-//src/app/(student)/dashboard/page.tsx
-
 'use client';
+
 import { useSearchParams } from 'next/navigation'
 import { ResultsProcessingBanner } from '@/components/student/ResultsProcessingBanner'
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { StatsCardSkeleton } from '@/components/student/StatsCardSkeleton';
 import { SubjectLeaderboardTabs } from '@/components/student/SubjectLeaderboardTabs';
-import { BookOpen, Trophy, Award, Clock, TrendingUp, TrendingDown } from 'lucide-react';
+import {
+  BookOpen, Trophy, Award, Clock,
+  TrendingUp, TrendingDown, ChevronRight,
+  BarChart2, Play,
+} from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface DashboardData {
   stats: {
-    examsTaken: {
-      total: number;
-      thisWeek: number;
-    };
-    averageScore: {
-      current: number;
-      change: string;
-    };
-    rank: {
-      current: number | null;
-      totalParticipants: number;
-    };
-    timeSpent: {
-      totalHours: number;
-      thisWeekHours: number;
-    };
+    examsTaken:   { total: number; thisWeek: number };
+    averageScore: { current: number; change: string };
+    rank:         { current: number | null; totalParticipants: number };
+    timeSpent:    { totalHours: number; thisWeekHours: number };
   };
   continueExams: Array<{
     attemptId: string;
@@ -51,77 +43,113 @@ interface DashboardData {
   }>;
 }
 
-export default function StudentDashboard() {
-  const searchParams = useSearchParams()
-  const processingAttemptId = searchParams.get('processing')
-  const router = useRouter();
-  const { data: session } = useSession();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// ── helpers ────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+const SUBJECT_GRADIENTS = [
+  'from-violet-500 to-purple-700',
+  'from-blue-500 to-cyan-700',
+  'from-emerald-500 to-teal-700',
+  'from-orange-500 to-amber-700',
+  'from-pink-500 to-rose-700',
+  'from-indigo-500 to-blue-700',
+  'from-teal-500 to-green-700',
+  'from-red-500 to-orange-700',
+]
+
+function getSubjectGradient(title: string) {
+  let hash = 0
+  for (let i = 0; i < title.length; i++)
+    hash = title.charCodeAt(i) + ((hash << 5) - hash)
+  return SUBJECT_GRADIENTS[Math.abs(hash) % SUBJECT_GRADIENTS.length]
+}
+
+function getSubjectInitial(title: string) {
+  return title?.trim()?.[0]?.toUpperCase() || '?'
+}
+
+function getTimeAgo(dateString: string | null) {
+  if (!dateString) return 'Recently'
+  try {
+    return formatDistanceToNow(new Date(dateString), { addSuffix: true })
+  } catch {
+    return 'Recently'
+  }
+}
+
+function parseScoreValue(scoreStr: string): number | null {
+  // e.g. "12/48 (25%)" → 25
+  const match = scoreStr.match(/\((\d+(?:\.\d+)?)%\)/)
+  if (match) return parseFloat(match[1])
+  return null
+}
+
+function ScoreColor(score: string) {
+  const pct = parseScoreValue(score)
+  if (pct === null) return 'text-gray-700'
+  if (pct >= 75)   return 'text-green-600'
+  if (pct >= 50)   return 'text-yellow-600'
+  return 'text-red-500'
+}
+
+// ── page ───────────────────────────────────────────────────────────────────
+
+export default function StudentDashboard() {
+  const searchParams        = useSearchParams()
+  const processingAttemptId = searchParams.get('processing')
+  const router              = useRouter()
+  const { data: session }   = useSession()
+  const [data, setData]     = useState<DashboardData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError]   = useState<string | null>(null)
+
+  useEffect(() => { fetchDashboardData() }, [])
 
   const fetchDashboardData = async () => {
     try {
-      setIsLoading(true);
-      const response = await fetch('/api/student/dashboard');
-      
-      if (!response.ok) {
-        throw new Error('Failed to load dashboard data');
-      }
-
-      const result = await response.json();
-      setData(result);
+      setIsLoading(true)
+      const response = await fetch('/api/student/dashboard')
+      if (!response.ok) throw new Error('Failed to load dashboard data')
+      setData(await response.json())
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message)
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
-
-  const getTimeAgo = (dateString: string | null) => {
-    if (!dateString) return 'Recently';
-    try {
-      return formatDistanceToNow(new Date(dateString), { addSuffix: true });
-    } catch {
-      return 'Recently';
-    }
-  };
+  }
 
   if (error) {
     return (
       <div className="container mx-auto p-6">
         <Card className="border-red-200">
-          <CardContent className="p-6">
-            <div className="text-red-600">{error}</div>
-          </CardContent>
+          <CardContent className="p-6 text-red-600">{error}</CardContent>
         </Card>
       </div>
-    );
+    )
   }
 
-  const stats = data ? [
+  // ── stat card definitions ─────────────────────────────────────────────
+  const statCards = data ? [
     {
       title: 'Exams Taken',
       value: data.stats.examsTaken.total.toString(),
       icon: BookOpen,
+      iconBg: 'bg-blue-100 text-blue-600',
       change: `+${data.stats.examsTaken.thisWeek} this week`,
       changeType: 'positive' as const,
     },
     {
       title: 'Average Score',
       value: `${data.stats.averageScore.current}%`,
-      icon: Trophy,
+      icon: BarChart2,
+      iconBg: 'bg-purple-100 text-purple-600',
       change: `${parseFloat(data.stats.averageScore.change) >= 0 ? '+' : ''}${data.stats.averageScore.change}% vs last week`,
       changeType: parseFloat(data.stats.averageScore.change) >= 0 ? 'positive' as const : 'negative' as const,
     },
     {
       title: 'Current Rank',
       value: data.stats.rank.current ? `#${data.stats.rank.current}` : 'N/A',
-      icon: Award,
+      icon: Trophy,
+      iconBg: 'bg-yellow-100 text-yellow-600',
       change: `Out of ${data.stats.rank.totalParticipants} students`,
       changeType: 'neutral' as const,
     },
@@ -129,78 +157,171 @@ export default function StudentDashboard() {
       title: 'Time Spent',
       value: `${data.stats.timeSpent.totalHours}h`,
       icon: Clock,
+      iconBg: 'bg-green-100 text-green-600',
       change: `${data.stats.timeSpent.thisWeekHours}h this week`,
       changeType: 'neutral' as const,
     },
-  ] : [];
+  ] : []
 
   return (
-    <div className="space-y-8 animate-fade-in">
-    <div className="space-y-6">
-      {/* Add this banner at the very top */}
+    <div className="space-y-6 animate-fade-in">
+
+      {/* Processing banner */}
       {processingAttemptId && (
         <ResultsProcessingBanner attemptId={processingAttemptId} />
       )}
-      {/* Welcome Section */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">
-          Welcome back, {session?.user?.name || 'Student'}! 👋
-        </h1>
-        <p className="mt-2 text-gray-600">
-          Here's your learning progress overview
-        </p>
+
+      {/* ── Welcome ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Welcome back, {session?.user?.name?.split(' ')[0] || 'Student'}! 👋
+          </h1>
+          <p className="mt-1 text-gray-500 text-sm">
+            Here's your learning progress overview
+          </p>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <StatsCardSkeleton key={i} />
-          ))
-        ) : (
-          stats.map((stat, index) => (
-            <Card
-              key={stat.title}
-              className="animate-scale-in card-hover"
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
-                <stat.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className={`text-xs flex items-center gap-1 mt-1 ${
-                  stat.changeType === 'positive' 
-                    ? 'text-success-600' 
-                    : stat.changeType === 'negative'
-                    ? 'text-red-600'
-                    : 'text-muted-foreground'
-                }`}>
-                  {stat.changeType === 'positive' && (
-                    <TrendingUp className="h-3 w-3" />
-                  )}
-                  {stat.changeType === 'negative' && (
-                    <TrendingDown className="h-3 w-3" />
-                  )}
-                  {stat.change}
-                </p>
-              </CardContent>
-            </Card>
-          ))
-        )}
+      {/* ── Stats Cards ── */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => <StatsCardSkeleton key={i} />)
+          : statCards.map((stat, index) => (
+              <Card
+                key={stat.title}
+                className="animate-scale-in"
+                style={{ animationDelay: `${index * 0.08}s` }}
+              >
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-medium text-gray-600">{stat.title}</p>
+                    <div className={`flex h-9 w-9 items-center justify-center rounded-full ${stat.iconBg}`}>
+                      <stat.icon className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                  <p className={`text-xs flex items-center gap-1 mt-1.5 ${
+                    stat.changeType === 'positive' ? 'text-green-600'
+                    : stat.changeType === 'negative' ? 'text-red-500'
+                    : 'text-gray-400'
+                  }`}>
+                    {stat.changeType === 'positive' && <TrendingUp className="h-3 w-3" />}
+                    {stat.changeType === 'negative' && <TrendingDown className="h-3 w-3" />}
+                    {stat.change}
+                  </p>
+                </CardContent>
+              </Card>
+            ))
+        }
       </div>
 
-      {/* Leaderboard Section */}
-      <Card className="animate-slide-in-right" style={{ animationDelay: '0.3s' }}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-yellow-500" />
+      {/* ── Continue Learning (only if in-progress exams exist) ── */}
+      {!isLoading && data && data.continueExams.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Play className="h-4 w-4 text-primary" />
+              Continue Where You Left Off
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.continueExams.map(exam => {
+              const gradient = getSubjectGradient(exam.examTitle)
+              const initial  = getSubjectInitial(exam.examTitle)
+              return (
+                <div
+                  key={exam.attemptId}
+                  className="flex items-center gap-4 p-3 rounded-lg border border-gray-100 hover:border-primary/30 hover:bg-primary/5 transition-all cursor-pointer group"
+                  onClick={() => router.push(`/exam/take/${exam.attemptId}`)}
+                >
+                  {/* mini gradient avatar */}
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
+                    <span className="text-white font-bold text-sm">{initial}</span>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{exam.examTitle}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {exam.answeredCount} of {exam.totalQuestions} questions answered
+                    </p>
+                    {/* progress bar */}
+                    <div className="w-full h-1.5 bg-gray-200 rounded-full mt-1.5">
+                      <div
+                        className="h-1.5 bg-primary rounded-full transition-all"
+                        style={{ width: `${exam.progressPercentage}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge variant="secondary" className="text-xs">
+                      {exam.progressPercentage}%
+                    </Badge>
+                    <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-primary transition-colors" />
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Recent Activity ── */}
+      {!isLoading && data && data.recentActivity.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Award className="h-4 w-4 text-primary" />
+              Recent Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y divide-gray-100">
+            {data.recentActivity.map((activity, idx) => {
+              const gradient = getSubjectGradient(activity.examTitle)
+              const initial  = getSubjectInitial(activity.examTitle)
+              const scoreColor = ScoreColor(activity.score)
+              return (
+                <div
+                  key={activity.id}
+                  className="flex items-center gap-4 py-3 first:pt-0 last:pb-0 hover:bg-gray-50 -mx-2 px-2 rounded-lg transition-colors cursor-pointer group"
+                  onClick={() => router.push(`/results/${activity.id}`)}
+                >
+                  {/* gradient avatar */}
+                  <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
+                    <span className="text-white font-bold text-xs">{initial}</span>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {activity.examTitle}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {getTimeAgo(activity.submittedAt)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-sm font-semibold ${scoreColor}`}>
+                      {activity.score}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Leaderboard (bottom — secondary info) ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-yellow-500" />
             Leaderboard Rankings
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-gray-400">
             See where you stand among other students
           </p>
         </CardHeader>
@@ -209,114 +330,6 @@ export default function StudentDashboard() {
         </CardContent>
       </Card>
 
-      {/* Continue Learning Section */}
-      {data && data.continueExams.length > 0 && (
-        <Card className="animate-slide-in-right" style={{ animationDelay: '0.4s' }}>
-          <CardHeader>
-            <CardTitle>Continue Learning</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-4">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 animate-pulse">
-                    <div className="h-12 w-12 rounded-lg bg-gray-200" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 w-3/4 bg-gray-200 rounded" />
-                      <div className="h-3 w-1/2 bg-gray-200 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {data.continueExams.map((exam, idx) => (
-                  <div 
-                    key={exam.attemptId}
-                    className="flex items-center justify-between p-4 rounded-lg bg-primary-50 hover:bg-primary-100 transition-colors cursor-pointer"
-                    onClick={() => router.push(`/exam/take/${exam.attemptId}`)}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-500 text-white">
-                        <BookOpen className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900">
-                          {exam.examTitle}
-                        </h4>
-                        <p className="text-sm text-gray-600">
-                          {exam.answeredCount} of {exam.totalQuestions} questions completed
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-primary-600">
-                        {exam.progressPercentage}% Complete
-                      </div>
-                      <div className="w-32 h-2 bg-gray-200 rounded-full mt-1">
-                        <div 
-                          className="h-2 bg-primary-500 rounded-full transition-all" 
-                          style={{ width: `${exam.progressPercentage}%` }} 
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recent Activity */}
-      {data && data.recentActivity.length > 0 && (
-        <Card className="animate-slide-in-right" style={{ animationDelay: '0.5s' }}>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="flex gap-4 animate-pulse">
-                    <div className="h-10 w-10 rounded-full bg-gray-200" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 w-3/4 bg-gray-200 rounded" />
-                      <div className="h-3 w-1/2 bg-gray-200 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {data.recentActivity.map((activity) => (
-                  <div 
-                    key={activity.id} 
-                    className="flex items-center gap-4 hover:bg-gray-50 p-2 rounded-lg transition-colors cursor-pointer"
-                    onClick={() => router.push(`/results/${activity.id}`)}
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success-100">
-                      <Trophy className="h-5 w-5 text-success-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">
-                        {activity.action} {activity.examTitle}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {getTimeAgo(activity.submittedAt)}
-                      </p>
-                    </div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {activity.score}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      </div>
     </div>
-  );
+  )
 }

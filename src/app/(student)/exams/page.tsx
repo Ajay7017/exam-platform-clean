@@ -10,13 +10,20 @@ import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ExamCardSkeleton } from '@/components/student/ExamCardSkeleton';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Clock,
   FileQuestion,
-  Star,
   Search,
   BookOpen,
-  Filter,
   Users,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -38,11 +45,239 @@ interface Exam {
   totalAttempts: number;
 }
 
+// ── helpers ────────────────────────────────────────────────────────────────
+
+const SUBJECT_GRADIENTS = [
+  'from-violet-500 to-purple-700',
+  'from-blue-500 to-cyan-700',
+  'from-emerald-500 to-teal-700',
+  'from-orange-500 to-amber-700',
+  'from-pink-500 to-rose-700',
+  'from-indigo-500 to-blue-700',
+  'from-teal-500 to-green-700',
+  'from-red-500 to-orange-700',
+];
+
+function getSubjectGradient(subject: string) {
+  let hash = 0;
+  for (let i = 0; i < subject.length; i++)
+    hash = subject.charCodeAt(i) + ((hash << 5) - hash);
+  return SUBJECT_GRADIENTS[Math.abs(hash) % SUBJECT_GRADIENTS.length];
+}
+
+function getSubjectInitial(subject: string) {
+  return subject?.trim()?.[0]?.toUpperCase() || '?';
+}
+
+function getDifficultyColor(d: string) {
+  switch (d) {
+    case 'easy':   return 'bg-green-100 text-green-700';
+    case 'medium': return 'bg-yellow-100 text-yellow-700';
+    case 'hard':   return 'bg-red-100 text-red-700';
+    default:       return 'bg-gray-100 text-gray-700';
+  }
+}
+
+// ── Card Header (gradient + avatar) ────────────────────────────────────────
+
+function ExamCardHeader({ exam }: { exam: Exam }) {
+  const gradient = getSubjectGradient(exam.subject);
+  const initial  = getSubjectInitial(exam.subject);
+
+  return (
+    <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
+      {/* subtle dot pattern */}
+      <div
+        className="absolute inset-0 opacity-10"
+        style={{
+          backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
+          backgroundSize: '18px 18px',
+        }}
+      />
+
+      {/* subject avatar */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+        <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+          <span className="text-2xl font-bold text-white">{initial}</span>
+        </div>
+        <span className="text-white/80 text-xs font-medium tracking-wide uppercase">
+          {exam.subject}
+        </span>
+      </div>
+
+      {/* difficulty badge */}
+      <div className="absolute top-3 left-3">
+        <Badge className={getDifficultyColor(exam.difficulty)}>
+          {exam.difficulty}
+        </Badge>
+      </div>
+
+      {/* free / price badge */}
+      <div className="absolute top-3 right-3">
+        {exam.isFree ? (
+          <Badge className="bg-green-100 text-green-800">Free</Badge>
+        ) : (
+          <Badge className="bg-white/20 text-white border border-white/30">
+            ₹{(exam.price / 100).toFixed(0)}
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Grid Card ──────────────────────────────────────────────────────────────
+
+function ExamGridCard({ exam }: { exam: Exam }) {
+  return (
+    <Card className="hover:shadow-lg transition-shadow overflow-hidden">
+      <CardContent className="p-0">
+        <ExamCardHeader exam={exam} />
+
+        <div className="p-4">
+          <h3
+            className="font-semibold text-gray-900 truncate mb-1"
+            title={exam.title}
+          >
+            {exam.title}
+          </h3>
+          <p className="text-sm text-gray-500 mb-3">{exam.subject}</p>
+
+          {/* meta row */}
+          <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+            <div className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              <span>{exam.duration}min</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <FileQuestion className="h-3.5 w-3.5" />
+              <span>{exam.totalQuestions} Q</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" />
+              <span>{exam.totalAttempts}</span>
+            </div>
+          </div>
+
+          {/* price row */}
+          <div className="mb-4">
+            {exam.isFree ? (
+              <span className="text-base font-bold text-green-600">Free</span>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-base font-bold text-gray-900">
+                  ₹{(exam.price / 100).toFixed(0)}
+                </span>
+                {exam.isPurchased && (
+                  <Badge variant="secondary" className="text-xs">
+                    Purchased
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* actions */}
+          <div className="flex gap-2">
+            <Button className="flex-1" size="sm" asChild>
+              <Link href={`/exams/${exam.slug}`}>
+                {exam.isFree || exam.isPurchased ? 'Start Exam' : 'Purchase'}
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/exams/${exam.slug}`}>Details</Link>
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── List Row ───────────────────────────────────────────────────────────────
+
+function ExamListRow({ exam }: { exam: Exam }) {
+  const gradient = getSubjectGradient(exam.subject);
+  const initial  = getSubjectInitial(exam.subject);
+
+  return (
+    <div className="flex items-center gap-4 p-4 border-b last:border-0 hover:bg-gray-50 transition-colors">
+      {/* mini avatar */}
+      <div
+        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}
+      >
+        <span className="text-white font-bold text-sm">{initial}</span>
+      </div>
+
+      {/* title + subject */}
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-gray-900 truncate">{exam.title}</p>
+        <p className="text-sm text-gray-500">{exam.subject}</p>
+      </div>
+
+      {/* difficulty */}
+      <Badge className={getDifficultyColor(exam.difficulty)}>
+        {exam.difficulty}
+      </Badge>
+
+      {/* meta */}
+      <div className="hidden md:flex items-center gap-4 text-sm text-gray-600">
+        <div className="flex items-center gap-1">
+          <Clock className="h-4 w-4" />
+          <span>{exam.duration}min</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <FileQuestion className="h-4 w-4" />
+          <span>{exam.totalQuestions} Q</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Users className="h-4 w-4" />
+          <span>{exam.totalAttempts}</span>
+        </div>
+      </div>
+
+      {/* price */}
+      <div className="w-20 text-right">
+        {exam.isFree ? (
+          <span className="text-green-600 font-semibold">Free</span>
+        ) : (
+          <span className="font-semibold text-gray-900">
+            ₹{(exam.price / 100).toFixed(0)}
+          </span>
+        )}
+      </div>
+
+      {/* actions */}
+      <div className="flex gap-2 flex-shrink-0">
+        <Button size="sm" asChild>
+          <Link href={`/exams/${exam.slug}`}>
+            {exam.isFree || exam.isPurchased ? 'Start Exam' : 'Purchase'}
+          </Link>
+        </Button>
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/exams/${exam.slug}`}>Details</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────
+
 export default function ExamsPage() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
+  const [isLoading, setIsLoading]         = useState(true);
+  const [exams, setExams]                 = useState<Exam[]>([]);
+  const [searchQuery, setSearchQuery]     = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [diffFilter, setDiffFilter]       = useState('all');
+  const [priceFilter, setPriceFilter]     = useState('all'); // 'all' | 'free' | 'paid'
+  const [viewMode, setViewMode]           = useState<'grid' | 'list'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('studentExamViewMode') as 'grid' | 'list') || 'grid';
+    }
+    return 'grid';
+  });
+
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -50,33 +285,28 @@ export default function ExamsPage() {
     totalPages: 0,
   });
 
-  // Fetch exams from database
+  useEffect(() => { fetchExams(); }, [searchQuery, diffFilter]);
+
   useEffect(() => {
-    fetchExams();
-  }, [searchQuery, selectedDifficulty]);
+    localStorage.setItem('studentExamViewMode', viewMode);
+  }, [viewMode]);
 
   const fetchExams = async () => {
     try {
       setIsLoading(true);
-
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
       });
-
-      if (searchQuery) params.append('search', searchQuery);
-      if (selectedDifficulty !== 'all') params.append('difficulty', selectedDifficulty);
+      if (searchQuery)      params.append('search', searchQuery);
+      if (diffFilter !== 'all') params.append('difficulty', diffFilter);
 
       const res = await fetch(`/api/exams?${params}`);
-
-      if (!res.ok) {
-        throw new Error('Failed to fetch exams');
-      }
-
+      if (!res.ok) throw new Error('Failed to fetch exams');
       const data = await res.json();
 
       setExams(data.exams);
-      setPagination((prev) => ({
+      setPagination(prev => ({
         ...prev,
         total: data.pagination.total,
         totalPages: data.pagination.totalPages,
@@ -89,21 +319,35 @@ export default function ExamsPage() {
     }
   };
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'easy':
-        return 'bg-success-100 text-success-700';
-      case 'medium':
-        return 'bg-warning-100 text-warning-700';
-      case 'hard':
-        return 'bg-error-100 text-error-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
+  // client-side subject + price filtering (API doesn't support them yet)
+  const subjects = Array.from(
+    new Map(exams.map(e => [e.subjectSlug, e.subject])).entries()
+  ).map(([slug, name]) => ({ slug, name }));
+
+  const filteredExams = exams.filter(e => {
+    const matchSubject = subjectFilter === 'all' || e.subjectSlug === subjectFilter;
+    const matchPrice =
+      priceFilter === 'all' ||
+      (priceFilter === 'free' && e.isFree) ||
+      (priceFilter === 'paid' && !e.isFree);
+    return matchSubject && matchPrice;
+  });
+
+  const hasActiveFilters =
+    searchQuery || subjectFilter !== 'all' || diffFilter !== 'all' || priceFilter !== 'all';
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSubjectFilter('all');
+    setDiffFilter('all');
+    setPriceFilter('all');
+    toast.info('Filters cleared');
   };
 
+  // ── render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in">
+
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Browse Exams</h1>
@@ -112,71 +356,94 @@ export default function ExamsPage() {
         </p>
       </div>
 
-      {/* Search and Filters */}
+      {/* Filters bar */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+          <div className="flex flex-col md:flex-row gap-3">
+
             {/* Search */}
-            <div className="flex-1 relative">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search exams..."
+                placeholder="Search exams by title..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={e => setSearchQuery(e.target.value)}
                 className="pl-9"
               />
             </div>
 
-            {/* Difficulty Filter */}
-            <div className="flex gap-2">
-              <Button
-                variant={selectedDifficulty === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedDifficulty('all')}
+            {/* Subject */}
+            <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="All Subjects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Subjects</SelectItem>
+                {subjects.map(s => (
+                  <SelectItem key={s.slug} value={s.slug}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Difficulty */}
+            <Select value={diffFilter} onValueChange={setDiffFilter}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="All Difficulties" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Difficulties</SelectItem>
+                <SelectItem value="easy">Easy</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="hard">Hard</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Free / Paid */}
+            <Select value={priceFilter} onValueChange={setPriceFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Exams" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Exams</SelectItem>
+                <SelectItem value="free">Free Only</SelectItem>
+                <SelectItem value="paid">Paid Only</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Grid / List toggle */}
+            <div className="flex gap-1 border rounded-md p-1 h-10 self-start flex-shrink-0">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-2 rounded transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="Grid view"
               >
-                All
-              </Button>
-              <Button
-                variant={selectedDifficulty === 'easy' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedDifficulty('easy')}
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-2 rounded transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="List view"
               >
-                Easy
-              </Button>
-              <Button
-                variant={selectedDifficulty === 'medium' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedDifficulty('medium')}
-              >
-                Medium
-              </Button>
-              <Button
-                variant={selectedDifficulty === 'hard' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedDifficulty('hard')}
-              >
-                Hard
-              </Button>
+                <List className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
-          {/* Active Filters Display */}
-          {(searchQuery || selectedDifficulty !== 'all') && (
+          {/* Active filter summary */}
+          {hasActiveFilters && (
             <div className="mt-4 flex items-center gap-2 animate-slide-in-right">
-              <Filter className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Showing:</span>
-              <Badge variant="secondary">
-                {exams.length} exam{exams.length !== 1 ? 's' : ''}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedDifficulty('all');
-                  toast.info('Filters cleared');
-                }}
-              >
+              <span className="text-sm text-gray-600">
+                Showing {filteredExams.length} exam{filteredExams.length !== 1 ? 's' : ''}
+              </span>
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
               </Button>
             </div>
@@ -184,7 +451,7 @@ export default function ExamsPage() {
         </CardContent>
       </Card>
 
-      {/* Loading State */}
+      {/* Loading */}
       {isLoading && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -193,122 +460,50 @@ export default function ExamsPage() {
         </div>
       )}
 
-      {/* Empty State */}
-      {!isLoading && exams.length === 0 && (
+      {/* Empty */}
+      {!isLoading && filteredExams.length === 0 && (
         <Card>
           <CardContent className="py-12">
             <EmptyState
               icon={BookOpen}
               title="No exams found"
               description="Try adjusting your search or filters to find what you're looking for"
-              action={{
-                label: 'Clear Filters',
-                onClick: () => {
-                  setSearchQuery('');
-                  setSelectedDifficulty('all');
-                },
-              }}
+              action={{ label: 'Clear Filters', onClick: clearFilters }}
             />
           </CardContent>
         </Card>
       )}
 
-      {/* Exams Grid - Blue Gradient Cards */}
-      {!isLoading && exams.length > 0 && (
+      {/* Grid view */}
+      {!isLoading && filteredExams.length > 0 && viewMode === 'grid' && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {exams.map((exam, index) => (
-            <Card
+          {filteredExams.map((exam, index) => (
+            <div
               key={exam.id}
-              className="card-hover overflow-hidden animate-scale-in"
+              className="animate-scale-in"
               style={{ animationDelay: `${index * 0.05}s` }}
             >
-              <CardContent className="p-0">
-                {/* Blue Gradient Thumbnail */}
-                <div className="relative h-40 bg-gradient-to-br from-primary-500 to-primary-700">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <FileQuestion className="h-16 w-16 text-white opacity-50" />
-                  </div>
-                  <div className="absolute top-3 left-3">
-                    <Badge className={getDifficultyColor(exam.difficulty)}>
-                      {exam.difficulty}
-                    </Badge>
-                  </div>
-                  {exam.isFree && (
-                    <div className="absolute top-3 right-3">
-                      <Badge className="bg-success-500 text-white">Free</Badge>
-                    </div>
-                  )}
-                </div>
-
-                {/* Exam Info */}
-                <div className="p-4">
-                  <div className="mb-2">
-                    <Badge variant="secondary" className="text-xs">
-                      {exam.subject}
-                    </Badge>
-                  </div>
-
-                  <h3 className="font-semibold text-gray-900 line-clamp-2 mb-3">
-                    {exam.title}
-                  </h3>
-
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      <span>{exam.duration}min</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <FileQuestion className="h-4 w-4" />
-                      <span>{exam.totalQuestions} Q</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      <span>{exam.totalAttempts}</span>
-                    </div>
-                  </div>
-
-                  {/* Price */}
-                  <div className="mb-4">
-                    {exam.isFree ? (
-                      <span className="text-lg font-bold text-success-600">
-                        Free
-                      </span>
-                    ) : (
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-lg font-bold text-gray-900">
-                          ₹{(exam.price / 100).toFixed(0)}
-                        </span>
-                        {exam.isPurchased && (
-                          <Badge variant="secondary" className="text-xs">
-                            Purchased
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <Button className="flex-1" asChild>
-                      <Link href={`/exams/${exam.slug}`}>
-                        {exam.isFree || exam.isPurchased ? 'Start Exam' : 'Purchase'}
-                      </Link>
-                    </Button>
-                    <Button variant="outline" asChild>
-                      <Link href={`/exams/${exam.slug}`}>Details</Link>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              <ExamGridCard exam={exam} />
+            </div>
           ))}
         </div>
       )}
 
-      {/* Results Count */}
-      {!isLoading && exams.length > 0 && (
+      {/* List view */}
+      {!isLoading && filteredExams.length > 0 && viewMode === 'list' && (
+        <Card>
+          <CardContent className="p-0">
+            {filteredExams.map(exam => (
+              <ExamListRow key={exam.id} exam={exam} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Count footer */}
+      {!isLoading && filteredExams.length > 0 && (
         <div className="text-center text-sm text-gray-600">
-          Showing {exams.length} of {pagination.total} exams
+          Showing {filteredExams.length} of {pagination.total} exams
         </div>
       )}
     </div>

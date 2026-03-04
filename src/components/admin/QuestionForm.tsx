@@ -13,13 +13,30 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Save, ArrowLeft, Hash, ListChecks } from 'lucide-react';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 
+// ── CHANGED: smarter content checker ──────────────────────────────────────
+// Returns true if the HTML has real text content OR contains an image tag.
+// This allows image-only questions and options (e.g. diagram-only options).
+const hasContent = (html: string): boolean => {
+  if (!html) return false;
+  const hasImage = /<img\s/i.test(html);
+  if (hasImage) return true;
+  const textOnly = html.replace(/<[^>]*>/g, '').trim();
+  return textOnly.length >= 1;
+};
+
+// Keep stripHtml for the statement minimum-length check only
 const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
 
-// ✅ UPDATED: schema now conditional based on questionType
+// ── CHANGED: statement validation now also accepts image-only content ──────
 const questionSchema = z.object({
-  statement: z.string().refine((v) => stripHtml(v).length >= 5, {
-    message: 'Question statement is required (min 5 characters)',
-  }),
+  statement: z.string().refine(
+    (v) => {
+      const hasImage = /<img\s/i.test(v);
+      if (hasImage) return true;
+      return stripHtml(v).length >= 5;
+    },
+    { message: 'Question statement is required (min 5 characters, or insert an image)' }
+  ),
   subjectId: z.string().min(1, 'Subject is required'),
   topicId: z.string().optional(),
   topicName: z.string().optional(),
@@ -31,14 +48,14 @@ const questionSchema = z.object({
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
 
-  // ✅ EXISTING: MCQ fields — now optional
+  // MCQ fields — optional
   optionA: z.string().optional(),
   optionB: z.string().optional(),
   optionC: z.string().optional(),
   optionD: z.string().optional(),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
 
-  // ✅ NEW: NAT fields
+  // NAT fields
   questionType: z.enum(['mcq', 'numerical']).default('mcq'),
   numericalAnswerType: z.enum(['exact', 'range']).optional(),
   correctAnswerExact: z.number().optional().nullable(),
@@ -52,43 +69,40 @@ const questionSchema = z.object({
   (data) => data.subTopicId || data.subTopicName,
   { message: 'SubTopic is required', path: ['subTopicId'] }
 ).refine(
-  // MCQ needs all options
+  // ── CHANGED: MCQ options now accept image-only content ──────────────────
   (data) => {
     if (data.questionType === 'mcq') {
       return (
-        stripHtml(data.optionA || '').length >= 1 &&
-        stripHtml(data.optionB || '').length >= 1 &&
-        stripHtml(data.optionC || '').length >= 1 &&
-        stripHtml(data.optionD || '').length >= 1 &&
+        hasContent(data.optionA || '') &&
+        hasContent(data.optionB || '') &&
+        hasContent(data.optionC || '') &&
+        hasContent(data.optionD || '') &&
         !!data.correctAnswer
-      )
+      );
     }
-    return true
+    return true;
   },
-  { message: 'All 4 options and correct answer are required for MCQ', path: ['optionA'] }
+  { message: 'All 4 options and correct answer are required for MCQ (text or image)', path: ['optionA'] }
 ).refine(
-  // NAT exact needs a number
   (data) => {
     if (data.questionType === 'numerical' && data.numericalAnswerType === 'exact') {
-      return data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
+      return data.correctAnswerExact !== null && data.correctAnswerExact !== undefined;
     }
-    return true
+    return true;
   },
   { message: 'Exact answer is required', path: ['correctAnswerExact'] }
 ).refine(
-  // NAT range needs min and max
   (data) => {
     if (data.questionType === 'numerical' && data.numericalAnswerType === 'range') {
       return (
         data.correctAnswerMin !== null && data.correctAnswerMin !== undefined &&
         data.correctAnswerMax !== null && data.correctAnswerMax !== undefined
-      )
+      );
     }
-    return true
+    return true;
   },
   { message: 'Both min and max values are required for range', path: ['correctAnswerMin'] }
 ).refine(
-  // NAT range min must be less than max
   (data) => {
     if (
       data.questionType === 'numerical' &&
@@ -96,12 +110,12 @@ const questionSchema = z.object({
       data.correctAnswerMin !== null && data.correctAnswerMin !== undefined &&
       data.correctAnswerMax !== null && data.correctAnswerMax !== undefined
     ) {
-      return data.correctAnswerMin < data.correctAnswerMax
+      return data.correctAnswerMin < data.correctAnswerMax;
     }
-    return true
+    return true;
   },
   { message: 'Min value must be less than max value', path: ['correctAnswerMin'] }
-)
+);
 
 type QuestionFormData = z.infer<typeof questionSchema>;
 
@@ -152,7 +166,6 @@ export function QuestionForm({
   const [topicMode, setTopicMode] = useState<'select' | 'create'>('select');
   const [subTopicMode, setSubTopicMode] = useState<'select' | 'create'>('select');
 
-  // ✅ NEW: question type state
   const [questionType, setQuestionType] = useState<'mcq' | 'numerical'>(
     (initialData?.questionType as 'mcq' | 'numerical') || 'mcq'
   );
@@ -195,16 +208,9 @@ export function QuestionForm({
   const watchSubjectId = watch('subjectId');
   const watchTopicId = watch('topicId');
 
-  // ✅ Keep form value in sync with local state
-  useEffect(() => {
-    setValue('questionType', questionType);
-  }, [questionType, setValue]);
+  useEffect(() => { setValue('questionType', questionType); }, [questionType, setValue]);
+  useEffect(() => { setValue('numericalAnswerType', numericalAnswerType); }, [numericalAnswerType, setValue]);
 
-  useEffect(() => {
-    setValue('numericalAnswerType', numericalAnswerType);
-  }, [numericalAnswerType, setValue]);
-
-  // ✅ EXISTING: init effect — untouched
   useEffect(() => {
     const init = async () => {
       setLoadingSubjects(true);
@@ -258,7 +264,6 @@ export function QuestionForm({
     init();
   }, []);
 
-  // ✅ EXISTING: subject change effect — untouched
   useEffect(() => {
     if (watchSubjectId && watchSubjectId !== selectedSubjectId) {
       setSelectedSubjectId(watchSubjectId);
@@ -272,7 +277,6 @@ export function QuestionForm({
     }
   }, [watchSubjectId]);
 
-  // ✅ EXISTING: topic change effect — untouched
   useEffect(() => {
     if (watchTopicId && watchTopicId !== selectedTopicId) {
       setSelectedTopicId(watchTopicId);
@@ -287,7 +291,6 @@ export function QuestionForm({
     }
   }, [watchTopicId]);
 
-  // ✅ EXISTING: fetch functions — untouched
   const fetchTopicsForSubject = async (subjectId: string) => {
     if (!subjectId) { setTopics([]); return; }
     setLoadingTopics(true);
@@ -324,7 +327,6 @@ export function QuestionForm({
     }
   };
 
-  // ✅ EXISTING: edit mode fetch — untouched
   useEffect(() => {
     if (questionId && !initialData) {
       const fetchQuestion = async () => {
@@ -333,13 +335,8 @@ export function QuestionForm({
           const data = await res.json();
           if (data.question) {
             reset(data.question);
-            // ✅ Also restore question type in local state
-            if (data.question.questionType) {
-              setQuestionType(data.question.questionType);
-            }
-            if (data.question.numericalAnswerType) {
-              setNumericalAnswerType(data.question.numericalAnswerType);
-            }
+            if (data.question.questionType) setQuestionType(data.question.questionType);
+            if (data.question.numericalAnswerType) setNumericalAnswerType(data.question.numericalAnswerType);
           }
         } catch (e) {
           toast.error('Failed to load question');
@@ -362,7 +359,6 @@ export function QuestionForm({
         questionType,
       };
 
-      // ✅ EXISTING: topic logic — untouched
       if (topicMode === 'select' && data.topicId) {
         payload.topicId = data.topicId;
       } else if (topicMode === 'create' && data.topicName) {
@@ -372,7 +368,6 @@ export function QuestionForm({
         throw new Error('Please select or create a topic');
       }
 
-      // ✅ EXISTING: subtopic logic — untouched
       if (subTopicMode === 'select' && data.subTopicId) {
         payload.subTopicId = data.subTopicId;
       } else if (subTopicMode === 'create' && data.subTopicName) {
@@ -381,7 +376,6 @@ export function QuestionForm({
         throw new Error('Please select or create a subtopic');
       }
 
-      // ✅ EXISTING: MCQ payload — untouched
       if (questionType === 'mcq') {
         payload.optionA = data.optionA;
         payload.optionB = data.optionB;
@@ -390,7 +384,6 @@ export function QuestionForm({
         payload.correctAnswer = data.correctAnswer;
       }
 
-      // ✅ NEW: NAT payload
       if (questionType === 'numerical') {
         if (numericalAnswerType === 'exact') {
           payload.correctAnswerExact = data.correctAnswerExact;
@@ -403,10 +396,7 @@ export function QuestionForm({
         }
       }
 
-      const url = isEditMode
-        ? `/api/admin/questions/${questionId}`
-        : '/api/admin/questions';
-
+      const url = isEditMode ? `/api/admin/questions/${questionId}` : '/api/admin/questions';
       const method = isEditMode ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -489,7 +479,7 @@ export function QuestionForm({
       <CardContent className={mode === 'dialog' ? 'p-0' : ''}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-          {/* ✅ NEW: Question Type Toggle */}
+          {/* Question Type Toggle */}
           <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
             <span className="text-sm font-medium text-slate-600">Question Type:</span>
             <div className="flex rounded-lg border border-slate-200 overflow-hidden">
@@ -520,9 +510,8 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* ✅ EXISTING: Subject / Topic / SubTopic Row — completely untouched */}
+          {/* Subject / Topic / SubTopic Row */}
           <div className="grid gap-6 md:grid-cols-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
-
             {/* Subject */}
             <div className="space-y-2">
               <Label>Subject *</Label>
@@ -535,9 +524,7 @@ export function QuestionForm({
                   {loadingSubjects ? 'Loading subjects...' : 'Select Subject'}
                 </option>
                 {subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </option>
+                  <option key={subject.id} value={subject.id}>{subject.name}</option>
                 ))}
               </select>
               {errors.subjectId && <p className="text-xs text-red-500">{errors.subjectId.message}</p>}
@@ -564,7 +551,6 @@ export function QuestionForm({
                   </button>
                 )}
               </div>
-
               {!watchSubjectId ? (
                 <Input disabled placeholder="Select a subject first" />
               ) : loadingTopics ? (
@@ -576,19 +562,14 @@ export function QuestionForm({
                 >
                   <option value="">Select Topic</option>
                   {topics.map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.name}
-                    </option>
+                    <option key={topic.id} value={topic.id}>{topic.name}</option>
                   ))}
                 </select>
               ) : (
                 <Input {...register('topicName')} placeholder="e.g. Thermodynamics" />
               )}
-
               {(errors.topicId || errors.topicName) && (
-                <p className="text-xs text-red-500">
-                  {errors.topicId?.message || errors.topicName?.message}
-                </p>
+                <p className="text-xs text-red-500">{errors.topicId?.message || errors.topicName?.message}</p>
               )}
               {topics.length === 0 && watchSubjectId && !loadingTopics && (
                 <p className="text-xs text-muted-foreground">No topics found. Create a new one.</p>
@@ -613,7 +594,6 @@ export function QuestionForm({
                   </button>
                 )}
               </div>
-
               {!watchTopicId && topicMode === 'select' ? (
                 <Input disabled placeholder="Select a topic first" />
               ) : loadingSubTopics ? (
@@ -625,19 +605,14 @@ export function QuestionForm({
                 >
                   <option value="">Select SubTopic</option>
                   {subTopics.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name}
-                    </option>
+                    <option key={st.id} value={st.id}>{st.name}</option>
                   ))}
                 </select>
               ) : (
                 <Input {...register('subTopicName')} placeholder="e.g. Boyle's Law" />
               )}
-
               {(errors.subTopicId || errors.subTopicName) && (
-                <p className="text-xs text-red-500">
-                  {errors.subTopicId?.message || errors.subTopicName?.message}
-                </p>
+                <p className="text-xs text-red-500">{errors.subTopicId?.message || errors.subTopicName?.message}</p>
               )}
               {subTopics.length === 0 && (watchTopicId || topicMode === 'create') && !loadingSubTopics && (
                 <p className="text-xs text-muted-foreground">No subtopics found. Create a new one.</p>
@@ -645,7 +620,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* ✅ EXISTING: Question Statement — untouched */}
+          {/* Question Statement */}
           <div className="space-y-2">
             <Label>Question Statement *</Label>
             <Controller
@@ -665,7 +640,7 @@ export function QuestionForm({
             )}
           </div>
 
-          {/* ✅ EXISTING: MCQ Options — only shown for MCQ */}
+          {/* MCQ Options */}
           {questionType === 'mcq' && (
             <div className="grid gap-4 md:grid-cols-2">
               {(['A', 'B', 'C', 'D'] as const).map((opt) => (
@@ -689,7 +664,8 @@ export function QuestionForm({
                       <RichTextEditor
                         value={field.value || ''}
                         onChange={field.onChange}
-                        placeholder={`Option ${opt} text`}
+                        // ── CHANGED: updated placeholder to hint image is allowed ──
+                        placeholder={`Option ${opt} — type text or paste/upload an image`}
                         minHeight="60px"
                       />
                     )}
@@ -701,18 +677,17 @@ export function QuestionForm({
                   )}
                 </div>
               ))}
-              {errors.optionA?.message === 'All 4 options and correct answer are required for MCQ' && (
+              {errors.optionA?.message === 'All 4 options and correct answer are required for MCQ (text or image)' && (
                 <p className="text-xs text-red-500 col-span-2">{errors.optionA.message}</p>
               )}
             </div>
           )}
 
-          {/* ✅ NEW: Numerical Answer Section */}
+          {/* Numerical Answer Section */}
           {questionType === 'numerical' && (
             <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-center justify-between">
                 <Label className="text-blue-800 font-medium">Correct Answer</Label>
-                {/* Answer type toggle */}
                 <div className="flex rounded-lg border border-blue-200 overflow-hidden">
                   <button
                     type="button"
@@ -739,7 +714,6 @@ export function QuestionForm({
                 </div>
               </div>
 
-              {/* Exact answer input */}
               {numericalAnswerType === 'exact' && (
                 <div className="space-y-1">
                   <Label className="text-sm text-blue-700">Answer Value</Label>
@@ -756,7 +730,6 @@ export function QuestionForm({
                 </div>
               )}
 
-              {/* Range answer inputs */}
               {numericalAnswerType === 'range' && (
                 <div className="flex items-center gap-4">
                   <div className="space-y-1">
@@ -791,7 +764,7 @@ export function QuestionForm({
             </div>
           )}
 
-          {/* ✅ EXISTING: Difficulty / Marks / Negative — untouched */}
+          {/* Difficulty / Marks / Negative */}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Difficulty</Label>
@@ -814,7 +787,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* ✅ EXISTING: Explanation — untouched */}
+          {/* Explanation */}
           <div className="space-y-2">
             <Label>Explanation (Optional)</Label>
             <Controller
@@ -831,7 +804,7 @@ export function QuestionForm({
             />
           </div>
 
-          {/* ✅ EXISTING: Active Status for Edit Mode — untouched */}
+          {/* Active Status for Edit Mode */}
           {isEditMode && (
             <div className="flex items-center space-x-2">
               <input

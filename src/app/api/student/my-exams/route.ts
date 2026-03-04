@@ -7,45 +7,59 @@ import { prisma } from '@/lib/prisma'
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
-    
+
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const userId = session.user.id
 
-    // Step 1: Fetch purchases
+    // ── 1. Purchased exams (paid or free via purchase record) ─────────────
     const purchases = await prisma.purchase.findMany({
-      where: {
-        userId,
-        status: 'active',
-        examId: { not: null }
-      },
+      where: { userId, status: 'active', examId: { not: null } },
       select: {
         id: true,
         examId: true,
-        purchasedAt: true, // ✅ FIXED: Changed from createdAt
-        validUntil: true
+        purchasedAt: true,
+        validUntil: true,
       },
-      orderBy: { 
-        purchasedAt: 'desc' // ✅ FIXED: Changed from createdAt
-      }
+      orderBy: { purchasedAt: 'desc' },
     })
 
-    if (purchases.length === 0) {
+    const purchasedExamIds = purchases
+      .map(p => p.examId)
+      .filter(Boolean) as string[]
+
+    // ── 2. Free exams attempted by this student (no purchase record) ──────
+    const freeAttempts = await prisma.attempt.findMany({
+      where: {
+        userId,
+        status: 'completed',
+        exam: { isFree: true },
+        // exclude exams already covered by purchases
+        examId: purchasedExamIds.length > 0
+          ? { notIn: purchasedExamIds }
+          : undefined,
+      },
+      distinct: ['examId'],
+      select: { examId: true, submittedAt: true },
+      orderBy: { submittedAt: 'desc' },
+    })
+
+    const freeAttemptedExamIds = freeAttempts
+      .map(a => a.examId)
+      .filter(Boolean) as string[]
+
+    // ── 3. All relevant exam IDs ───────────────────────────────────────────
+    const allExamIds = [...new Set([...purchasedExamIds, ...freeAttemptedExamIds])]
+
+    if (allExamIds.length === 0) {
       return NextResponse.json({ exams: [] })
     }
 
-    const examIds = purchases.map(p => p.examId).filter(Boolean) as string[]
-
-    // Step 2: Fetch exam details
+    // ── 4. Fetch exam details ─────────────────────────────────────────────
     const exams = await prisma.exam.findMany({
-      where: {
-        id: { in: examIds }
-      },
+      where: { id: { in: allExamIds } },
       select: {
         id: true,
         title: true,
@@ -54,61 +68,55 @@ export async function GET() {
         durationMin: true,
         totalMarks: true,
         difficulty: true,
-        subject: {
-          select: {
-            name: true,
-            slug: true
-          }
-        },
-        questions: {
-          select: {
-            id: true
-          }
-        }
-      }
+        isFree: true,
+        subject: { select: { name: true, slug: true } },
+        questions: { select: { id: true } },
+      },
     })
 
-    // Step 3: Fetch last attempts
+    // ── 5. Fetch last completed attempt per exam ───────────────────────────
     const lastAttempts = await prisma.attempt.findMany({
       where: {
         userId,
-        examId: { in: examIds },
-        status: 'completed'
+        examId: { in: allExamIds },
+        status: 'completed',
       },
-      orderBy: {
-        submittedAt: 'desc'
-      },
+      orderBy: { submittedAt: 'desc' },
       distinct: ['examId'],
       select: {
         examId: true,
         score: true,
         percentage: true,
         submittedAt: true,
-        status: true
-      }
+        status: true,
+      },
     })
 
-    // Create maps for quick lookup
-    const purchaseMap = new Map(purchases.map(p => [p.examId, p]))
-    const attemptMap = new Map(lastAttempts.map(a => [a.examId, a]))
+    // ── 6. Build lookup maps ──────────────────────────────────────────────
+    const purchaseMap   = new Map(purchases.map(p => [p.examId, p]))
+    const attemptMap    = new Map(lastAttempts.map(a => [a.examId, a]))
+    const freeAttemptMap = new Map(freeAttempts.map(a => [a.examId, a]))
 
-    // Transform data
+    // ── 7. Transform ──────────────────────────────────────────────────────
     const myExams = exams.map(exam => {
-      const purchase = purchaseMap.get(exam.id)
+      const purchase    = purchaseMap.get(exam.id)
       const lastAttempt = attemptMap.get(exam.id)
+      const firstFreeAt = freeAttemptMap.get(exam.id)
 
-      // Calculate score percentage
-      let scorePercentage: number | null = null;
-
-        if (lastAttempt?.percentage != null) {
-        scorePercentage = Number(Number(lastAttempt.percentage).toFixed(2));
-        } 
-        else if (lastAttempt?.score != null && exam.totalMarks) {
+      let scorePercentage: number | null = null
+      if (lastAttempt?.percentage != null) {
+        scorePercentage = Number(Number(lastAttempt.percentage).toFixed(2))
+      } else if (lastAttempt?.score != null && exam.totalMarks) {
         scorePercentage = Number(
-            ((lastAttempt.score / exam.totalMarks) * 100).toFixed(2)
-        );
-        }
+          ((lastAttempt.score / exam.totalMarks) * 100).toFixed(2)
+        )
+      }
 
+      // enrolledAt: use purchase date if available, otherwise first free attempt date
+      const enrolledAt =
+        purchase?.purchasedAt.toISOString() ||
+        firstFreeAt?.submittedAt?.toISOString() ||
+        new Date().toISOString()
 
       return {
         id: exam.id,
@@ -121,29 +129,30 @@ export async function GET() {
         totalQuestions: exam.questions.length,
         totalMarks: exam.totalMarks,
         difficulty: exam.difficulty,
-        purchasedAt: purchase?.purchasedAt.toISOString() || new Date().toISOString(),
+        isFree: exam.isFree,
+        purchasedAt: enrolledAt,
         validUntil: purchase?.validUntil?.toISOString() || null,
         hasAttempted: !!lastAttempt,
         lastAttemptStatus: lastAttempt?.status || null,
         lastScore: lastAttempt?.score ?? null,
         lastScorePercentage: scorePercentage ?? null,
-        lastAttemptDate: lastAttempt?.submittedAt?.toISOString() || null
+        lastAttemptDate: lastAttempt?.submittedAt?.toISOString() || null,
       }
     })
 
-    return NextResponse.json({ exams: myExams })
+    // Sort: most recently enrolled/attempted first
+    myExams.sort(
+      (a, b) =>
+        new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime()
+    )
 
+    return NextResponse.json({ exams: myExams })
   } catch (error) {
     console.error('❌ Failed to fetch my exams:', error)
-    
-    if (error instanceof Error) {
-      console.error('Message:', error.message)
-    }
-    
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to fetch exams',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        message: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     )

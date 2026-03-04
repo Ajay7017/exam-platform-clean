@@ -9,9 +9,18 @@ import Superscript from '@tiptap/extension-superscript';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { Bold, Italic, UnderlineIcon, ImageIcon, Loader2 } from 'lucide-react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+// Add FlaskConical to lucide import
+import { Bold, Italic, UnderlineIcon, ImageIcon, Loader2, FlaskConical } from 'lucide-react';
+// Add below it:
+// REPLACE WITH dynamic import:
+import dynamic from 'next/dynamic';
+
+const KetcherModal = dynamic(
+  () => import('@/components/admin/KetcherModal').then(m => m.KetcherModal),
+  { ssr: false }
+);
 
 // ─── Math Node ────────────────────────────────────────────────────────────────
 function MathNodeView({ node }: { node: any }) {
@@ -235,6 +244,7 @@ export function RichTextEditor({
   disabled = false,
 }: RichTextEditorProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const [ketcherOpen, setKetcherOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isInternalChange = useRef(false);
 
@@ -432,6 +442,25 @@ export function RichTextEditor({
           {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
         </ToolbarButton>
         <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" className="hidden" onChange={handleFileInputChange} />
+        <div className="w-px h-4 bg-border mx-1" />
+          <ToolbarButton
+            onClick={() => setKetcherOpen(true)}
+            title="Draw organic/inorganic structure (Ketcher)"
+            disabled={disabled}
+          >
+            <FlaskConical className="w-3.5 h-3.5" />
+          </ToolbarButton>
+
+          <KetcherModal
+            open={ketcherOpen}
+            onClose={() => setKetcherOpen(false)}
+            onInsert={(url) => {
+              editor?.chain().focus().insertContent({
+                type: 'resizableImage',
+                attrs: { src: url, alt: 'Chemical structure', width: '200px' },
+              }).run();
+            }}
+          />
       </div>
 
       <EditorContent editor={editor} />
