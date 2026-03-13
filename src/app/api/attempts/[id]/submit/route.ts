@@ -9,17 +9,12 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await requireAuth()
+    const session   = await requireAuth()
     const attemptId = params.id
 
     const attempt = await prisma.attempt.findUnique({
-      where: { id: attemptId },
-      select: {
-        id: true,
-        userId: true,
-        examId: true,
-        status: true
-      }
+      where:  { id: attemptId },
+      select: { id: true, userId: true, examId: true, status: true, isOfficial: true }
     })
 
     if (!attempt) {
@@ -34,28 +29,22 @@ export async function POST(
       return NextResponse.json({ error: 'Attempt already submitted' }, { status: 400 })
     }
 
-    // Mark as completed immediately so the client can proceed.
-    // The heavy grading work runs in the background — the client polls for
-    // results or sees a "processing" state.
     await prisma.attempt.update({
       where: { id: attemptId },
-      data: {
-        status: 'completed',
-        submittedAt: new Date()
-      }
+      data:  { status: 'completed', submittedAt: new Date() }
     })
 
-    // Fire-and-forget — do NOT await. The response goes back to the client
-    // while grading runs in the background.
-    processExamResults(attemptId, attempt.examId, attempt.userId).catch(error => {
+    // Fire-and-forget background grading
+    processExamResults(attemptId, attempt.examId, attempt.userId, attempt.isOfficial).catch(error => {
       console.error('[Background] Processing error:', error)
     })
 
     return NextResponse.json({
-      success: true,
-      attemptId: attempt.id,
-      examId: attempt.examId,
-      message: 'Exam submitted successfully. Results are being processed.',
+      success:    true,
+      attemptId:  attempt.id,
+      examId:     attempt.examId,
+      isOfficial: attempt.isOfficial,  // ✅ NEW: client can show appropriate message
+      message:    'Exam submitted successfully. Results are being processed.',
       processing: true
     })
 
@@ -65,8 +54,14 @@ export async function POST(
   }
 }
 
-async function processExamResults(attemptId: string, examId: string, userId: string) {
-  console.log(`[Background] Processing results for attempt ${attemptId}`)
+// ✅ UPDATED: accepts isOfficial flag — leaderboard only updated for official attempts
+async function processExamResults(
+  attemptId: string,
+  examId:    string,
+  userId:    string,
+  isOfficial: boolean
+) {
+  console.log(`[Background] Processing results for attempt ${attemptId} (official: ${isOfficial})`)
 
   try {
     const attempt = await prisma.attempt.findUnique({
@@ -79,7 +74,7 @@ async function processExamResults(attemptId: string, examId: string, userId: str
                 question: {
                   include: {
                     options: true,
-                    topic: { select: { name: true } }
+                    topic:   { select: { name: true } }
                   }
                 }
               },
@@ -90,33 +85,20 @@ async function processExamResults(attemptId: string, examId: string, userId: str
       }
     })
 
-    if (!attempt) {
-      console.error('[Background] Attempt not found')
-      return
-    }
+    if (!attempt) { console.error('[Background] Attempt not found'); return }
 
     const userAnswers = (attempt.answers as Record<string, any>) || {}
 
-    let score = 0
+    let score        = 0
     let correctCount = 0
-    let wrongCount = 0
-    let unattempted = 0
-
-    const topicStats = new Map<string, { correct: number; wrong: number; total: number }>()
+    let wrongCount   = 0
+    let unattempted  = 0
 
     for (const examQuestion of attempt.exam.questions) {
-      const question = examQuestion.question
+      const question     = examQuestion.question
       const userResponse = userAnswers[question.id]
 
-      const topicName = question.topic.name
-      if (!topicStats.has(topicName)) {
-        topicStats.set(topicName, { correct: 0, wrong: 0, total: 0 })
-      }
-      const stats = topicStats.get(topicName)!
-      stats.total++
-
       if (question.type === 'numerical') {
-        // ── NAT grading ──────────────────────────────────────────────────────
         const userNum = userResponse?.numericalAnswer ?? null
 
         if (userNum === null || userNum === undefined) {
@@ -125,53 +107,35 @@ async function processExamResults(attemptId: string, examId: string, userId: str
           question.correctAnswerExact !== null &&
           question.correctAnswerExact !== undefined
         ) {
-          // Exact match
           if (userNum === question.correctAnswerExact) {
-            correctCount++
-            score += question.marks
-            stats.correct++
+            correctCount++; score += question.marks
           } else {
-            wrongCount++
-            score -= question.negativeMarks
-            stats.wrong++
+            wrongCount++; score -= question.negativeMarks
           }
         } else if (
           question.correctAnswerMin !== null &&
-          question.correctAnswerMin !== undefined &&
-          question.correctAnswerMax !== null &&
-          question.correctAnswerMax !== undefined
+          question.correctAnswerMax !== null
         ) {
-          // Range match
-          if (userNum >= question.correctAnswerMin && userNum <= question.correctAnswerMax) {
-            correctCount++
-            score += question.marks
-            stats.correct++
+          if (userNum >= question.correctAnswerMin! && userNum <= question.correctAnswerMax!) {
+            correctCount++; score += question.marks
           } else {
-            wrongCount++
-            score -= question.negativeMarks
-            stats.wrong++
+            wrongCount++; score -= question.negativeMarks
           }
         } else {
-          // No valid answer key configured — treat as unattempted
           unattempted++
         }
 
       } else {
-        // ── MCQ grading ──────────────────────────────────────────────────────
         const correctOption = question.options.find(o => o.isCorrect)
         const correctAnswer = correctOption?.optionKey ?? null
-        const userAnswer = userResponse?.selectedOption ?? null
+        const userAnswer    = userResponse?.selectedOption ?? null
 
         if (userAnswer === null) {
           unattempted++
         } else if (userAnswer === correctAnswer) {
-          correctCount++
-          score += question.marks
-          stats.correct++
+          correctCount++; score += question.marks
         } else {
-          wrongCount++
-          score -= question.negativeMarks
-          stats.wrong++
+          wrongCount++; score -= question.negativeMarks
         }
       }
     }
@@ -184,93 +148,85 @@ async function processExamResults(attemptId: string, examId: string, userId: str
       ? (score / attempt.exam.totalMarks) * 100
       : 0
 
-    // ── Atomic rank calculation ───────────────────────────────────────────────
-    //
-    // The original code ran two separate COUNT queries, which created a race
-    // condition: another attempt could be submitted between the two queries,
-    // making betterAttemptsCount and totalCompletedAttempts inconsistent.
-    //
-    // Solution: fetch all completed scores in one query, compute rank in memory.
-    // This is safe for exam sizes up to tens of thousands of attempts and avoids
-    // the need for a database-level lock.
+    // ✅ UPDATED: rank is calculated ONLY against official attempts
     const completedAttempts = await prisma.attempt.findMany({
       where: {
         examId,
-        status: 'completed',
-        id: { not: attemptId } // exclude current attempt — it's already 'completed' in DB
+        status:     'completed',
+        isOfficial: true,          // ✅ only official attempts count for rank
+        id:         { not: attemptId }
       },
-      select: { score: true, timeSpentSec: true },
-      orderBy: [{ score: 'desc' }, { timeSpentSec: 'asc' }]
+      select: { score: true, timeSpentSec: true }
     })
 
-    // Rank = number of attempts that beat this one + 1.
-    // Tie-breaking: same score but lower time = better rank.
-    const betterCount = completedAttempts.filter(a => {
-      if (a.score > score) return true
-      if (a.score === score && (a.timeSpentSec ?? Infinity) < timeTaken) return true
-      return false
-    }).length
+    let userRank      = null
+    let percentile    = null
+    let totalOfficial = null
 
-    const userRank = betterCount + 1
-    const totalAttempts = completedAttempts.length + 1 // include current attempt
+    if (isOfficial) {
+      // ✅ Only compute rank for official attempts
+      const betterCount = completedAttempts.filter(a => {
+        if ((a.score ?? -Infinity) > score) return true
+        if (a.score === score && (a.timeSpentSec ?? Infinity) < timeTaken) return true
+        return false
+      }).length
 
-    const percentile = totalAttempts > 1
-      ? ((totalAttempts - userRank) / (totalAttempts - 1)) * 100
-      : 100
+      userRank      = betterCount + 1
+      totalOfficial = completedAttempts.length + 1
+      percentile    = totalOfficial > 1
+        ? ((totalOfficial - userRank) / (totalOfficial - 1)) * 100
+        : 100
+    }
 
-    // ── Persist results and leaderboard in one transaction ───────────────────
+    // ✅ Persist results
     await prisma.$transaction(async (tx) => {
       await tx.attempt.update({
         where: { id: attemptId },
-        data: {
+        data:  {
           score,
           percentage,
           correctAnswers: correctCount,
-          wrongAnswers: wrongCount,
+          wrongAnswers:   wrongCount,
           unattempted,
-          timeSpentSec: timeTaken,
-          rank: userRank,
-          percentile,
+          timeSpentSec:   timeTaken,
+          rank:           userRank,      // null for practice attempts
+          percentile,                    // null for practice attempts
         }
       })
 
-      // Only update the leaderboard if this is the user's best score
-      const existingEntry = await tx.leaderboardEntry.findUnique({
-        where: { examId_userId: { examId, userId } }
-      })
-
-      if (!existingEntry || score > existingEntry.score) {
-        await tx.leaderboardEntry.upsert({
-          where: { examId_userId: { examId, userId } },
-          create: {
-            examId,
-            userId,
-            attemptId,
-            score,
-            percentage,
-            rank: userRank,
-            timeTaken,
-            submittedAt: attempt.submittedAt!
-          },
-          update: {
-            attemptId,
-            score,
-            percentage,
-            rank: userRank,
-            timeTaken,
-            submittedAt: attempt.submittedAt!
-          }
+      // ✅ Leaderboard only updated for official attempts
+      if (isOfficial) {
+        const existingEntry = await tx.leaderboardEntry.findUnique({
+          where: { examId_userId: { examId, userId } }
         })
+
+        if (!existingEntry || score > existingEntry.score) {
+          await tx.leaderboardEntry.upsert({
+            where:  { examId_userId: { examId, userId } },
+            create: {
+              examId, userId, attemptId,
+              score, percentage,
+              rank:        userRank!,
+              timeTaken,
+              submittedAt: attempt.submittedAt!
+            },
+            update: {
+              attemptId, score, percentage,
+              rank:        userRank!,
+              timeTaken,
+              submittedAt: attempt.submittedAt!
+            }
+          })
+        }
       }
     })
 
     console.log(
-      `[Background] Done — attempt ${attemptId} | score: ${score} | rank: ${userRank}/${totalAttempts}`
+      `[Background] Done — attempt ${attemptId} | score: ${score} | ` +
+      `rank: ${userRank ?? 'N/A (practice)'}`
     )
 
   } catch (error) {
     console.error('[Background] Processing error:', error)
-    // Don't re-throw — the attempt is already marked completed.
-    // The score fields will just be null/0 and can be reprocessed if needed.
   }
 }

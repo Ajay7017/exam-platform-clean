@@ -167,15 +167,8 @@ export default function ExamInterface() {
   const [loading, setLoading] = useState(true)
   const [currentQuestion, setCurrentQuestion] = useState(0)
 
-  // answers holds the canonical truth for all answers.
-  // For MCQ: value is a string option key (e.g. "A") or null.
-  // For numerical: value is a number or null.
   const [answers, setAnswers] = useState<Record<string, string | number | null>>({})
-
-  // numericalDisplays holds the raw string shown in the calculator display
-  // (e.g. "3." or "-" during mid-entry), separate from the committed numeric value.
   const [numericalDisplays, setNumericalDisplays] = useState<Record<string, string>>({})
-
   const [markedForReview, setMarkedForReview] = useState<Record<string, boolean>>({})
   const [visitedQuestions, setVisitedQuestions] = useState<Set<string>>(new Set())
   const [timeRemaining, setTimeRemaining] = useState(0)
@@ -184,21 +177,83 @@ export default function ExamInterface() {
   const [isMaximizeMode, setIsMaximizeMode] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  // Refs that always hold latest state — safe to read inside intervals/callbacks
-  // without stale closure issues. Updated synchronously via a helper below.
-  const answersRef = useRef<Record<string, string | number | null>>({})
-  const markedForReviewRef = useRef<Record<string, boolean>>({})
-  const examRef = useRef<ExamData | null>(null)
-  const submittedRef = useRef(false)
-  const lockdownRef = useRef<any>(null)
-  const saveTimerRef = useRef<NodeJS.Timeout>()
+  const answersRef          = useRef<Record<string, string | number | null>>({})
+  const markedForReviewRef  = useRef<Record<string, boolean>>({})
+  const examRef             = useRef<ExamData | null>(null)
+  const submittedRef        = useRef(false)
+  const lockdownRef         = useRef<any>(null)
+  const saveTimerRef        = useRef<NodeJS.Timeout>()
 
-  // Helper: update state AND ref together so the ref is never one render behind.
+  // ✅ NEW: per-question time tracking (refs — never cause re-renders)
+  // timePerQuestion  : accumulated seconds per questionId
+  // questionEnteredAt: Date.now() when student last landed on current question (null = not timing)
+  const timePerQuestion   = useRef<Record<string, number>>({})
+  const questionEnteredAt = useRef<number | null>(null)
+  const currentQuestionRef = useRef<number>(0) // mirror of currentQuestion state for use in callbacks
+
+  // keep currentQuestionRef in sync
+  useEffect(() => { currentQuestionRef.current = currentQuestion }, [currentQuestion])
+
+  // ── time tracking helpers ──────────────────────────────────────────────────
+
+  /** Pause timer on the question the student is LEAVING. */
+  const pauseCurrentQuestionTimer = useCallback(() => {
+    if (questionEnteredAt.current === null || !examRef.current) return
+    const qId = examRef.current.questions[currentQuestionRef.current]?.id
+    if (!qId) return
+    const elapsed = Math.floor((Date.now() - questionEnteredAt.current) / 1000)
+    timePerQuestion.current[qId] = (timePerQuestion.current[qId] || 0) + elapsed
+    questionEnteredAt.current = null
+  }, [])
+
+  /** Start/resume timer for the question the student just ARRIVED on. */
+  const resumeCurrentQuestionTimer = useCallback(() => {
+    questionEnteredAt.current = Date.now()
+  }, [])
+
+  /** Snapshot: flush in-flight time for the current question into the map. */
+  const getTimeSnapshot = useCallback((): Record<string, number> => {
+    if (questionEnteredAt.current !== null && examRef.current) {
+      const qId = examRef.current.questions[currentQuestionRef.current]?.id
+      if (qId) {
+        const inFlight = Math.floor((Date.now() - questionEnteredAt.current) / 1000)
+        return {
+          ...timePerQuestion.current,
+          [qId]: (timePerQuestion.current[qId] || 0) + inFlight,
+        }
+      }
+    }
+    return { ...timePerQuestion.current }
+  }, [])
+
+  // ── tab visibility: pause when hidden, resume when visible ────────────────
+  useEffect(() => {
+    if (!exam) return
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        pauseCurrentQuestionTimer()
+      } else {
+        resumeCurrentQuestionTimer()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [exam, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
+
+  // ── start timer for Q1 once exam loads ────────────────────────────────────
+  useEffect(() => {
+    if (exam && !loading) {
+      resumeCurrentQuestionTimer()
+    }
+  }, [exam, loading, resumeCurrentQuestionTimer])
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   const setAnswersWithRef = useCallback(
     (updater: ((prev: Record<string, string | number | null>) => Record<string, string | number | null>)) => {
       setAnswers(prev => {
         const next = updater(prev)
-        answersRef.current = next   // keep ref in sync immediately
+        answersRef.current = next
         return next
       })
     },
@@ -209,7 +264,7 @@ export default function ExamInterface() {
     (updater: ((prev: Record<string, boolean>) => Record<string, boolean>)) => {
       setMarkedForReview(prev => {
         const next = updater(prev)
-        markedForReviewRef.current = next   // keep ref in sync immediately
+        markedForReviewRef.current = next
         return next
       })
     },
@@ -234,26 +289,20 @@ export default function ExamInterface() {
       setExam(data)
       examRef.current = data
 
-      // Restore flat answer map (already transformed by the server)
       if (data.savedAnswers && typeof data.savedAnswers === 'object') {
         setAnswers(data.savedAnswers)
         answersRef.current = data.savedAnswers
-
-        // Mark any question that had a non-null saved answer as visited
-        // so the palette shows correct colour on refresh
         const visitedIds = Object.entries(data.savedAnswers as Record<string, any>)
           .filter(([, val]) => val !== null)
           .map(([id]) => id)
         setVisitedQuestions(new Set(visitedIds))
       }
 
-      // Restore marked-for-review state
       if (data.savedMarkedForReview && typeof data.savedMarkedForReview === 'object') {
         setMarkedForReview(data.savedMarkedForReview)
         markedForReviewRef.current = data.savedMarkedForReview
       }
 
-      // Restore numerical display strings from the numeric values
       if (data.savedAnswers) {
         const numericalRestored: Record<string, string> = {}
         ;(data.exam?.questions ?? data.questions ?? []).forEach((q: any) => {
@@ -280,7 +329,6 @@ export default function ExamInterface() {
     }
   }
 
-
   // ─── Countdown timer ──────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -294,7 +342,7 @@ export default function ExamInterface() {
     return () => clearInterval(interval)
   }, [timeRemaining, exam])
 
-  // ─── Auto-save every 30 seconds (reads from refs — never stale) ───────────
+  // ─── Auto-save every 30 seconds ───────────────────────────────────────────
 
   useEffect(() => {
     if (!exam) return
@@ -302,7 +350,7 @@ export default function ExamInterface() {
       if (!submittedRef.current) saveAnswers()
     }, 30000)
     return () => { if (saveTimerRef.current) clearInterval(saveTimerRef.current) }
-  }, [exam]) // intentionally only depends on exam, refs handle freshness
+  }, [exam])
 
   // ─── Security event listeners ─────────────────────────────────────────────
 
@@ -334,12 +382,6 @@ export default function ExamInterface() {
   }
 
   // ─── Core save function ───────────────────────────────────────────────────
-  //
-  // Always reads from refs so it is safe to call from intervals, timeouts, or
-  // event handlers without worrying about stale closures.
-  //
-  // You can also pass explicit overrides (used during final submit to guarantee
-  // the very latest in-flight state is flushed before the submit call).
 
   const saveAnswers = useCallback(async (
     overrideAnswers?: Record<string, string | number | null>,
@@ -349,33 +391,27 @@ export default function ExamInterface() {
     if (!currentExam || submittedRef.current) return
 
     const currentAnswers = overrideAnswers ?? answersRef.current
-    const currentMarked = overrideMarked ?? markedForReviewRef.current
+    const currentMarked  = overrideMarked  ?? markedForReviewRef.current
 
-    // Build the payload — include every question that has an answer OR is marked.
-    // We do NOT skip null answers here because a null answer means "user cleared it"
-    // and the server needs to know about that too.
     const answersToSave = Object.entries(currentAnswers)
       .map(([questionId, answer]) => {
-        const question = currentExam.questions.find(q => q.id === questionId)
+        const question    = currentExam.questions.find(q => q.id === questionId)
         const isNumerical = question?.type === 'numerical'
         return {
           questionId,
-          selectedOption: isNumerical ? null : (answer as string | null),
+          selectedOption:  isNumerical ? null : (answer as string | null),
           numericalAnswer: isNumerical ? (answer as number | null) : null,
           markedForReview: currentMarked[questionId] || false,
         }
       })
 
-    // Also include questions that are only marked (no answer yet)
     const markedOnlyIds = Object.keys(currentMarked).filter(
       id => currentMarked[id] && !(id in currentAnswers)
     )
     markedOnlyIds.forEach(questionId => {
-      const question = currentExam.questions.find(q => q.id === questionId)
-      const isNumerical = question?.type === 'numerical'
       answersToSave.push({
         questionId,
-        selectedOption: null,
+        selectedOption:  null,
         numericalAnswer: null,
         markedForReview: true,
       })
@@ -387,18 +423,20 @@ export default function ExamInterface() {
       await fetch(`/api/attempts/${currentExam.attemptId}/save-batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: answersToSave }),
+        body: JSON.stringify({
+          answers: answersToSave,
+          timePerQuestion: getTimeSnapshot(), // ✅ NEW: include time snapshot on every save
+        }),
       })
     } catch (e) {
       console.error('Save failed:', e)
     }
-  }, [])
+  }, [getTimeSnapshot])
 
   // ─── Answer handlers ──────────────────────────────────────────────────────
 
   const handleOptionSelect = useCallback((questionId: string, optionKey: string) => {
     setVisitedQuestions(prev => new Set(prev).add(questionId))
-    // Toggle off if same option clicked again
     setAnswersWithRef(prev => ({
       ...prev,
       [questionId]: prev[questionId] === optionKey ? null : optionKey,
@@ -425,27 +463,30 @@ export default function ExamInterface() {
   }, [exam, currentQuestion, setAnswersWithRef, setMarkedWithRef])
 
   // ─── Navigation handlers ──────────────────────────────────────────────────
-  //
-  // Every navigation action triggers an immediate server save so the user's
-  // work is persisted even if the 30s auto-save hasn't fired yet.
 
   const handleSaveAndNext = useCallback(async () => {
     const qId = exam?.questions[currentQuestion]?.id
     if (qId) {
       setVisitedQuestions(prev => new Set(prev).add(qId))
-      // If there's an answer, unmark review automatically
       if (answersRef.current[qId] !== null && answersRef.current[qId] !== undefined) {
         setMarkedWithRef(prev => ({ ...prev, [qId]: false }))
       }
     }
 
-    // Save immediately on every navigation — don't wait for the 30s timer
+    // ✅ NEW: pause timer on current question before navigating
+    pauseCurrentQuestionTimer()
+
     await saveAnswers()
 
     if (currentQuestion < (exam?.totalQuestions || 0) - 1) {
-      setCurrentQuestion(prev => prev + 1)
+      setCurrentQuestion(prev => {
+        const next = prev + 1
+        currentQuestionRef.current = next
+        resumeCurrentQuestionTimer() // ✅ NEW: start timer on the next question
+        return next
+      })
     }
-  }, [exam, currentQuestion, setMarkedWithRef, saveAnswers])
+  }, [exam, currentQuestion, setMarkedWithRef, saveAnswers, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
   const handleSaveAndMarkForReview = useCallback(async () => {
     const qId = exam?.questions[currentQuestion]?.id
@@ -458,16 +499,30 @@ export default function ExamInterface() {
 
   const handleMarkForReviewAndNext = useCallback(async () => {
     await handleSaveAndMarkForReview()
-    if (currentQuestion < (exam?.totalQuestions || 0) - 1) {
-      setCurrentQuestion(prev => prev + 1)
-    }
-  }, [exam, currentQuestion, handleSaveAndMarkForReview])
 
-  // Navigate via palette — also saves so clicking around doesn't lose answers
+    // ✅ NEW: pause/resume timer on question switch
+    pauseCurrentQuestionTimer()
+
+    if (currentQuestion < (exam?.totalQuestions || 0) - 1) {
+      setCurrentQuestion(prev => {
+        const next = prev + 1
+        currentQuestionRef.current = next
+        resumeCurrentQuestionTimer()
+        return next
+      })
+    }
+  }, [exam, currentQuestion, handleSaveAndMarkForReview, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
+
   const handlePaletteNavigate = useCallback(async (index: number) => {
+    // ✅ NEW: pause timer before jumping to another question
+    pauseCurrentQuestionTimer()
+
     await saveAnswers()
+
     setCurrentQuestion(index)
-  }, [saveAnswers])
+    currentQuestionRef.current = index
+    resumeCurrentQuestionTimer() // ✅ NEW: resume on the destination question
+  }, [saveAnswers, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
   // ─── Submit ───────────────────────────────────────────────────────────────
 
@@ -481,8 +536,9 @@ export default function ExamInterface() {
     setShowSubmitConfirm(false)
 
     try {
-      // Use refs for the final save to guarantee we flush the absolute latest
-      // answers even if React state hasn't committed yet.
+      // ✅ NEW: flush final in-flight time before the last save
+      pauseCurrentQuestionTimer()
+
       await saveAnswers(answersRef.current, markedForReviewRef.current)
 
       const res = await fetch(`/api/attempts/${exam.attemptId}/submit`, {
@@ -503,7 +559,21 @@ export default function ExamInterface() {
       setSubmitting(false)
       toast.error(error.message || 'Failed to submit exam. Please try again.')
     }
-  }, [exam, saveAnswers])
+  }, [exam, saveAnswers, pauseCurrentQuestionTimer])
+
+  // ─── BACK button: also needs pause/resume ────────────────────────────────
+
+  const handleBack = useCallback(async () => {
+    if (currentQuestion === 0) return
+    pauseCurrentQuestionTimer()
+    await saveAnswers()
+    setCurrentQuestion(prev => {
+      const next = prev - 1
+      currentQuestionRef.current = next
+      resumeCurrentQuestionTimer()
+      return next
+    })
+  }, [currentQuestion, saveAnswers, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
   // ─── Derived state ────────────────────────────────────────────────────────
 
@@ -522,13 +592,13 @@ export default function ExamInterface() {
       const hasValidAnswer = isNumerical
         ? savedAns !== null && savedAns !== undefined && savedAns !== ''
         : !!savedAns && q.options.some(opt => opt.key === savedAns)
-      const isMarked = !!markedForReview[q.id]
+      const isMarked  = !!markedForReview[q.id]
       const isVisited = visitedQuestions.has(q.id)
 
       if (hasValidAnswer && isMarked) return 'ans_marked'
-      if (hasValidAnswer) return 'answered'
-      if (isMarked) return 'marked'
-      if (isVisited) return 'not_answered'
+      if (hasValidAnswer)             return 'answered'
+      if (isMarked)                   return 'marked'
+      if (isVisited)                  return 'not_answered'
       return 'not_visited'
     })
   }, [exam, answers, markedForReview, visitedQuestions])
@@ -536,11 +606,11 @@ export default function ExamInterface() {
   const stats = useMemo(() => {
     const c = { notVisited: 0, notAnswered: 0, answered: 0, marked: 0, ansMarked: 0 }
     questionStatuses.forEach(s => {
-      if (s === 'not_visited') c.notVisited++
+      if (s === 'not_visited')  c.notVisited++
       if (s === 'not_answered') c.notAnswered++
-      if (s === 'answered') c.answered++
-      if (s === 'marked') c.marked++
-      if (s === 'ans_marked') c.ansMarked++
+      if (s === 'answered')     c.answered++
+      if (s === 'marked')       c.marked++
+      if (s === 'ans_marked')   c.ansMarked++
     })
     return c
   }, [questionStatuses])
@@ -557,7 +627,7 @@ export default function ExamInterface() {
 
   if (!exam) return null
 
-  const question = exam.questions[currentQuestion]
+  const question    = exam.questions[currentQuestion]
   const isNumerical = question.type === 'numerical'
 
   return (
@@ -723,8 +793,9 @@ export default function ExamInterface() {
                   </button>
                 </div>
                 <div className="flex gap-2">
+                  {/* ✅ UPDATED: BACK now uses handleBack (with timer pause/resume) */}
                   <button
-                    onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
+                    onClick={handleBack}
                     disabled={currentQuestion === 0}
                     className="px-4 py-2 bg-gray-200 text-gray-700 rounded font-semibold hover:bg-gray-300 disabled:opacity-50"
                   >
@@ -786,13 +857,13 @@ export default function ExamInterface() {
               <div className="mb-2 font-bold text-gray-700 text-sm">Question Palette:</div>
               <div className="grid grid-cols-5 gap-2">
                 {exam.questions.map((q, index) => {
-                  const status = questionStatuses[index]
+                  const status    = questionStatuses[index]
                   const isCurrent = index === currentQuestion
-                  let statusClasses = ''
-                  let showReviewIndicator = false
+                  let statusClasses        = ''
+                  let showReviewIndicator  = false
                   switch (status) {
                     case 'ans_marked':
-                      statusClasses = 'bg-purple-600 text-white border-purple-700 rounded-full'
+                      statusClasses       = 'bg-purple-600 text-white border-purple-700 rounded-full'
                       showReviewIndicator = true
                       break
                     case 'answered':

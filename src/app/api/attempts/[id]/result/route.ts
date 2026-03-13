@@ -27,7 +27,7 @@ export async function GET(
                 question: {
                   include: {
                     options: { orderBy: { sequence: 'asc' } },
-                    topic: { select: { name: true } }
+                    topic:   { select: { name: true } }
                   }
                 }
               },
@@ -50,24 +50,94 @@ export async function GET(
       return NextResponse.json({ error: 'Exam not yet submitted' }, { status: 400 })
     }
 
-    const leaderboardEntry = await prisma.leaderboardEntry.findFirst({
-      where: { attemptId },
+    // ✅ FIXED: rank/percentile now read directly from the Attempt record
+    // (set by processExamResults). The leaderboard entry lookup was the
+    // source of N/A — it only exists for official attempts and only for the
+    // user's best score, so it was missing for many valid attempts.
+    const rank       = attempt.rank       ?? null
+    const percentile = attempt.percentile ?? null
+
+    // Total official attempts for this exam (for rank display: "#3 / 120")
+    const totalOfficialAttempts = await prisma.attempt.count({
+      where: { examId: attempt.examId, status: 'completed', isOfficial: true }
     })
 
-    const totalAttempts = await prisma.leaderboardEntry.count({
-      where: { examId: attempt.examId },
+    const userAnswers       = (attempt.answers         as Record<string, any>)    || {}
+    const timePerQuestionDB = (attempt.timePerQuestion as Record<string, number>) || {}
+
+    // ── Topper & average (official attempts only) ─────────────────────────
+    const allOfficialAttempts = await prisma.attempt.findMany({
+      where: {
+        examId:     attempt.examId,
+        status:     'completed',
+        isOfficial: true,
+        id:         { not: attemptId },
+      },
+      select: {
+        score: true, correctAnswers: true, wrongAnswers: true,
+        unattempted: true, timeSpentSec: true, percentage: true,
+      }
     })
 
-    const userAnswers = (attempt.answers as Record<string, any>) || {}
+    let comparisonStats: {
+      topper:  { score: number; correct: number; wrong: number; unattempted: number; time: number; percentage: number } | null
+      average: { score: number; correct: number; wrong: number; unattempted: number; time: number; percentage: number } | null
+    } = { topper: null, average: null }
 
-    // ✅ UPDATED: handles both MCQ and NAT questions
+    if (allOfficialAttempts.length > 0) {
+      const sorted = [...allOfficialAttempts].sort((a, b) => {
+        if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0)
+        return (a.timeSpentSec ?? 0) - (b.timeSpentSec ?? 0)
+      })
+      const topper = sorted[0]
+      comparisonStats.topper = {
+        score:       topper.score          ?? 0,
+        correct:     topper.correctAnswers,
+        wrong:       topper.wrongAnswers,
+        unattempted: topper.unattempted,
+        time:        topper.timeSpentSec   ?? 0,
+        percentage:  topper.percentage     ?? 0,
+      }
+
+      const n = allOfficialAttempts.length
+      comparisonStats.average = {
+        score:       allOfficialAttempts.reduce((s, a) => s + (a.score          ?? 0), 0) / n,
+        correct:     allOfficialAttempts.reduce((s, a) => s + a.correctAnswers,         0) / n,
+        wrong:       allOfficialAttempts.reduce((s, a) => s + a.wrongAnswers,           0) / n,
+        unattempted: allOfficialAttempts.reduce((s, a) => s + a.unattempted,            0) / n,
+        time:        allOfficialAttempts.reduce((s, a) => s + (a.timeSpentSec   ?? 0), 0) / n,
+        percentage:  allOfficialAttempts.reduce((s, a) => s + (a.percentage     ?? 0), 0) / n,
+      }
+    }
+
+    // ── ✅ NEW: attempt history for "Progress Over Time" chart ────────────
+    // Fetch all completed attempts by this user for this exam, ordered by date.
+    const attemptHistory = await prisma.attempt.findMany({
+      where: {
+        userId:  session.user.id,
+        examId:  attempt.examId,
+        status:  'completed',
+      },
+      select: {
+        id:          true,
+        score:       true,
+        percentage:  true,
+        isOfficial:  true,
+        submittedAt: true,
+        correctAnswers: true,
+        wrongAnswers:   true,
+      },
+      orderBy: { submittedAt: 'asc' }
+    })
+
+    // ── question results (unchanged logic, timeSpentSec added) ───────────
     const questionResults = attempt.exam.questions.map((eq) => {
-      const question = eq.question
+      const question     = eq.question
       const userResponse = userAnswers[question.id]
-      const isNumerical = question.type === 'numerical'
+      const isNumerical  = question.type === 'numerical'
+      const timeSpentSec = timePerQuestionDB[question.id] || 0
 
       if (isNumerical) {
-        // ✅ NEW: NAT grading for results
         const userNum = userResponse?.numericalAnswer ?? null
         let isCorrect = false
 
@@ -79,104 +149,110 @@ export async function GET(
           }
         }
 
-        // Build correct answer display string
-        const correctAnswerDisplay = question.correctAnswerExact !== null && question.correctAnswerExact !== undefined
-          ? String(question.correctAnswerExact)
-          : `${question.correctAnswerMin} to ${question.correctAnswerMax}`
+        const correctAnswerDisplay =
+          question.correctAnswerExact !== null && question.correctAnswerExact !== undefined
+            ? String(question.correctAnswerExact)
+            : `${question.correctAnswerMin} to ${question.correctAnswerMax}`
 
         return {
-          questionId: question.id,
-          statement: question.statement,
-          imageUrl: question.imageUrl,
-          topic: question.topic.name,
-          // ✅ NEW: NAT type info
-          questionType: 'numerical',
-          options: [], // no options for NAT
-          yourAnswer: userNum !== null && userNum !== undefined ? String(userNum) : null,
+          questionId: question.id, statement: question.statement,
+          imageUrl: question.imageUrl, topic: question.topic.name,
+          questionType: 'numerical', options: [],
+          yourAnswer:    userNum !== null ? String(userNum) : null,
           correctAnswer: correctAnswerDisplay,
-          isCorrect,
-          explanation: question.explanation,
+          isCorrect, explanation: question.explanation,
           markedForReview: userResponse?.markedForReview || false,
-          marks: question.marks,
-          negativeMarks: question.negativeMarks,
+          marks: question.marks, negativeMarks: question.negativeMarks,
+          timeSpentSec,
         }
       }
 
-      // ✅ EXISTING: MCQ grading — untouched
       const correctOption = question.options.find(o => o.isCorrect)
       return {
-        questionId: question.id,
-        statement: question.statement,
-        imageUrl: question.imageUrl,
-        topic: question.topic.name,
+        questionId: question.id, statement: question.statement,
+        imageUrl: question.imageUrl, topic: question.topic.name,
         questionType: 'mcq',
-        options: question.options.map((opt) => ({
-          key: opt.optionKey,
-          text: opt.text,
-          imageUrl: opt.imageUrl,
-          isCorrect: opt.isCorrect,
+        options: question.options.map(opt => ({
+          key: opt.optionKey, text: opt.text,
+          imageUrl: opt.imageUrl, isCorrect: opt.isCorrect,
         })),
-        yourAnswer: userResponse?.selectedOption || null,
-        correctAnswer: correctOption?.optionKey || null,
-        isCorrect: userResponse?.selectedOption === correctOption?.optionKey,
-        explanation: question.explanation,
+        yourAnswer:    userResponse?.selectedOption || null,
+        correctAnswer: correctOption?.optionKey     || null,
+        isCorrect:     userResponse?.selectedOption === correctOption?.optionKey,
+        explanation:   question.explanation,
         markedForReview: userResponse?.markedForReview || false,
-        marks: question.marks,
-        negativeMarks: question.negativeMarks,
+        marks: question.marks, negativeMarks: question.negativeMarks,
+        timeSpentSec,
       }
     })
 
-    // ✅ EXISTING: topic performance — untouched
-    const topicMap = new Map<string, { correct: number; wrong: number; total: number }>()
+    // ── time stats ────────────────────────────────────────────────────────
+    const timeStats = { correct: 0, wrong: 0, unattempted: 0 }
+    for (const qr of questionResults) {
+      if (qr.yourAnswer === null)  timeStats.unattempted += qr.timeSpentSec
+      else if (qr.isCorrect)      timeStats.correct      += qr.timeSpentSec
+      else                        timeStats.wrong        += qr.timeSpentSec
+    }
 
+    // ── topic performance (unchanged) ─────────────────────────────────────
+    const topicMap = new Map<string, { correct: number; wrong: number; total: number }>()
     questionResults.forEach((qr) => {
       const topic = qr.topic || 'Other'
-      if (!topicMap.has(topic)) {
-        topicMap.set(topic, { correct: 0, wrong: 0, total: 0 })
-      }
+      if (!topicMap.has(topic)) topicMap.set(topic, { correct: 0, wrong: 0, total: 0 })
       const stats = topicMap.get(topic)!
       stats.total++
-      if (qr.yourAnswer) {
-        if (qr.isCorrect) stats.correct++
-        else stats.wrong++
-      }
+      if (qr.yourAnswer) { if (qr.isCorrect) stats.correct++; else stats.wrong++ }
     })
 
-    const topicWisePerformance = Array.from(topicMap.entries()).map(
-      ([topic, stats]) => ({
-        topic,
-        correct: stats.correct,
-        wrong: stats.wrong,
-        total: stats.total,
-        accuracy: stats.total > 0 ? (stats.correct / stats.total) * 100 : 0,
-      })
-    )
-
-    const percentile = totalAttempts > 0 && leaderboardEntry?.rank
-      ? ((totalAttempts - leaderboardEntry.rank + 1) / totalAttempts) * 100
-      : null
+    const topicWisePerformance = Array.from(topicMap.entries()).map(([topic, stats]) => ({
+      topic,
+      correct:  stats.correct,
+      wrong:    stats.wrong,
+      total:    stats.total,
+      accuracy: stats.total > 0 ? (stats.correct / stats.total) * 100 : 0,
+    }))
 
     return NextResponse.json({
-      attemptId: attempt.id,
-      examId: attempt.examId,
-      examTitle: attempt.exam.title,
-      score: attempt.score,
-      totalMarks: attempt.exam.totalMarks,
+      // ── existing fields ──
+      attemptId:    attempt.id,
+      examId:       attempt.examId,
+      examTitle:    attempt.exam.title,
+      score:        attempt.score,
+      totalMarks:   attempt.exam.totalMarks,
       passingMarks: attempt.exam.passingMarks || 40,
-      percentage: attempt.percentage,
-      percentile,
+      percentage:   attempt.percentage,
       correctAnswers: attempt.correctAnswers,
-      wrongAnswers: attempt.wrongAnswers,
-      unattempted: attempt.unattempted,
-      timeSpent: attempt.timeSpentSec,
-      submittedAt: attempt.submittedAt,
-      rank: leaderboardEntry?.rank || null,
-      totalAttempts,
+      wrongAnswers:   attempt.wrongAnswers,
+      unattempted:    attempt.unattempted,
+      timeSpent:      attempt.timeSpentSec,
+      submittedAt:    attempt.submittedAt,
       topicWisePerformance,
       questionResults,
       suspiciousFlags: attempt.suspiciousFlags,
-      tabSwitchCount: attempt.tabSwitchCount,
+      tabSwitchCount:  attempt.tabSwitchCount,
+      timeStats,
+      comparisonStats,
+
+      // ✅ FIXED: rank now from Attempt record directly (not leaderboard lookup)
+      rank:         rank,
+      percentile:   percentile,
+      totalAttempts: totalOfficialAttempts,
+
+      // ✅ NEW fields
+      isOfficial:     attempt.isOfficial,   // for Practice badge on result page
+      attemptHistory: attemptHistory.map((a, i) => ({
+        attemptNumber: i + 1,
+        attemptId:     a.id,
+        score:         a.score         ?? 0,
+        percentage:    a.percentage    ?? 0,
+        isOfficial:    a.isOfficial,
+        submittedAt:   a.submittedAt,
+        correctAnswers: a.correctAnswers,
+        wrongAnswers:   a.wrongAnswers,
+        isCurrent:     a.id === attemptId,
+      })),
     })
+
   } catch (error) {
     return handleApiError(error)
   }

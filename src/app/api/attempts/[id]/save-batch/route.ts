@@ -19,6 +19,14 @@ const batchSaveSchema = z.object({
     )
     .min(1)
     .max(200),
+
+  // ✅ NEW: optional map of questionId → seconds spent on that question
+  // Client sends the full accumulated map on every auto-save.
+  // We merge it with whatever is already stored (take the MAX per question
+  // so a stale auto-save never overwrites a newer one).
+  timePerQuestion: z
+    .record(z.string().cuid(), z.number().int().nonnegative())
+    .optional(),
 })
 
 export async function POST(
@@ -28,16 +36,17 @@ export async function POST(
   try {
     const session = await requireAuth()
     const body = await request.json()
-    const { answers: newAnswers } = batchSaveSchema.parse(body)
+    const { answers: newAnswers, timePerQuestion: incomingTime } = batchSaveSchema.parse(body)
     const attemptId = params.id
 
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       select: {
-        userId: true,
-        status: true,
-        expiresAt: true,
-        answers: true,
+        userId:          true,
+        status:          true,
+        expiresAt:       true,
+        answers:         true,
+        timePerQuestion: true, // ✅ NEW
       },
     })
 
@@ -52,29 +61,40 @@ export async function POST(
       )
     }
 
+    // ── merge answers (existing logic — untouched) ────────────────────────
     const existingAnswers = (attempt.answers as Record<string, any>) || {}
     const timestamp = new Date().toISOString()
 
     newAnswers.forEach(answer => {
-      // Always write the record — including when selectedOption/numericalAnswer
-      // are null, because that means the user explicitly cleared their answer.
-      // Skipping nulls would leave stale data in the DB.
       existingAnswers[answer.questionId] = {
-        selectedOption: answer.selectedOption ?? null,
+        selectedOption:  answer.selectedOption  ?? null,
         numericalAnswer: answer.numericalAnswer ?? null,
         markedForReview: answer.markedForReview || false,
-        answeredAt: timestamp,
+        answeredAt:      timestamp,
       }
     })
 
+    // ── ✅ NEW: merge timePerQuestion (take max per question) ─────────────
+    const existingTime = (attempt.timePerQuestion as Record<string, number>) || {}
+    let mergedTime = { ...existingTime }
+
+    if (incomingTime) {
+      for (const [qId, seconds] of Object.entries(incomingTime)) {
+        mergedTime[qId] = Math.max(mergedTime[qId] || 0, seconds)
+      }
+    }
+
     await prisma.attempt.update({
       where: { id: attemptId },
-      data: { answers: existingAnswers },
+      data: {
+        answers:         existingAnswers,
+        timePerQuestion: mergedTime,       // ✅ NEW
+      },
     })
 
     return NextResponse.json({
       success: true,
-      saved: newAnswers.length,
+      saved:   newAnswers.length,
     })
   } catch (error) {
     return handleApiError(error)

@@ -349,6 +349,7 @@ model Attempt {
   totalQuestions Int
   
   answers        Json      @default("{}")
+  timePerQuestion  Json  @default("{}")
   
   correctAnswers Int       @default(0)
   wrongAnswers   Int       @default(0)
@@ -359,6 +360,7 @@ model Attempt {
   percentile     Float?
   
   status         String    @default("in_progress")
+  isOfficial     Boolean   @default(true)
   
   ipAddress      String?
   tabSwitchCount Int       @default(0)

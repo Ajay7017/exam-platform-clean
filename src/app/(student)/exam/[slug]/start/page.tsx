@@ -7,42 +7,30 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  Clock,
-  FileText,
-  Award,
-  AlertTriangle,
-  ArrowLeft,
-  Loader2,
-  Phone,
-  ExternalLink,
+  Clock, FileText, Award, AlertTriangle,
+  ArrowLeft, Loader2, Phone, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ExamStartData {
-  id: string
-  title: string
-  slug: string
-  subject: string
-  duration: number
+  id:             string
+  title:          string
+  slug:           string
+  subject:        string
+  duration:       number
   totalQuestions: number
-  totalMarks: number
-  instructions: string | null
-  allowReview: boolean
-  isFree: boolean
-  isPurchased: boolean
+  totalMarks:     number
+  instructions:   string | null
+  allowReview:    boolean
+  isFree:         boolean
+  isPurchased:    boolean
 }
 
-// ── same helpers as detail page ────────────────────────────────────────────
-
 const SUBJECT_GRADIENTS = [
-  'from-violet-500 to-purple-700',
-  'from-blue-500 to-cyan-700',
-  'from-emerald-500 to-teal-700',
-  'from-orange-500 to-amber-700',
-  'from-pink-500 to-rose-700',
-  'from-indigo-500 to-blue-700',
-  'from-teal-500 to-green-700',
-  'from-red-500 to-orange-700',
+  'from-violet-500 to-purple-700', 'from-blue-500 to-cyan-700',
+  'from-emerald-500 to-teal-700',  'from-orange-500 to-amber-700',
+  'from-pink-500 to-rose-700',     'from-indigo-500 to-blue-700',
+  'from-teal-500 to-green-700',    'from-red-500 to-orange-700',
 ]
 
 function getSubjectGradient(subject: string) {
@@ -56,18 +44,19 @@ function getSubjectInitial(subject: string) {
   return subject?.trim()?.[0]?.toUpperCase() || '?'
 }
 
-// ── page ───────────────────────────────────────────────────────────────────
-
 export default function ExamStartPage() {
-  const params  = useParams()
-  const router  = useRouter()
-  const slug    = params.slug as string
+  const params = useParams()
+  const router = useRouter()
+  const slug   = params.slug as string
 
   const [exam, setExam]                   = useState<ExamStartData | null>(null)
   const [loading, setLoading]             = useState(true)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [starting, setStarting]           = useState(false)
   const [phoneRequired, setPhoneRequired] = useState(false)
+
+  // ✅ NEW: track whether the student already has an official attempt
+  const [hasPreviousAttempt, setHasPreviousAttempt] = useState(false)
 
   useEffect(() => { fetchExamData() }, [slug])
 
@@ -79,7 +68,16 @@ export default function ExamStartPage() {
         if (res.status === 404) { toast.error('Exam not found'); router.push('/exams'); return }
         throw new Error('Failed to fetch exam data')
       }
-      setExam(await res.json())
+      const data = await res.json()
+      setExam(data)
+
+      // ✅ NEW: check if student already has a completed official attempt
+      // Use the exam-specific attempts check endpoint
+      const checkRes = await fetch(`/api/attempts/check?examId=${data.id}`)
+      if (checkRes.ok) {
+        const checkData = await checkRes.json()
+        setHasPreviousAttempt(checkData.hasOfficialAttempt === true)
+      }
     } catch (error: any) {
       console.error('Failed to fetch exam:', error)
       toast.error('Failed to load exam details')
@@ -97,7 +95,6 @@ export default function ExamStartPage() {
       return
     }
 
-    // Open blank tab synchronously (must happen before any await)
     const newTab = window.open('', '_blank')
     if (!newTab) {
       toast.error('Popup blocked. Please allow popups for this site and try again.')
@@ -121,9 +118,9 @@ export default function ExamStartPage() {
       setPhoneRequired(false)
 
       const res  = await fetch('/api/attempts/start', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ examId: exam!.id }),
+        body:    JSON.stringify({ examId: exam!.id }),
       })
       const data = await res.json()
 
@@ -143,7 +140,11 @@ export default function ExamStartPage() {
       }
 
       newTab.location.href = `/exam/take/${data.attemptId}`
-      toast.success('Exam opened in a new tab!')
+      toast.success(
+        data.isOfficial
+          ? 'Exam opened in a new tab!'
+          : 'Practice attempt opened in a new tab!'
+      )
       setStarting(false)
     } catch (error: any) {
       console.error('Failed to start exam:', error)
@@ -153,7 +154,6 @@ export default function ExamStartPage() {
     }
   }
 
-  // ── loading / not found ────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
@@ -168,14 +168,11 @@ export default function ExamStartPage() {
   const gradient = getSubjectGradient(exam.subject)
   const initial  = getSubjectInitial(exam.subject)
 
-  // ── render ─────────────────────────────────────────────────────────────
   return (
     <div className="max-w-4xl mx-auto space-y-4 -mt-2">
 
-      {/* Back Button */}
       <Button
-        variant="ghost"
-        size="sm"
+        variant="ghost" size="sm"
         onClick={() => router.push(`/exams/${slug}`)}
         disabled={starting}
         className="-ml-2 h-8 text-gray-500 hover:text-gray-900"
@@ -184,7 +181,7 @@ export default function ExamStartPage() {
         Back to Exam Details
       </Button>
 
-      {/* Phone required banner */}
+      {/* Phone required banner — unchanged */}
       {phoneRequired && (
         <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
           <Phone className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
@@ -194,30 +191,33 @@ export default function ExamStartPage() {
               You must add a phone number to your profile before taking an exam.
             </p>
           </div>
-          <Button
-            size="sm"
-            onClick={() => router.push('/profile')}
-            className="bg-orange-600 hover:bg-orange-700 text-white shrink-0 h-8"
-          >
+          <Button size="sm" onClick={() => router.push('/profile')}
+            className="bg-orange-600 hover:bg-orange-700 text-white shrink-0 h-8">
             Go to Profile
           </Button>
         </div>
       )}
 
-      {/* ── Exam Header Banner (gradient, consistent with detail page) ── */}
+      {/* ✅ NEW: Practice mode info banner */}
+      {hasPreviousAttempt && (
+        <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+          <RefreshCw className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-blue-900">Practice Mode</p>
+            <p className="text-xs text-blue-800 mt-0.5">
+              You've already submitted an official attempt. This will be a <strong>practice attempt</strong> — your score won't affect the leaderboard or your rank.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Exam header — unchanged */}
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <div className="flex flex-col sm:flex-row">
-
-            {/* Gradient panel */}
             <div className={`relative bg-gradient-to-br ${gradient} sm:w-44 h-36 sm:h-auto flex-shrink-0 flex flex-col items-center justify-center gap-2`}>
-              <div
-                className="absolute inset-0 opacity-10"
-                style={{
-                  backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
-                  backgroundSize: '18px 18px',
-                }}
-              />
+              <div className="absolute inset-0 opacity-10"
+                style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
               <div className="relative w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center">
                 <span className="text-xl font-bold text-white">{initial}</span>
               </div>
@@ -226,13 +226,11 @@ export default function ExamStartPage() {
               </span>
             </div>
 
-            {/* Exam title + 3 stat tiles */}
             <div className="flex-1 p-4 flex flex-col justify-center gap-3">
               <div>
                 <h1 className="text-xl font-bold text-gray-900">{exam.title}</h1>
                 <p className="text-sm text-gray-500">{exam.subject}</p>
               </div>
-
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { icon: Clock,    label: 'Duration',    value: `${exam.duration} min` },
@@ -251,10 +249,9 @@ export default function ExamStartPage() {
         </CardContent>
       </Card>
 
-      {/* ── Two column: Instructions + Guidelines/Start ── */}
       <div className="grid lg:grid-cols-2 gap-4 items-start">
 
-        {/* Left — Instructions */}
+        {/* Instructions — unchanged */}
         <Card>
           <CardContent className="p-4">
             <h2 className="text-sm font-semibold text-gray-900 mb-3">Instructions</h2>
@@ -276,10 +273,8 @@ export default function ExamStartPage() {
           </CardContent>
         </Card>
 
-        {/* Right — Guidelines + Checkbox + Start */}
         <div className="space-y-3">
-
-          {/* Important Guidelines */}
+          {/* Important Guidelines — unchanged */}
           <div className="rounded-lg border border-red-200 bg-red-50 p-4">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0" />
@@ -301,28 +296,25 @@ export default function ExamStartPage() {
             </ul>
           </div>
 
-          {/* Agreement Checkbox */}
+          {/* Agreement Checkbox — unchanged */}
           <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3">
-            <Checkbox
-              id="terms"
-              checked={agreedToTerms}
+            <Checkbox id="terms" checked={agreedToTerms}
               onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
-              className="mt-0.5"
-            />
+              className="mt-0.5" />
             <label htmlFor="terms" className="text-xs text-gray-600 cursor-pointer leading-relaxed">
               I have read and understood the instructions. I agree to abide by the exam rules and understand that any violation may result in disqualification.
             </label>
           </div>
 
-          {/* Start Button */}
-          <Button
-            size="lg"
-            onClick={handleStartExam}
+          {/* ✅ UPDATED: Start button label changes for practice mode */}
+          <Button size="lg" onClick={handleStartExam}
             disabled={!agreedToTerms || starting}
-            className="w-full h-12 text-base"
+            className={`w-full h-12 text-base ${hasPreviousAttempt ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
           >
             {starting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting Exam...</>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting...</>
+            ) : hasPreviousAttempt ? (
+              <><RefreshCw className="mr-2 h-4 w-4" />Re-attempt (Practice)</>
             ) : (
               <><ExternalLink className="mr-2 h-4 w-4" />Start Exam Now</>
             )}

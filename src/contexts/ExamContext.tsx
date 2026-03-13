@@ -1,7 +1,7 @@
 // src/contexts/ExamContext.tsx
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { ExamState, QuestionStatus } from '@/types/exam';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 
@@ -10,7 +10,6 @@ interface ExamContextType {
   initializeExam: (examId: string, questionIds: string[], duration: number) => void;
   goToQuestion: (index: number) => void;
   selectAnswer: (questionId: string, option: string) => void;
-  // ✅ NEW: for NAT questions
   selectNumericalAnswer: (questionId: string, value: number) => void;
   clearAnswer: (questionId: string) => void;
   markForReview: (questionId: string) => void;
@@ -22,6 +21,8 @@ interface ExamContextType {
   incrementTabSwitch: () => void;
   getQuestionStatus: (questionId: string) => QuestionStatus;
   clearExamState: () => void;
+  // ✅ NEW: expose accumulated time per question (read-only for consumers)
+  getTimePerQuestion: () => Record<string, number>;
 }
 
 const ExamContext = createContext<ExamContextType | undefined>(undefined);
@@ -32,17 +33,87 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
     null
   );
 
-  // Auto-save every 30 seconds
+  // ✅ NEW: per-question time tracking (in-memory only — flushed to DB on every save-batch)
+  //
+  // timePerQuestion : accumulated seconds per questionId
+  // questionEnteredAt: timestamp (ms) when the student last LANDED on the current question
+  //                    null means no question is currently being timed
+  //
+  // We use refs (not state) so that updates never trigger re-renders and
+  // never go stale inside intervals / event handlers.
+  const timePerQuestion   = useRef<Record<string, number>>({})
+  const questionEnteredAt = useRef<number | null>(null)
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  /** Call whenever the student LEAVES a question (before switching away). */
+  const pauseQuestionTimer = (questionId: string) => {
+    if (questionEnteredAt.current === null) return
+    const elapsed = Math.floor((Date.now() - questionEnteredAt.current) / 1000)
+    timePerQuestion.current[questionId] =
+      (timePerQuestion.current[questionId] || 0) + elapsed
+    questionEnteredAt.current = null
+  }
+
+  /** Call whenever the student ARRIVES on a question. */
+  const resumeQuestionTimer = () => {
+    questionEnteredAt.current = Date.now()
+  }
+
+  /** Read-only snapshot for save-batch / submit. */
+  const getTimePerQuestion = (): Record<string, number> => {
+    // If a question is currently being viewed, include the in-flight elapsed
+    // time so the save is as accurate as possible.
+    if (examState && questionEnteredAt.current !== null) {
+      const questionIds = Object.keys(examState.questionStates)
+      const currentId   = questionIds[examState.currentQuestionIndex]
+      if (currentId) {
+        const inFlight = Math.floor((Date.now() - questionEnteredAt.current) / 1000)
+        return {
+          ...timePerQuestion.current,
+          [currentId]: (timePerQuestion.current[currentId] || 0) + inFlight,
+        }
+      }
+    }
+    return { ...timePerQuestion.current }
+  }
+
+  // ── tab-visibility: pause/resume when student switches tabs ───────────────
   useEffect(() => {
-    if (!examState) return;
+    if (!examState) return
+
+    const handleVisibilityChange = () => {
+      if (!examState) return
+      const questionIds = Object.keys(examState.questionStates)
+      const currentId   = questionIds[examState.currentQuestionIndex]
+      if (!currentId) return
+
+      if (document.hidden) {
+        // Tab hidden → pause
+        pauseQuestionTimer(currentId)
+      } else {
+        // Tab visible again → resume
+        resumeQuestionTimer()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [examState])
+
+  // Auto-save every 30 seconds — UNCHANGED
+  useEffect(() => {
+    if (!examState) return
 
     const interval = setInterval(() => {
-      console.log('Auto-saving exam state...');
-      setExamState({ ...examState });
-    }, 30000);
+      console.log('Auto-saving exam state...')
+      setExamState({ ...examState })
+    }, 30000)
 
-    return () => clearInterval(interval);
-  }, [examState, setExamState]);
+    return () => clearInterval(interval)
+  }, [examState, setExamState])
+
+  // ── core actions ───────────────────────────────────────────────────────────
 
   const initializeExam = (examId: string, questionIds: string[], duration: number) => {
     const initialStates: Record<string, QuestionStatus> = {};
@@ -62,23 +133,32 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
       tabSwitchCount: 0,
     };
 
+    // ✅ NEW: reset time tracking on fresh exam
+    timePerQuestion.current   = {}
+    questionEnteredAt.current = null
+
     setExamState(newState);
   };
 
   const goToQuestion = (index: number) => {
     if (!examState) return;
-    
-    const questionIds = Object.keys(examState.questionStates);
-    const questionId = questionIds[index];
-    
-    if (!examState.visitedQuestions.includes(questionId)) {
+
+    const questionIds  = Object.keys(examState.questionStates);
+    const leavingId    = questionIds[examState.currentQuestionIndex]
+    const arrivingId   = questionIds[index]
+
+    // ✅ NEW: pause timer on the question we're leaving, start on the one we're arriving at
+    if (leavingId) pauseQuestionTimer(leavingId)
+    if (arrivingId) resumeQuestionTimer()
+
+    if (!examState.visitedQuestions.includes(arrivingId)) {
       setExamState({
         ...examState,
         currentQuestionIndex: index,
-        visitedQuestions: [...examState.visitedQuestions, questionId],
+        visitedQuestions: [...examState.visitedQuestions, arrivingId],
         questionStates: {
           ...examState.questionStates,
-          [questionId]: examState.answers[questionId] !== undefined ? 'answered' : 'not-answered',
+          [arrivingId]: examState.answers[arrivingId] !== undefined ? 'answered' : 'not-answered',
         },
       });
     } else {
@@ -89,12 +169,12 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ✅ EXISTING: MCQ answer - untouched
+  // ✅ EXISTING: MCQ answer — untouched
   const selectAnswer = (questionId: string, option: string) => {
     if (!examState) return;
 
     const isMarked = examState.markedForReview.includes(questionId);
-    
+
     setExamState({
       ...examState,
       answers: {
@@ -108,7 +188,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // ✅ NEW: NAT answer
+  // ✅ EXISTING: NAT answer — untouched
   const selectNumericalAnswer = (questionId: string, value: number) => {
     if (!examState) return;
 
@@ -191,6 +271,12 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
   };
 
   const submitExam = () => {
+    // ✅ NEW: flush final in-flight time before submit signal
+    if (examState) {
+      const questionIds = Object.keys(examState.questionStates)
+      const currentId   = questionIds[examState.currentQuestionIndex]
+      if (currentId) pauseQuestionTimer(currentId)
+    }
     console.log('Exam submitted!');
   };
 
@@ -216,6 +302,9 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
   };
 
   const clearExamState = () => {
+    // ✅ NEW: also reset time tracking refs
+    timePerQuestion.current   = {}
+    questionEnteredAt.current = null
     clearStoredState();
   };
 
@@ -237,6 +326,7 @@ export function ExamProvider({ children }: { children: React.ReactNode }) {
         incrementTabSwitch,
         getQuestionStatus,
         clearExamState,
+        getTimePerQuestion, // ✅ NEW
       }}
     >
       {children}

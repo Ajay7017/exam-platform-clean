@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { examId } = startExamSchema.parse(body)
 
-    // ✅ NEW: Check phone number before anything else
+    // Check phone number before anything else
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { phone: true }
@@ -41,12 +41,8 @@ export async function POST(request: NextRequest) {
           include: {
             question: {
               include: {
-                options: {
-                  orderBy: { sequence: 'asc' }
-                },
-                topic: {
-                  select: { name: true }
-                }
+                options: { orderBy: { sequence: 'asc' } },
+                topic:   { select: { name: true } }
               }
             }
           },
@@ -56,45 +52,39 @@ export async function POST(request: NextRequest) {
     })
 
     if (!exam) {
-      return NextResponse.json(
-        { error: 'Exam not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
     }
 
     if (!exam.isPublished) {
-      return NextResponse.json(
-        { error: 'This exam is not yet published' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'This exam is not yet published' }, { status: 403 })
     }
 
-    // 2. Check for existing active attempt
-    const existingAttempt = await prisma.attempt.findFirst({
+    // 2. Check for existing ACTIVE attempt (resume flow — unchanged)
+    const existingActiveAttempt = await prisma.attempt.findFirst({
       where: {
         userId: session.user.id,
-        examId: examId,
+        examId,
         status: 'in_progress'
       }
     })
 
-    if (existingAttempt) {
+    if (existingActiveAttempt) {
       return NextResponse.json(
-        { 
-          error: 'You already have an active attempt',
-          attemptId: existingAttempt.id,
+        {
+          error:     'You already have an active attempt',
+          attemptId: existingActiveAttempt.id,
           canResume: true
         },
         { status: 400 }
       )
     }
 
-    // 3. Check if exam is free or purchased
+    // 3. Check purchase for paid exams (unchanged)
     if (!exam.isFree && exam.isPaid) {
       const purchase = await prisma.purchase.findFirst({
         where: {
           userId: session.user.id,
-          examId: examId,
+          examId,
           status: 'active',
           OR: [
             { validUntil: { gte: new Date() } },
@@ -111,66 +101,83 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Prepare questions (randomize if enabled)
+    // ✅ NEW: Determine if this is an official or practice attempt.
+    // Official = the student's FIRST completed attempt for this exam.
+    // Any subsequent attempt is practice (doesn't affect leaderboard/rank).
+    const previousCompletedAttempt = await prisma.attempt.findFirst({
+      where: {
+        userId:     session.user.id,
+        examId,
+        status:     'completed',
+        isOfficial: true,          // only care if they already have an official one
+      },
+      select: { id: true }
+    })
+
+    const isOfficial = !previousCompletedAttempt  // true only if no prior official attempt
+
+    // 4. Prepare questions (randomize if enabled) — unchanged
     let questions = exam.questions.map(eq => eq.question)
-    
     if (exam.randomizeOrder) {
       questions = questions.sort(() => Math.random() - 0.5)
     }
 
-    // 5. Calculate expiry time
+    // 5. Calculate expiry time — unchanged
     const expiresAt = new Date(Date.now() + exam.durationMin * 60 * 1000)
 
-    // 6. Create attempt
+    // 6. Create attempt — ✅ NEW: include isOfficial
     const attempt = await prisma.attempt.create({
       data: {
-        userId: session.user.id,
-        examId: examId,
-        status: 'in_progress',
-        startedAt: new Date(),
-        expiresAt: expiresAt,
+        userId:         session.user.id,
+        examId,
+        status:         'in_progress',
+        isOfficial,                          // ✅ NEW
+        startedAt:      new Date(),
+        expiresAt,
         totalQuestions: questions.length,
-        answers: {},
-        ipAddress: request.headers.get('x-forwarded-for') || 
-                   request.headers.get('x-real-ip') || 
-                   'unknown'
+        answers:        {},
+        ipAddress:      request.headers.get('x-forwarded-for') ||
+                        request.headers.get('x-real-ip') ||
+                        'unknown'
       }
     })
 
-    // 7. Increment exam attempt count
+    // 7. Increment exam attempt count — unchanged
     await prisma.exam.update({
       where: { id: examId },
-      data: { totalAttempts: { increment: 1 } }
+      data:  { totalAttempts: { increment: 1 } }
     })
 
-    // 8. Return exam data WITHOUT answers
+    // 8. Return exam data — ✅ NEW: include isOfficial so client can show Practice badge
     return NextResponse.json({
-      attemptId: attempt.id,
-      examId: exam.id,
-      examTitle: exam.title,
-      examSlug: exam.slug,
-      subject: exam.subject?.name || 'Multi-Subject',
-      duration: exam.durationMin,
-      totalQuestions: questions.length,
-      totalMarks: exam.totalMarks,
-      passingMarks: exam.passingMarks,
-      instructions: exam.instructions,
-      randomizeOrder: exam.randomizeOrder,
-      allowReview: exam.allowReview,
-      startedAt: attempt.startedAt.toISOString(),
-      expiresAt: attempt.expiresAt.toISOString(),
+      attemptId:       attempt.id,
+      examId:          exam.id,
+      examTitle:       exam.title,
+      examSlug:        exam.slug,
+      subject:         exam.subject?.name || 'Multi-Subject',
+      duration:        exam.durationMin,
+      totalQuestions:  questions.length,
+      totalMarks:      exam.totalMarks,
+      passingMarks:    exam.passingMarks,
+      instructions:    exam.instructions,
+      randomizeOrder:  exam.randomizeOrder,
+      allowReview:     exam.allowReview,
+      isOfficial,                            // ✅ NEW
+      startedAt:       attempt.startedAt.toISOString(),
+      expiresAt:       attempt.expiresAt.toISOString(),
       questions: questions.map((q, index) => ({
-        id: q.id,
-        sequence: index + 1,
-        statement: q.statement,
-        imageUrl: q.imageUrl,
-        topic: q.topic?.name || 'General',
-        marks: q.marks,
+        id:            q.id,
+        sequence:      index + 1,
+        statement:     q.statement,
+        imageUrl:      q.imageUrl,
+        topic:         q.topic?.name || 'General',
+        marks:         q.marks,
         negativeMarks: q.negativeMarks,
-        difficulty: q.difficulty,
+        difficulty:    q.difficulty,
+        type:          q.type ?? 'mcq',
         options: q.options.map(o => ({
-          key: o.optionKey,
-          text: o.text,
+          key:      o.optionKey,
+          text:     o.text,
           imageUrl: o.imageUrl
         }))
       }))
