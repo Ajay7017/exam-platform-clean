@@ -52,7 +52,7 @@ export async function GET(
       )
     }
 
-    if (attempt.status === 'completed') {
+    if (attempt.hasSubmitted) {
       return NextResponse.json(
         { error: 'Exam already submitted', attemptId: attempt.id },
         { status: 400 }

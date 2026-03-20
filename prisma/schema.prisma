@@ -3,9 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL") // Add this line
 }
 
 // ============================================
@@ -360,6 +361,7 @@ model Attempt {
   percentile     Float?
   
   status         String    @default("in_progress")
+  hasSubmitted   Boolean   @default(false)
   isOfficial     Boolean   @default(true)
   
   ipAddress      String?
@@ -374,6 +376,7 @@ model Attempt {
   @@index([userId, examId])
   @@index([status])
   @@index([expiresAt])
+  @@index([userId, examId, hasSubmitted, isOfficial])
 }
 
 model LeaderboardEntry {

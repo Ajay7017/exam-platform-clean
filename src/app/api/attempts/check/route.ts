@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
 
     const officialAttempt = await prisma.attempt.findFirst({
       where: {
-        userId:     session.user.id,
+        userId:       session.user.id,
         examId,
-        status:     'completed',
-        isOfficial: true,
+        hasSubmitted: true,
+        isOfficial:   true,
       },
       select: { id: true }
     })

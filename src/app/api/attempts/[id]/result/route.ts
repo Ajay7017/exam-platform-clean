@@ -46,8 +46,15 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (attempt.status !== 'completed') {
+    if (!attempt.hasSubmitted) {
       return NextResponse.json({ error: 'Exam not yet submitted' }, { status: 400 })
+    }
+
+    if (attempt.status !== 'graded') {
+      return NextResponse.json(
+        { processing: true, status: attempt.status, attemptId: attempt.id },
+        { status: 202 }
+      )
     }
 
     // ✅ FIXED: rank/percentile now read directly from the Attempt record

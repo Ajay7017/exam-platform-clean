@@ -106,24 +106,37 @@ function NumericalCalculator({
 
 // ─── Thank You Screen ───────────────────────────────────────────────────────
 
-function ThankYouScreen() {
-  const [countdown, setCountdown] = useState(5)
-  const [closed, setClosed] = useState(false)
+function ThankYouScreen({ attemptId }: { attemptId: string }) {
+  const router = useRouter()
+  const [dots, setDots] = useState('.')
 
+  // Animated dots for "Calculating"
   useEffect(() => {
     const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval)
-          window.close()
-          setClosed(true)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
+      setDots(prev => prev.length >= 3 ? '.' : prev + '.')
+    }, 500)
     return () => clearInterval(interval)
   }, [])
+
+  // Poll status every 3 seconds
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/attempts/${attemptId}/status`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.graded) {
+          router.push(`/results/${attemptId}`)
+        }
+      } catch (e) {
+        // silent — will retry on next interval
+      }
+    }
+
+    poll() // immediate first check
+    const interval = setInterval(poll, 3000)
+    return () => clearInterval(interval)
+  }, [attemptId, router])
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
@@ -135,21 +148,13 @@ function ThankYouScreen() {
         </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Exam Submitted!</h1>
         <p className="text-gray-500 mb-8">
-          Your answers have been recorded successfully. Results will be available in your dashboard shortly.
+          Your answers have been recorded. Calculating your results{dots}
         </p>
-        {!closed ? (
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-            <p className="text-sm text-gray-500">This tab will close in</p>
-            <p className="text-5xl font-bold text-green-600 my-2">{countdown}</p>
-            <p className="text-sm text-gray-500">seconds</p>
-          </div>
-        ) : (
-          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <p className="text-sm text-amber-800 font-medium">
-              You can now close this tab manually and return to your previous tab.
-            </p>
-          </div>
-        )}
+        <div className="bg-gray-50 rounded-xl p-6 border border-gray-100">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500 mx-auto mb-3" />
+          <p className="text-sm text-gray-500">This usually takes a few seconds.</p>
+          <p className="text-xs text-gray-400 mt-1">You will be redirected automatically.</p>
+        </div>
       </div>
     </div>
   )
@@ -617,7 +622,7 @@ export default function ExamInterface() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  if (submitted) return <ThankYouScreen />
+  if (submitted) return <ThankYouScreen attemptId={attemptId} />
 
   if (loading) return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">

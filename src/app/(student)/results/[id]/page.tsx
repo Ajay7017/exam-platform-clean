@@ -222,6 +222,44 @@ function ProgressChart({ attemptHistory, currentAttemptId }: {
   )
 }
 
+function ProcessingScreen({ attemptId, onReady }: { attemptId: string; onReady: () => void }) {
+  const [dots, setDots] = useState('.')
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots(prev => prev.length >= 3 ? '.' : prev + '.')
+    }, 500)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/attempts/${attemptId}/status`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.graded) onReady()
+      } catch (e) {
+        // silent retry
+      }
+    }
+
+    poll()
+    const interval = setInterval(poll, 3000)
+    return () => clearInterval(interval)
+  }, [attemptId, onReady])
+
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center space-y-3">
+        <RefreshCw className="w-7 h-7 animate-spin mx-auto text-primary" />
+        <p className="text-sm font-medium text-gray-700">Calculating your results{dots}</p>
+        <p className="text-xs text-gray-400">This usually takes a few seconds.</p>
+      </div>
+    </div>
+  )
+}
+
 // ── page ───────────────────────────────────────────────────────────────────
 type SolutionFilter = 'all' | 'correct' | 'wrong' | 'unattempted'
 
@@ -241,8 +279,16 @@ export default function ResultPage() {
     try {
       setLoading(true)
       const res = await fetch(`/api/attempts/${attemptId}/result`)
+      const data = await res.json()
+
+      // Still grading — show processing state, don't treat as error
+      if (res.status === 202 && data.processing) {
+        setResult({ __processing: true })
+        return
+      }
+
       if (!res.ok) throw new Error('Failed to load results')
-      setResult(await res.json())
+      setResult(data)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -257,6 +303,11 @@ export default function ResultPage() {
         <p className="text-sm text-gray-500">Loading results...</p>
       </div>
     </div>
+  )
+
+  // Still grading — poll every 3 seconds and show waiting screen
+  if (result?.__processing) return (
+    <ProcessingScreen attemptId={attemptId} onReady={() => fetchResult()} />
   )
 
   if (error || !result) return (
