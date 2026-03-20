@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const totalExamsTaken = await prisma.attempt.count({
       where: {
         userId,
-        status: 'completed'
+        status: 'graded'
       }
     })
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const examsThisWeek = await prisma.attempt.count({
       where: {
         userId,
-        status: 'completed',
+        status: 'graded',
         submittedAt: {
           gte: oneWeekAgo
         }
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const completedAttempts = await prisma.attempt.findMany({
       where: {
         userId,
-        status: 'completed',
+        status: 'graded',
         percentage: { not: null }
       },
       select: {
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
     const timeSpentResult = await prisma.attempt.aggregate({
       where: {
         userId,
-        status: 'completed'
+        status: 'graded'
       },
       _sum: {
         timeSpentSec: true
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
     const timeThisWeekResult = await prisma.attempt.aggregate({
       where: {
         userId,
-        status: 'completed',
+        status: 'graded',
         submittedAt: {
           gte: oneWeekAgo
         }
@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
     const recentAttempts = await prisma.attempt.findMany({
       where: {
         userId,
-        status: 'completed'
+        status: 'graded'
       },
       include: {
         exam: {

@@ -60,12 +60,12 @@ export default async function ResultsPage({
 
   // total count for pagination
   const totalCount = await prisma.attempt.count({
-    where: { userId: session.user.id, status: 'completed' },
+    where: { userId: session.user.id, status: 'graded'},
   })
 
   // paginated attempts
   const attempts = await prisma.attempt.findMany({
-    where:   { userId: session.user.id, status: 'completed' },
+    where:   { userId: session.user.id, status: 'graded' },
     include: { exam: { select: { title: true, totalMarks: true } } },
     orderBy: { submittedAt: 'desc' },
     skip,
@@ -74,7 +74,7 @@ export default async function ResultsPage({
 
   // stats (all-time, not paginated)
   const allAttempts = await prisma.attempt.findMany({
-    where:  { userId: session.user.id, status: 'completed' },
+    where:  { userId: session.user.id, status: 'graded' },
     select: { percentage: true, timeSpentSec: true },
   })
 

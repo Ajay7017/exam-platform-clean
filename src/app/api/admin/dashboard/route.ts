@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     // 5. Get recent activity
     const recentAttempts = await prisma.attempt.findMany({
       where: {
-        status: 'completed'
+        status: 'graded'
       },
       include: {
         user: {

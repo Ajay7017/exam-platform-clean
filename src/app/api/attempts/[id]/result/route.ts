@@ -66,7 +66,7 @@ export async function GET(
 
     // Total official attempts for this exam (for rank display: "#3 / 120")
     const totalOfficialAttempts = await prisma.attempt.count({
-      where: { examId: attempt.examId, status: 'completed', isOfficial: true }
+      where: { examId: attempt.examId, status: 'graded', isOfficial: true }
     })
 
     const userAnswers       = (attempt.answers         as Record<string, any>)    || {}

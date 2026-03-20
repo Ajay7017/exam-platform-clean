@@ -32,7 +32,7 @@ export async function calculateAndUpdateExamRank(attemptId: string) {
     const allAttempts = await prisma.attempt.findMany({
       where: {
         examId: attempt.examId,
-        status: 'completed',
+        status: 'graded',
         submittedAt: { not: null }
       },
       select: {

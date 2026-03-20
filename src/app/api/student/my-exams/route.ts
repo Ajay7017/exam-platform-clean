@@ -34,7 +34,7 @@ export async function GET() {
     const freeAttempts = await prisma.attempt.findMany({
       where: {
         userId,
-        status: 'completed',
+        status: 'graded',
         exam: { isFree: true },
         // exclude exams already covered by purchases
         examId: purchasedExamIds.length > 0
@@ -79,7 +79,7 @@ export async function GET() {
       where: {
         userId,
         examId: { in: allExamIds },
-        status: 'completed',
+        status: 'graded',
       },
       orderBy: { submittedAt: 'desc' },
       distinct: ['examId'],

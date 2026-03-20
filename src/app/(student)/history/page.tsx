@@ -45,7 +45,7 @@ export default async function PracticeHistoryPage() {
   })
 
   // Calculate statistics
-  const completedCount = allAttempts.filter(a => a.status === 'completed').length
+  const completedCount = allAttempts.filter(a => a.status === 'graded').length
   const inProgressCount = allAttempts.filter(a => a.status === 'in_progress' && new Date(a.expiresAt) > new Date()).length
   const expiredCount = allAttempts.filter(a => a.status === 'expired' || (a.status === 'in_progress' && new Date(a.expiresAt) <= new Date())).length
 
@@ -124,7 +124,7 @@ export default async function PracticeHistoryPage() {
             const startedDate = new Date(attempt.startedAt)
             const isExpired = attempt.status === 'expired' || 
               (attempt.status === 'in_progress' && new Date(attempt.expiresAt) <= new Date())
-            const isCompleted = attempt.status === 'completed'
+            const isCompleted = attempt.status === 'graded'
             const isInProgress = attempt.status === 'in_progress' && !isExpired
 
             // Calculate progress for in-progress exams

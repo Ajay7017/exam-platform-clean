@@ -83,14 +83,14 @@ export async function GET(req: NextRequest) {
     const [currentMonthRevenue, previousMonthRevenue] = await Promise.all([
       prisma.purchase.aggregate({
         where: {
-          status: 'completed',
+          status: 'graded',
           purchasedAt: { gte: currentMonthStart },
         },
         _sum: { price: true },
       }),
       prisma.purchase.aggregate({
         where: {
-          status: 'completed',
+          status: 'graded',
           purchasedAt: {
             gte: previousMonthStart,
             lt: currentMonthStart,
@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
     const revenueByMonth = await prisma.purchase.groupBy({
       by: ['purchasedAt'],
       where: {
-        status: 'completed',
+        status: 'graded',
         purchasedAt: { gte: last6MonthsStart },
       },
       _sum: { price: true },
