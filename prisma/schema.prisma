@@ -377,6 +377,7 @@ model Attempt {
   @@index([status])
   @@index([expiresAt])
   @@index([userId, examId, hasSubmitted, isOfficial])
+  @@index([examId, status, isOfficial])
 }
 
 model LeaderboardEntry {

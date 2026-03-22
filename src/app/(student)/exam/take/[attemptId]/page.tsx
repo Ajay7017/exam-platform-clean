@@ -118,7 +118,7 @@ function ThankYouScreen({ attemptId }: { attemptId: string }) {
     return () => clearInterval(interval)
   }, [])
 
-  // Poll status every 3 seconds
+  // Poll status every 3 seconds, force redirect after 30 seconds
   useEffect(() => {
     const poll = async () => {
       try {
@@ -133,9 +133,18 @@ function ThankYouScreen({ attemptId }: { attemptId: string }) {
       }
     }
 
-    poll() // immediate first check
+    poll()
     const interval = setInterval(poll, 3000)
-    return () => clearInterval(interval)
+
+    // Safety net: redirect after 30 seconds regardless of grading status
+    const forceRedirect = setTimeout(() => {
+      router.push(`/results/${attemptId}`)
+    }, 30000)
+
+    return () => {
+      clearInterval(interval)
+      clearTimeout(forceRedirect)
+    }
   }, [attemptId, router])
 
   return (
@@ -469,7 +478,7 @@ export default function ExamInterface() {
 
   // ─── Navigation handlers ──────────────────────────────────────────────────
 
-  const handleSaveAndNext = useCallback(async () => {
+  const handleSaveAndNext = useCallback(() => {
     const qId = exam?.questions[currentQuestion]?.id
     if (qId) {
       setVisitedQuestions(prev => new Set(prev).add(qId))
@@ -478,34 +487,29 @@ export default function ExamInterface() {
       }
     }
 
-    // ✅ NEW: pause timer on current question before navigating
     pauseCurrentQuestionTimer()
-
-    await saveAnswers()
 
     if (currentQuestion < (exam?.totalQuestions || 0) - 1) {
       setCurrentQuestion(prev => {
         const next = prev + 1
         currentQuestionRef.current = next
-        resumeCurrentQuestionTimer() // ✅ NEW: start timer on the next question
+        resumeCurrentQuestionTimer()
         return next
       })
     }
-  }, [exam, currentQuestion, setMarkedWithRef, saveAnswers, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
+  }, [exam, currentQuestion, setMarkedWithRef, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
-  const handleSaveAndMarkForReview = useCallback(async () => {
+  const handleSaveAndMarkForReview = useCallback(() => {
     const qId = exam?.questions[currentQuestion]?.id
     if (qId) {
       setVisitedQuestions(prev => new Set(prev).add(qId))
       setMarkedWithRef(prev => ({ ...prev, [qId]: true }))
     }
-    await saveAnswers()
-  }, [exam, currentQuestion, setMarkedWithRef, saveAnswers])
+  }, [exam, currentQuestion, setMarkedWithRef])
 
-  const handleMarkForReviewAndNext = useCallback(async () => {
-    await handleSaveAndMarkForReview()
+  const handleMarkForReviewAndNext = useCallback(() => {
+    handleSaveAndMarkForReview()
 
-    // ✅ NEW: pause/resume timer on question switch
     pauseCurrentQuestionTimer()
 
     if (currentQuestion < (exam?.totalQuestions || 0) - 1) {
@@ -518,16 +522,12 @@ export default function ExamInterface() {
     }
   }, [exam, currentQuestion, handleSaveAndMarkForReview, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
-  const handlePaletteNavigate = useCallback(async (index: number) => {
-    // ✅ NEW: pause timer before jumping to another question
+  const handlePaletteNavigate = useCallback((index: number) => {
     pauseCurrentQuestionTimer()
-
-    await saveAnswers()
-
     setCurrentQuestion(index)
     currentQuestionRef.current = index
-    resumeCurrentQuestionTimer() // ✅ NEW: resume on the destination question
-  }, [saveAnswers, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
+    resumeCurrentQuestionTimer()
+  }, [pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
   // ─── Submit ───────────────────────────────────────────────────────────────
 
@@ -568,17 +568,16 @@ export default function ExamInterface() {
 
   // ─── BACK button: also needs pause/resume ────────────────────────────────
 
-  const handleBack = useCallback(async () => {
+  const handleBack = useCallback(() => {
     if (currentQuestion === 0) return
     pauseCurrentQuestionTimer()
-    await saveAnswers()
     setCurrentQuestion(prev => {
       const next = prev - 1
       currentQuestionRef.current = next
       resumeCurrentQuestionTimer()
       return next
     })
-  }, [currentQuestion, saveAnswers, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
+  }, [currentQuestion, pauseCurrentQuestionTimer, resumeCurrentQuestionTimer])
 
   // ─── Derived state ────────────────────────────────────────────────────────
 

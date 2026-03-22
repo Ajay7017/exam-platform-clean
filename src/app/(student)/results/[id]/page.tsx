@@ -224,6 +224,7 @@ function ProgressChart({ attemptHistory, currentAttemptId }: {
 
 function ProcessingScreen({ attemptId, onReady }: { attemptId: string; onReady: () => void }) {
   const [dots, setDots] = useState('.')
+  const [timedOut, setTimedOut] = useState(false)
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -246,8 +247,33 @@ function ProcessingScreen({ attemptId, onReady }: { attemptId: string; onReady: 
 
     poll()
     const interval = setInterval(poll, 3000)
-    return () => clearInterval(interval)
+
+    // After 20 seconds stop polling and show calm message
+    const timeout = setTimeout(() => {
+      clearInterval(interval)
+      setTimedOut(true)
+    }, 20000)
+
+    return () => {
+      clearInterval(interval)
+      clearTimeout(timeout)
+    }
   }, [attemptId, onReady])
+
+  if (timedOut) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-3 max-w-sm">
+          <CheckCircle className="w-8 h-8 mx-auto text-green-500" />
+          <p className="text-sm font-medium text-gray-700">Your exam has been submitted successfully.</p>
+          <p className="text-xs text-gray-400">
+            Results are being processed and will reflect here shortly. 
+            You can safely leave this page and check back in a few minutes.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center justify-center h-64">

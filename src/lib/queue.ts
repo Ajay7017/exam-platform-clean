@@ -1,6 +1,7 @@
 import { Queue, Worker, Job } from 'bullmq'
 import Redis from 'ioredis'
 import { prisma } from './prisma'
+import { cache } from './redis'
 import type { ParsedQuestion } from './question-parser'
 
 export const connection = new Redis({
@@ -129,7 +130,7 @@ export function startExamGradingWorker() {
   const worker = new Worker<GradingJobData>(
     'exam-grading',
     async (job: Job<GradingJobData>) => {
-      const { attemptId } = job.data
+      const { attemptId, examId, userId } = job.data
       console.log(`[Grader] Processing attempt ${attemptId}`)
 
       // ── Idempotency check — must be first ─────────────────────────────────
@@ -234,6 +235,12 @@ export function startExamGradingWorker() {
             },
           })
         })
+
+        await cache.set(
+          `attempt:status:${attemptId}`,
+          JSON.stringify({ status: 'graded', examId, userId }),
+          600
+        )
 
         console.log(`[Grader] Done — attempt ${attemptId} | score: ${score}`)
 

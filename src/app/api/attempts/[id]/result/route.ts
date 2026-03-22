@@ -65,55 +65,75 @@ export async function GET(
     const percentile = attempt.percentile ?? null
 
     // Total official attempts for this exam (for rank display: "#3 / 120")
-    const totalOfficialAttempts = await prisma.attempt.count({
-      where: { examId: attempt.examId, status: 'graded', isOfficial: true }
-    })
 
+    // ── Topper & average (official attempts only) ─────────────────────────
     const userAnswers       = (attempt.answers         as Record<string, any>)    || {}
     const timePerQuestionDB = (attempt.timePerQuestion as Record<string, number>) || {}
 
-    // ── Topper & average (official attempts only) ─────────────────────────
-    const allOfficialAttempts = await prisma.attempt.findMany({
+    // ── Topper: fetch only the single best attempt ────────────────────────
+    // Sorted by score desc, time asc — same logic as rank batch job.
+    // Returns exactly 1 row regardless of how many attempts exist.
+    const topperAttempt = await prisma.attempt.findFirst({
       where: {
         examId:     attempt.examId,
-        status:     'completed',
+        status:     'graded',
         isOfficial: true,
         id:         { not: attemptId },
       },
       select: {
         score: true, correctAnswers: true, wrongAnswers: true,
         unattempted: true, timeSpentSec: true, percentage: true,
-      }
+      },
+      orderBy: [{ score: 'desc' }, { timeSpentSec: 'asc' }],
     })
+
+    // ── Averages + count: Postgres aggregates server-side ─────────────────
+    // No rows transferred — just one aggregate result row.
+    const aggregates = await prisma.attempt.aggregate({
+      where: {
+        examId:     attempt.examId,
+        status:     'graded',
+        isOfficial: true,
+        id:         { not: attemptId },
+      },
+      _avg: {
+        score:          true,
+        correctAnswers: true,
+        wrongAnswers:   true,
+        unattempted:    true,
+        timeSpentSec:   true,
+        percentage:     true,
+      },
+      _count: { id: true },
+    })
+
+    // Total official attempts = others + current attempt
+    const totalOfficialAttempts = (aggregates._count.id ?? 0) + 1
 
     let comparisonStats: {
       topper:  { score: number; correct: number; wrong: number; unattempted: number; time: number; percentage: number } | null
       average: { score: number; correct: number; wrong: number; unattempted: number; time: number; percentage: number } | null
     } = { topper: null, average: null }
 
-    if (allOfficialAttempts.length > 0) {
-      const sorted = [...allOfficialAttempts].sort((a, b) => {
-        if ((b.score ?? 0) !== (a.score ?? 0)) return (b.score ?? 0) - (a.score ?? 0)
-        return (a.timeSpentSec ?? 0) - (b.timeSpentSec ?? 0)
-      })
-      const topper = sorted[0]
+    if (topperAttempt) {
       comparisonStats.topper = {
-        score:       topper.score          ?? 0,
-        correct:     topper.correctAnswers,
-        wrong:       topper.wrongAnswers,
-        unattempted: topper.unattempted,
-        time:        topper.timeSpentSec   ?? 0,
-        percentage:  topper.percentage     ?? 0,
+        score:       topperAttempt.score          ?? 0,
+        correct:     topperAttempt.correctAnswers,
+        wrong:       topperAttempt.wrongAnswers,
+        unattempted: topperAttempt.unattempted,
+        time:        topperAttempt.timeSpentSec   ?? 0,
+        percentage:  topperAttempt.percentage     ?? 0,
       }
+    }
 
-      const n = allOfficialAttempts.length
+    if (aggregates._count.id > 0) {
       comparisonStats.average = {
-        score:       allOfficialAttempts.reduce((s, a) => s + (a.score          ?? 0), 0) / n,
-        correct:     allOfficialAttempts.reduce((s, a) => s + a.correctAnswers,         0) / n,
-        wrong:       allOfficialAttempts.reduce((s, a) => s + a.wrongAnswers,           0) / n,
-        unattempted: allOfficialAttempts.reduce((s, a) => s + a.unattempted,            0) / n,
-        time:        allOfficialAttempts.reduce((s, a) => s + (a.timeSpentSec   ?? 0), 0) / n,
-        percentage:  allOfficialAttempts.reduce((s, a) => s + (a.percentage     ?? 0), 0) / n,
+        score:       aggregates._avg.score          ?? 0,
+        correct:     aggregates._avg.correctAnswers ?? 0,
+        wrong:       aggregates._avg.wrongAnswers   ?? 0,
+        unattempted: aggregates._avg.unattempted    ?? 0,
+        time:        aggregates._avg.timeSpentSec   ?? 0,
+        percentage:  aggregates._avg.percentage     ?? 0,
       }
     }
 
@@ -123,7 +143,7 @@ export async function GET(
       where: {
         userId:  session.user.id,
         examId:  attempt.examId,
-        status:  'completed',
+        status:  'graded',
       },
       select: {
         id:          true,
