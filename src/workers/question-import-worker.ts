@@ -70,23 +70,27 @@ async function calculatePendingRanks() {
         }
 
         // Rebuild leaderboard for this exam from scratch
-        await tx.leaderboardEntry.deleteMany({ where: { examId } })
-
-        if (updates.length > 0) {
-          await tx.leaderboardEntry.createMany({
-            data: updates.map(u => ({
-              examId,
-              userId:      u.userId,
-              attemptId:   u.id,
-              score:       u.score        ?? 0,
-              percentage:  u.percentage   ?? 0,
-              rank:        u.rank,
-              timeTaken:   u.timeSpentSec ?? 0,
-              submittedAt: u.submittedAt  ?? new Date(),
-            })),
+        // Only create leaderboard entry if user has no existing entry
+        for (const u of updates) {
+          const existing = await tx.leaderboardEntry.findUnique({
+            where: { examId_userId: { examId, userId: u.userId } },
           })
+          if (!existing) {
+            await tx.leaderboardEntry.create({
+              data: {
+                examId,
+                userId:      u.userId,
+                attemptId:   u.id,
+                score:       u.score        ?? 0,
+                percentage:  u.percentage   ?? 0,
+                rank:        u.rank,
+                timeTaken:   u.timeSpentSec ?? 0,
+                submittedAt: u.submittedAt  ?? new Date(),
+              },
+            })
+          }
         }
-      })
+        })
 
       console.log(`[RankBatch] Exam ${examId} — ranked ${total} attempts`)
     }

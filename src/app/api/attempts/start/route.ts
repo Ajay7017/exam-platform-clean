@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       where: {
         userId:     session.user.id,
         examId,
-        status:     'completed',
+        hasSubmitted: true,
         isOfficial: true,          // only care if they already have an official one
       },
       select: { id: true }
