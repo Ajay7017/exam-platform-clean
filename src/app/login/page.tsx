@@ -32,7 +32,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6">
           {/* Logo/Title */}
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900">ExamPro</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Mockzy</h1>
             <p className="mt-2 text-gray-600">
               Sign in to access your dashboard
             </p>

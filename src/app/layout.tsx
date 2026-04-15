@@ -9,7 +9,7 @@ import Script from "next/script";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ExamPro - Ace Your GATE & SSC Exams",
+  title: "Mockzy - Mock your way to AIR",
   description: "Practice with 200,000+ questions and achieve your dreams",
 };
 

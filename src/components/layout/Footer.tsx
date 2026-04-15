@@ -90,19 +90,19 @@ const footerSections: FooterSection[] = [
 ]
 
 const socialLinks = [
-  { icon: <Facebook className="w-5 h-5" />, href: 'https://facebook.com/exampro', label: 'Facebook', color: 'hover:bg-blue-600' },
-  { icon: <Twitter className="w-5 h-5" />, href: 'https://twitter.com/exampro', label: 'Twitter', color: 'hover:bg-sky-500' },
-  { icon: <Instagram className="w-5 h-5" />, href: 'https://instagram.com/exampro', label: 'Instagram', color: 'hover:bg-pink-600' },
-  { icon: <Linkedin className="w-5 h-5" />, href: 'https://linkedin.com/company/exampro', label: 'LinkedIn', color: 'hover:bg-blue-700' },
-  { icon: <Youtube className="w-5 h-5" />, href: 'https://youtube.com/@exampro', label: 'YouTube', color: 'hover:bg-red-600' }
+  { icon: <Facebook className="w-5 h-5" />, href: '#', label: 'Facebook', color: 'hover:bg-blue-600' },
+  { icon: <Twitter className="w-5 h-5" />, href: '#', label: 'Twitter', color: 'hover:bg-sky-500' },
+  { icon: <Instagram className="w-5 h-5" />, href: '#', label: 'Instagram', color: 'hover:bg-pink-600' },
+  { icon: <Linkedin className="w-5 h-5" />, href: '#', label: 'LinkedIn', color: 'hover:bg-blue-700' },
+  { icon: <Youtube className="w-5 h-5" />, href: '#', label: 'YouTube', color: 'hover:bg-red-600' }
 ]
 
 const contactInfo = [
   {
     icon: <Mail className="w-5 h-5" />,
     label: 'Email',
-    value: 'support@exampro.com',
-    href: 'mailto:support@exampro.com'
+    value: 'ajay.phogat@mockzy.co.in',
+    href: 'mailto:ajay.phogat@mockzy.co.in'
   },
   {
     icon: <Phone className="w-5 h-5" />,
@@ -204,7 +204,7 @@ export function Footer() {
                     <GraduationCap className="h-7 w-7 text-white" />
                   </div>
                 </div>
-                <span className="text-2xl font-bold">ExamPro</span>
+                <span className="text-2xl font-bold">Mockzy</span>
               </Link>
 
               {/* Tagline */}
@@ -349,7 +349,7 @@ export function Footer() {
               {/* Copyright */}
               <div className="text-sm text-gray-400 text-center md:text-left">
                 <p className="flex items-center justify-center md:justify-start gap-2 flex-wrap">
-                  <span>© 2024 ExamPro. All rights reserved.</span>
+                  <span>© 2026 Mockzy. All rights reserved.</span>
                   <span className="hidden md:inline">•</span>
                   <span className="flex items-center gap-1">
                     Made with <Heart className="w-4 h-4 text-red-500 fill-red-500 animate-pulse" /> in India
