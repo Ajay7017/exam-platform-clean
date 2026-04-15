@@ -399,10 +399,11 @@ export default function ExamInterface() {
 
   const saveAnswers = useCallback(async (
     overrideAnswers?: Record<string, string | number | null>,
-    overrideMarked?: Record<string, boolean>
+    overrideMarked?: Record<string, boolean>,
+    isFinalSave: boolean = false
   ) => {
     const currentExam = examRef.current
-    if (!currentExam || submittedRef.current) return
+    if (!currentExam || (submittedRef.current && !isFinalSave)) return
 
     const currentAnswers = overrideAnswers ?? answersRef.current
     const currentMarked  = overrideMarked  ?? markedForReviewRef.current
@@ -544,7 +545,7 @@ export default function ExamInterface() {
       // ✅ NEW: flush final in-flight time before the last save
       pauseCurrentQuestionTimer()
 
-      await saveAnswers(answersRef.current, markedForReviewRef.current)
+      await saveAnswers(answersRef.current, markedForReviewRef.current, true)
 
       const res = await fetch(`/api/attempts/${exam.attemptId}/submit`, {
         method: 'POST',
