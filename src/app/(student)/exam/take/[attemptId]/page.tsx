@@ -711,7 +711,7 @@ export default function ExamInterface() {
                   </div>
                   {question.imageUrl && (
                     <img
-                      key={question.id}           {/* ← forces remount on question change */}
+                      key={question.id}
                       src={question.imageUrl}
                       alt="Question"
                       className="max-w-full h-auto rounded-lg mt-4 border shadow-sm"
@@ -748,7 +748,7 @@ export default function ExamInterface() {
                         </div>
                         {option.imageUrl && (
                           <img
-                            key={`${question.id}-${option.key}`}   {/* ← unique per question+option */}
+                            key={`${question.id}-${option.key}`}
                             src={option.imageUrl}
                             alt={`Option ${option.key}`}
                             className="max-w-full h-auto rounded mt-3 ml-9 border"
