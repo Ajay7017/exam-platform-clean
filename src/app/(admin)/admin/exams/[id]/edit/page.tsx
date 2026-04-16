@@ -1,3 +1,4 @@
+// src/app/(admin)/admin/exams/[id]/edit/page.tsx
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
@@ -10,13 +11,13 @@ import { Switch } from '@/components/ui/switch'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Loader2, Save, X, Filter, BookOpen, Layers, Tag,
   ChevronRight, Search, CheckSquare, Square, ChevronLeft,
-  GripVertical, Trash2, Check,
+  GripVertical, Trash2, Check, Image as ImageIcon, Plus,
 } from 'lucide-react'
 
 import {
@@ -113,6 +114,112 @@ function SortableQuestionRow({ question, index, onRemove }: { question: Question
 }
 
 // ─────────────────────────────────────────────
+// TAG INPUT COMPONENT  ← ADDED
+// ─────────────────────────────────────────────
+
+function TagInput({
+  tags,
+  onChange,
+  existingTags,
+}: {
+  tags: string[]
+  onChange: (tags: string[]) => void
+  existingTags: string[]
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  const suggestions = existingTags.filter(
+    t => t.toLowerCase().includes(inputValue.toLowerCase()) && !tags.includes(t)
+  )
+
+  const addTag = (tag: string) => {
+    const trimmed = tag.trim()
+    if (!trimmed || tags.includes(trimmed)) return
+    onChange([...tags, trimmed])
+    setInputValue('')
+    setShowSuggestions(false)
+  }
+
+  const removeTag = (tag: string) => {
+    onChange(tags.filter(t => t !== tag))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addTag(inputValue)
+    }
+    if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
+      removeTag(tags[tags.length - 1])
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div
+        className="min-h-10 w-full rounded-md border border-input bg-background px-3 py-2 flex flex-wrap gap-1.5 cursor-text"
+        onClick={() => document.getElementById('edit-tag-input')?.focus()}
+      >
+        {tags.map(tag => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium"
+          >
+            {tag}
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); removeTag(tag) }}
+              className="hover:text-red-500 transition-colors ml-0.5"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ))}
+        <input
+          id="edit-tag-input"
+          type="text"
+          value={inputValue}
+          onChange={e => { setInputValue(e.target.value); setShowSuggestions(true) }}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+          placeholder={tags.length === 0 ? 'Type a category and press Enter (e.g. NEET, JEE, Class 11)' : ''}
+          className="flex-1 min-w-[140px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+
+      {showSuggestions && (inputValue || suggestions.length > 0) && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+          {suggestions.map(tag => (
+            <button
+              key={tag}
+              type="button"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+              onMouseDown={() => addTag(tag)}
+            >
+              <Tag className="h-3 w-3 text-gray-400" />
+              {tag}
+              <span className="ml-auto text-xs text-gray-400">existing</span>
+            </button>
+          ))}
+          {inputValue.trim() && !tags.includes(inputValue.trim()) && !existingTags.includes(inputValue.trim()) && (
+            <button
+              type="button"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700 flex items-center gap-2 border-t border-gray-100"
+              onMouseDown={() => addTag(inputValue)}
+            >
+              <Plus className="h-3 w-3" />
+              Create &quot;{inputValue.trim()}&quot;
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
 
@@ -129,6 +236,7 @@ export default function EditExamPage() {
   const [allSubTopics, setAllSubTopics] = useState<SubTopic[]>([])
   const [allQuestions, setAllQuestions] = useState<Question[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [existingTags, setExistingTags] = useState<string[]>([])   // ← ADDED
 
   // ── Loading ──
   const [loadingInitial, setLoadingInitial] = useState(true)
@@ -137,12 +245,17 @@ export default function EditExamPage() {
   const [loadingQuestions, setLoadingQuestions] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  // ── Form ──
+  // ── Thumbnail ──
+  const [thumbnailUploading, setThumbnailUploading] = useState(false)
+
+  // ── Form ── (tags added)
   const [formData, setFormData] = useState({
     title: '', slug: '', isMultiSubject: false, subjectId: '',
     selectedSubjects: [] as string[], durationMin: 60, price: 0,
     isFree: true, instructions: '', randomizeOrder: false,
-    allowReview: true, difficulty: 'medium' as 'easy' | 'medium' | 'hard', thumbnail: '',
+    allowReview: true, difficulty: 'medium' as 'easy' | 'medium' | 'hard',
+    thumbnail: '',
+    tags: [] as string[],   // ← ADDED
   })
 
   // ── Filters ──
@@ -158,6 +271,30 @@ export default function EditExamPage() {
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
+
+  // ─────────────────────────────────────────────
+  // THUMBNAIL UPLOAD HANDLER
+  // ─────────────────────────────────────────────
+
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setThumbnailUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('images', file)
+      const res = await fetch('/api/admin/images/upload', { method: 'POST', body: fd })
+      const data = await res.json()
+      const result = data.uploaded?.[0]
+      if (!result?.success) throw new Error(result?.error || 'Upload failed')
+      setFormData(p => ({ ...p, thumbnail: result.url }))
+      toast.success('Thumbnail uploaded')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload thumbnail')
+    } finally {
+      setThumbnailUploading(false)
+    }
+  }
 
   // ─────────────────────────────────────────────
   // FETCH: Subjects + Exam on mount
@@ -181,11 +318,20 @@ export default function EditExamPage() {
 
         const isMulti = !examData.subject
         setFormData({
-          title: examData.title, slug: examData.slug, isMultiSubject: isMulti,
-          subjectId: examData.subject?.id || '', selectedSubjects: [],
-          durationMin: examData.duration, price: examData.price, isFree: examData.isFree,
-          instructions: examData.instructions || '', randomizeOrder: examData.randomizeOrder,
-          allowReview: examData.allowReview, difficulty: examData.difficulty, thumbnail: examData.thumbnail || '',
+          title: examData.title,
+          slug: examData.slug,
+          isMultiSubject: isMulti,
+          subjectId: examData.subject?.id || '',
+          selectedSubjects: [],
+          durationMin: examData.duration,
+          price: examData.price,
+          isFree: examData.isFree,
+          instructions: examData.instructions || '',
+          randomizeOrder: examData.randomizeOrder,
+          allowReview: examData.allowReview,
+          difficulty: examData.difficulty,
+          thumbnail: examData.thumbnail || '',
+          tags: examData.tags || [],   // ← ADDED: pre-fill existing tags
         })
 
         setSelectedIds(examData.questions.map((q: any) => q.id))
@@ -198,6 +344,19 @@ export default function EditExamPage() {
     }
     init()
   }, [examId])
+
+  // ← ADDED: Fetch existing tags for autocomplete suggestions
+  useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const res = await fetch('/api/admin/exams?limit=1')
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.allTags) setExistingTags(data.allTags)
+      } catch { /* silently fail */ }
+    }
+    fetchTags()
+  }, [])
 
   // ─────────────────────────────────────────────
   // FETCH: Topics + Questions when subject changes
@@ -374,7 +533,7 @@ export default function EditExamPage() {
   }
 
   // ─────────────────────────────────────────────
-  // SUBMIT
+  // SUBMIT  ← tags added to PUT body
   // ─────────────────────────────────────────────
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -388,15 +547,20 @@ export default function EditExamPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: formData.title, slug: formData.slug,
+          title: formData.title,
+          slug: formData.slug,
           subjectId: formData.isMultiSubject ? undefined : formData.subjectId,
           isMultiSubject: formData.isMultiSubject,
-          durationMin: formData.durationMin, questionIds: selectedIds,
-          price: formData.price, isFree: formData.isFree,
+          durationMin: formData.durationMin,
+          questionIds: selectedIds,
+          price: formData.price,
+          isFree: formData.isFree,
           instructions: formData.instructions || undefined,
-          randomizeOrder: formData.randomizeOrder, allowReview: formData.allowReview,
+          randomizeOrder: formData.randomizeOrder,
+          allowReview: formData.allowReview,
           difficulty: formData.difficulty,
-          ...(formData.thumbnail && { thumbnail: formData.thumbnail }),
+          thumbnail: formData.thumbnail || null,
+          tags: formData.tags,   // ← ADDED
         }),
       })
       const text = await res.text()
@@ -527,9 +691,70 @@ export default function EditExamPage() {
                 <p className="text-xs text-gray-400 mt-1">Set to 0 for free exam</p>
               </div>
 
+              {/* ── CATEGORIES / TAGS  ← ADDED ── */}
+              <div>
+                <Label className="text-sm font-medium">
+                  Categories
+                  <span className="ml-1.5 text-xs font-normal text-gray-400">(optional)</span>
+                </Label>
+                <p className="text-xs text-gray-400 mt-0.5 mb-2">
+                  Tag this exam with categories like NEET, JEE, Class 11, School etc. Students can filter by these.
+                </p>
+                <TagInput
+                  tags={formData.tags}
+                  onChange={tags => setFormData(p => ({ ...p, tags }))}
+                  existingTags={existingTags}
+                />
+              </div>
+
               <div>
                 <Label htmlFor="instructions" className="text-sm font-medium">Instructions</Label>
                 <Textarea id="instructions" value={formData.instructions} onChange={e => setFormData(p => ({ ...p, instructions: e.target.value }))} placeholder="Enter exam instructions..." rows={3} className="mt-1" />
+              </div>
+
+              {/* ── Thumbnail ── */}
+              <div>
+                <Label className="text-sm font-medium">Exam Thumbnail</Label>
+                <p className="text-xs text-gray-400 mt-0.5 mb-2">
+                  Optional — shown on exam cards. If not set, a colored placeholder is used.
+                </p>
+
+                {formData.thumbnail ? (
+                  <div className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-200 group">
+                    <img src={formData.thumbnail} alt="Thumbnail preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setFormData(p => ({ ...p, thumbnail: '' }))}
+                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                    thumbnailUploading ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      className="hidden"
+                      disabled={thumbnailUploading}
+                      onChange={handleThumbnailUpload}
+                    />
+                    {thumbnailUploading ? (
+                      <div className="flex flex-col items-center gap-2 text-blue-500">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <span className="text-xs">Uploading...</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5 text-gray-400">
+                        <ImageIcon className="h-7 w-7" />
+                        <span className="text-sm font-medium">Click to upload thumbnail</span>
+                        <span className="text-xs">JPG, PNG, WEBP — max 10MB</span>
+                      </div>
+                    )}
+                  </label>
+                )}
               </div>
 
               <div className="space-y-2.5 pt-1">

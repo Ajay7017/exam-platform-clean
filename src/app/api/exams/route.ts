@@ -8,10 +8,9 @@ import { examFiltersSchema } from '@/lib/validations/exam'
 
 export async function GET(request: NextRequest) {
   try {
-    // Optional auth - works for both logged in and guest users
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
-    
+
     const { searchParams } = new URL(request.url)
     const filters = examFiltersSchema.parse({
       page: searchParams.get('page'),
@@ -20,30 +19,35 @@ export async function GET(request: NextRequest) {
       difficulty: searchParams.get('difficulty'),
       search: searchParams.get('search')
     })
-    
+
     const { page, limit, subject, difficulty, search } = filters
+    // NEW: tag filter
+    const tag = searchParams.get('tag') || undefined
+
     const skip = (page - 1) * limit
-    
-    // Build where clause - only show published exams
+
     const where: any = { isPublished: true }
-    
-    // FIXED: Handle subject filter properly for both single and multi-subject exams
+
     if (subject) {
       where.subject = { slug: subject }
     }
-    
+
     if (difficulty) {
       where.difficulty = difficulty
     }
-    
+
     if (search) {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
         { slug: { contains: search, mode: 'insensitive' } }
       ]
     }
-    
-    // Fetch exams with counts
+
+    // NEW: filter by tag
+    if (tag) {
+      where.tags = { has: tag }
+    }
+
     const [exams, totalCount] = await Promise.all([
       prisma.exam.findMany({
         where,
@@ -65,19 +69,25 @@ export async function GET(request: NextRequest) {
             }
           },
           _count: {
-            select: {
-              attempts: true
-            }
+            select: { attempts: true }
           }
         },
         orderBy: { createdAt: 'desc' }
       }),
       prisma.exam.count({ where })
     ])
-    
-    // Check purchase status for logged-in users
+
+    // NEW: fetch all unique tags from published exams for the filter dropdown
+    const allPublishedExams = await prisma.exam.findMany({
+      where: { isPublished: true },
+      select: { tags: true }
+    })
+    const allTags = Array.from(
+      new Set(allPublishedExams.flatMap(e => e.tags))
+    ).sort()
+
     let purchaseMap: Record<string, boolean> = {}
-    
+
     if (userId) {
       const purchases = await prisma.purchase.findMany({
         where: {
@@ -88,23 +98,21 @@ export async function GET(request: NextRequest) {
         },
         select: { examId: true }
       })
-      
+
       purchaseMap = purchases.reduce((acc, p) => {
-        acc[p.examId] = true
+        acc[p.examId!] = true
         return acc
       }, {} as Record<string, boolean>)
     }
-    
-    // Get unique topics for each exam
+
     const transformedExams = exams.map(exam => {
       const topics = [...new Set(
         exam.questions.map(eq => eq.question.topic.name)
       )]
-      
-      // FIXED: Handle multi-subject exams
+
       const subjectName = exam.subject?.name || 'Multi-Subject'
       const subjectSlug = exam.subject?.slug || 'multi-subject'
-      
+
       return {
         id: exam.id,
         title: exam.title,
@@ -120,12 +128,14 @@ export async function GET(request: NextRequest) {
         isFree: exam.isFree,
         isPurchased: purchaseMap[exam.id] || false,
         topics,
-        totalAttempts: exam._count.attempts
+        totalAttempts: exam._count.attempts,
+        tags: exam.tags,          // NEW
       }
     })
-    
+
     return NextResponse.json({
       exams: transformedExams,
+      allTags,                    // NEW
       pagination: {
         page,
         limit,
@@ -134,7 +144,7 @@ export async function GET(request: NextRequest) {
         hasMore: skip + exams.length < totalCount
       }
     })
-    
+
   } catch (error) {
     return handleApiError(error)
   }

@@ -37,6 +37,8 @@ export const createExamSchema = z.object({
   allowReview: z.boolean().optional().default(true),
   
   difficulty: z.enum(['easy', 'medium', 'hard']).optional().default('medium'),
+
+  tags: z.array(z.string()).optional().default([]),
   
   thumbnail: z.preprocess(
     (val) => (!val || val === '' ? undefined : val),

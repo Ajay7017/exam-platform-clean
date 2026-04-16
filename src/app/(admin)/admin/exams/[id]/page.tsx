@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { SafeHtml } from '@/lib/utils/safe-html'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -291,7 +292,7 @@ export default function AdminExamViewPage() {
                       </Badge>
                     </div>
                     <p className="text-base text-gray-900 leading-relaxed">
-                      {question.statement}
+                      <SafeHtml html={question.statement} />
                     </p>
                     {question.imageUrl && (
                       <img
@@ -334,7 +335,7 @@ export default function AdminExamViewPage() {
                           </span>
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm text-gray-900">{option.text}</p>
+                          <p className="text-sm text-gray-900"><SafeHtml html={option.text} /></p>
                           {option.imageUrl && (
                             <img
                               src={option.imageUrl}

@@ -1,3 +1,4 @@
+// src/app/(admin)/admin/exams/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -19,7 +20,7 @@ import {
 import { toast } from 'sonner'
 import {
   Plus, Search, Edit, Trash2, Eye, Users, Clock, FileQuestion,
-  Loader2, LayoutGrid, List, Gift, Radio, Globe, EyeOff,
+  Loader2, LayoutGrid, List, Gift, Radio, Globe, EyeOff, Tag,
 } from 'lucide-react'
 
 interface Exam {
@@ -37,6 +38,7 @@ interface Exam {
   isFree: boolean
   isPublished: boolean
   totalAttempts: number
+  tags: string[]   // ← ADDED
 }
 
 interface Stats {
@@ -49,7 +51,6 @@ interface Stats {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/** Deterministic gradient per subject name */
 const SUBJECT_GRADIENTS = [
   'from-violet-500 to-purple-700',
   'from-blue-500 to-cyan-700',
@@ -90,9 +91,10 @@ export default function AdminExamsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')
-  const [publishFilter, setPublishFilter] = useState('all') // ✅ NEW
+  const [publishFilter, setPublishFilter] = useState('all')
+  const [tagFilter, setTagFilter] = useState('all')          // ← ADDED
+  const [allTags, setAllTags] = useState<string[]>([])       // ← ADDED
 
-  // ✅ NEW: view mode — persisted to localStorage
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('examViewMode') as 'grid' | 'list') || 'grid'
@@ -100,17 +102,13 @@ export default function AdminExamsPage() {
     return 'grid'
   })
 
-  // publish toggle loading per exam
   const [togglingId, setTogglingId] = useState<string | null>(null)
-
-  // delete
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [examToDelete, setExamToDelete] = useState<Exam | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => { fetchExams() }, [])
 
-  // ✅ Persist view mode
   useEffect(() => {
     localStorage.setItem('examViewMode', viewMode)
   }, [viewMode])
@@ -123,6 +121,8 @@ export default function AdminExamsPage() {
       const data = await res.json()
       const arr: Exam[] = data.exams || []
       setExams(arr)
+      // ← ADDED: read allTags from the API response
+      if (data.allTags) setAllTags(data.allTags)
       setStats({
         total: arr.length,
         free: arr.filter(e => e.isFree).length,
@@ -142,12 +142,13 @@ export default function AdminExamsPage() {
     const matchSearch = e.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchSubject = subjectFilter === 'all' || e.subjectSlug === subjectFilter
     const matchDiff = difficultyFilter === 'all' || e.difficulty === difficultyFilter
-    // ✅ NEW publish filter
     const matchPublish =
       publishFilter === 'all' ||
       (publishFilter === 'published' && e.isPublished) ||
       (publishFilter === 'draft' && !e.isPublished)
-    return matchSearch && matchSubject && matchDiff && matchPublish
+    // ← ADDED: tag filter
+    const matchTag = tagFilter === 'all' || (e.tags && e.tags.includes(tagFilter))
+    return matchSearch && matchSubject && matchDiff && matchPublish && matchTag
   })
 
   const subjects = Array.from(
@@ -164,7 +165,6 @@ export default function AdminExamsPage() {
         body: JSON.stringify({ isPublished: !exam.isPublished }),
       })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
-      // optimistic update
       setExams(prev => prev.map(e => e.id === exam.id ? { ...e, isPublished: !e.isPublished } : e))
       setStats(prev => ({
         ...prev,
@@ -199,13 +199,28 @@ export default function AdminExamsPage() {
 
   // ── sub-components ────────────────────────────────────────────────────────
 
-  /** Redesigned card header — no more flat blue block */
   function ExamCardHeader({ exam }: { exam: Exam }) {
     const gradient = getSubjectGradient(exam.subject)
     const initial = getSubjectInitial(exam.subject)
+
+    if (exam.thumbnail) {
+      return (
+        <div className="relative h-36 rounded-t-lg overflow-hidden">
+          <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover" />
+          <div className="absolute top-3 left-3">
+            <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
+          </div>
+          <div className="absolute top-3 right-3">
+            <Badge className={exam.isPublished ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
+              {exam.isPublished ? 'Published' : 'Draft'}
+            </Badge>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
-        {/* subtle dot pattern */}
         <div
           className="absolute inset-0 opacity-10"
           style={{
@@ -213,16 +228,12 @@ export default function AdminExamsPage() {
             backgroundSize: '18px 18px',
           }}
         />
-        {/* subject initial avatar */}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
           <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
             <span className="text-2xl font-bold text-white">{initial}</span>
           </div>
-          <span className="text-white/80 text-xs font-medium tracking-wide uppercase">
-            {exam.subject}
-          </span>
+          <span className="text-white/80 text-xs font-medium tracking-wide uppercase">{exam.subject}</span>
         </div>
-        {/* badges */}
         <div className="absolute top-3 left-3">
           <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
         </div>
@@ -235,7 +246,6 @@ export default function AdminExamsPage() {
     )
   }
 
-  /** Grid card */
   function ExamCard({ exam }: { exam: Exam }) {
     const toggling = togglingId === exam.id
     return (
@@ -246,7 +256,21 @@ export default function AdminExamsPage() {
             <h3 className="font-semibold text-gray-900 truncate mb-1" title={exam.title}>
               {exam.title}
             </h3>
-            <p className="text-sm text-gray-500 mb-3">{exam.subject}</p>
+            <p className="text-sm text-gray-500 mb-2">{exam.subject}</p>
+
+            {/* ← ADDED: tag pills on admin card */}
+            {exam.tags && exam.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {exam.tags.map(tag => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                  >
+                    <Tag className="h-2.5 w-2.5" />{tag}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
               <div className="flex items-center gap-1">
@@ -267,7 +291,6 @@ export default function AdminExamsPage() {
               }
             </div>
 
-            {/* Actions */}
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/exams/${exam.id}`)}>
                 <Eye className="h-3 w-3 mr-1" />View
@@ -275,7 +298,6 @@ export default function AdminExamsPage() {
               <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/exams/${exam.id}/edit`)}>
                 <Edit className="h-3 w-3 mr-1" />Edit
               </Button>
-              {/* ✅ Clearer publish toggle */}
               <Button
                 variant="outline"
                 size="sm"
@@ -315,7 +337,7 @@ export default function AdminExamsPage() {
         </Button>
       </div>
 
-      {/* Stats Cards — ✅ distinct icons */}
+      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         {[
           { label: 'Total Exams', value: stats.total, icon: FileQuestion, color: 'bg-blue-100 text-blue-600' },
@@ -342,9 +364,9 @@ export default function AdminExamsPage() {
       {/* Filters + View Toggle */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex flex-col md:flex-row gap-3 flex-wrap">
             {/* Search */}
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 placeholder="Search exams by title..."
@@ -374,7 +396,7 @@ export default function AdminExamsPage() {
               </SelectContent>
             </Select>
 
-            {/* ✅ NEW: Publish filter */}
+            {/* Publish status */}
             <Select value={publishFilter} onValueChange={setPublishFilter}>
               <SelectTrigger className="w-44"><SelectValue placeholder="All Status" /></SelectTrigger>
               <SelectContent>
@@ -384,7 +406,24 @@ export default function AdminExamsPage() {
               </SelectContent>
             </Select>
 
-            {/* ✅ NEW: View toggle */}
+            {/* ← ADDED: Tag / Category filter — only shows when tags exist */}
+            {allTags.length > 0 && (
+              <Select value={tagFilter} onValueChange={setTagFilter}>
+                <SelectTrigger className="w-44"><SelectValue placeholder="All Categories" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {allTags.map(tag => (
+                    <SelectItem key={tag} value={tag}>
+                      <span className="flex items-center gap-1.5">
+                        <Tag className="h-3 w-3 text-blue-500" />{tag}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {/* View toggle */}
             <div className="flex gap-1 border rounded-md p-1 h-10 self-start">
               <button
                 onClick={() => setViewMode('grid')}
@@ -427,13 +466,11 @@ export default function AdminExamsPage() {
         </Card>
 
       ) : viewMode === 'grid' ? (
-        /* ── GRID VIEW ── */
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredExams.map(exam => <ExamCard key={exam.id} exam={exam} />)}
         </div>
 
       ) : (
-        /* ── LIST / TABLE VIEW ── */
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -441,6 +478,7 @@ export default function AdminExamsPage() {
                 <TableRow>
                   <TableHead>Exam</TableHead>
                   <TableHead>Subject</TableHead>
+                  <TableHead>Categories</TableHead>
                   <TableHead>Difficulty</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Questions</TableHead>
@@ -455,7 +493,7 @@ export default function AdminExamsPage() {
                   const toggling = togglingId === exam.id
                   return (
                     <TableRow key={exam.id}>
-                      <TableCell className="font-medium max-w-[200px] truncate" title={exam.title}>
+                      <TableCell className="font-medium max-w-[180px] truncate" title={exam.title}>
                         {exam.title}
                       </TableCell>
                       <TableCell>
@@ -465,6 +503,23 @@ export default function AdminExamsPage() {
                           </div>
                           {exam.subject}
                         </div>
+                      </TableCell>
+                      {/* ← ADDED: tags column in list view */}
+                      <TableCell>
+                        {exam.tags && exam.tags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {exam.tags.map(tag => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
@@ -519,7 +574,7 @@ export default function AdminExamsPage() {
         </Card>
       )}
 
-      {/* Delete Dialog — untouched logic */}
+      {/* Delete Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -211,6 +211,8 @@ model Exam {
   leaderboard       LeaderboardEntry[]
   subscriptionExams SubscriptionExam[]
   bundleExams       BundleExam[]
+
+  tags  String[]  @default([])
   
   @@index([slug])
   @@index([isPublished])

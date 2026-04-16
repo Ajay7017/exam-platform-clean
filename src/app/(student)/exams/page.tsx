@@ -24,6 +24,7 @@ import {
   Users,
   LayoutGrid,
   List,
+  Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -43,6 +44,7 @@ interface Exam {
   isPurchased: boolean;
   topics: string[];
   totalAttempts: number;
+  tags: string[];   // NEW
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -78,7 +80,7 @@ function getDifficultyColor(d: string) {
   }
 }
 
-// ── Card Header (gradient + avatar) ────────────────────────────────────────
+// ── Card Header ────────────────────────────────────────────────────────────
 
 function ExamCardHeader({ exam }: { exam: Exam }) {
   const gradient = getSubjectGradient(exam.subject);
@@ -86,7 +88,6 @@ function ExamCardHeader({ exam }: { exam: Exam }) {
 
   return (
     <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
-      {/* subtle dot pattern */}
       <div
         className="absolute inset-0 opacity-10"
         style={{
@@ -94,8 +95,6 @@ function ExamCardHeader({ exam }: { exam: Exam }) {
           backgroundSize: '18px 18px',
         }}
       />
-
-      {/* subject avatar */}
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
         <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
           <span className="text-2xl font-bold text-white">{initial}</span>
@@ -104,15 +103,11 @@ function ExamCardHeader({ exam }: { exam: Exam }) {
           {exam.subject}
         </span>
       </div>
-
-      {/* difficulty badge */}
       <div className="absolute top-3 left-3">
         <Badge className={getDifficultyColor(exam.difficulty)}>
           {exam.difficulty}
         </Badge>
       </div>
-
-      {/* free / price badge */}
       <div className="absolute top-3 right-3">
         {exam.isFree ? (
           <Badge className="bg-green-100 text-green-800">Free</Badge>
@@ -133,17 +128,26 @@ function ExamGridCard({ exam }: { exam: Exam }) {
     <Card className="hover:shadow-lg transition-shadow overflow-hidden">
       <CardContent className="p-0">
         <ExamCardHeader exam={exam} />
-
         <div className="p-4">
-          <h3
-            className="font-semibold text-gray-900 truncate mb-1"
-            title={exam.title}
-          >
+          <h3 className="font-semibold text-gray-900 truncate mb-1" title={exam.title}>
             {exam.title}
           </h3>
-          <p className="text-sm text-gray-500 mb-3">{exam.subject}</p>
+          <p className="text-sm text-gray-500 mb-2">{exam.subject}</p>
 
-          {/* meta row */}
+          {/* NEW: tag pills on card */}
+          {exam.tags && exam.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {exam.tags.map(tag => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                >
+                  <Tag className="h-2.5 w-2.5" />{tag}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
             <div className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
@@ -159,7 +163,6 @@ function ExamGridCard({ exam }: { exam: Exam }) {
             </div>
           </div>
 
-          {/* price row */}
           <div className="mb-4">
             {exam.isFree ? (
               <span className="text-base font-bold text-green-600">Free</span>
@@ -169,15 +172,12 @@ function ExamGridCard({ exam }: { exam: Exam }) {
                   ₹{(exam.price / 100).toFixed(0)}
                 </span>
                 {exam.isPurchased && (
-                  <Badge variant="secondary" className="text-xs">
-                    Purchased
-                  </Badge>
+                  <Badge variant="secondary" className="text-xs">Purchased</Badge>
                 )}
               </div>
             )}
           </div>
 
-          {/* actions */}
           <div className="flex gap-2">
             <Button className="flex-1" size="sm" asChild>
               <Link href={`/exams/${exam.slug}`}>
@@ -202,25 +202,30 @@ function ExamListRow({ exam }: { exam: Exam }) {
 
   return (
     <div className="flex items-center gap-4 p-4 border-b last:border-0 hover:bg-gray-50 transition-colors">
-      {/* mini avatar */}
-      <div
-        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}
-      >
+      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
         <span className="text-white font-bold text-sm">{initial}</span>
       </div>
 
-      {/* title + subject */}
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-gray-900 truncate">{exam.title}</p>
-        <p className="text-sm text-gray-500">{exam.subject}</p>
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+          <span className="text-sm text-gray-500">{exam.subject}</span>
+          {/* NEW: tags in list row */}
+          {exam.tags && exam.tags.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+            >
+              <Tag className="h-2.5 w-2.5" />{tag}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* difficulty */}
       <Badge className={getDifficultyColor(exam.difficulty)}>
         {exam.difficulty}
       </Badge>
 
-      {/* meta */}
       <div className="hidden md:flex items-center gap-4 text-sm text-gray-600">
         <div className="flex items-center gap-1">
           <Clock className="h-4 w-4" />
@@ -236,7 +241,6 @@ function ExamListRow({ exam }: { exam: Exam }) {
         </div>
       </div>
 
-      {/* price */}
       <div className="w-20 text-right">
         {exam.isFree ? (
           <span className="text-green-600 font-semibold">Free</span>
@@ -247,7 +251,6 @@ function ExamListRow({ exam }: { exam: Exam }) {
         )}
       </div>
 
-      {/* actions */}
       <div className="flex gap-2 flex-shrink-0">
         <Button size="sm" asChild>
           <Link href={`/exams/${exam.slug}`}>
@@ -267,10 +270,12 @@ function ExamListRow({ exam }: { exam: Exam }) {
 export default function ExamsPage() {
   const [isLoading, setIsLoading]         = useState(true);
   const [exams, setExams]                 = useState<Exam[]>([]);
+  const [allTags, setAllTags]             = useState<string[]>([]);  // NEW
   const [searchQuery, setSearchQuery]     = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [diffFilter, setDiffFilter]       = useState('all');
-  const [priceFilter, setPriceFilter]     = useState('all'); // 'all' | 'free' | 'paid'
+  const [priceFilter, setPriceFilter]     = useState('all');
+  const [tagFilter, setTagFilter]         = useState('all');         // NEW
   const [viewMode, setViewMode]           = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('studentExamViewMode') as 'grid' | 'list') || 'grid';
@@ -279,13 +284,11 @@ export default function ExamsPage() {
   });
 
   const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20,
-    total: 0,
-    totalPages: 0,
+    page: 1, limit: 20, total: 0, totalPages: 0,
   });
 
-  useEffect(() => { fetchExams(); }, [searchQuery, diffFilter]);
+  // Re-fetch when search, difficulty, or tag changes (server-side filters)
+  useEffect(() => { fetchExams(); }, [searchQuery, diffFilter, tagFilter]);
 
   useEffect(() => {
     localStorage.setItem('studentExamViewMode', viewMode);
@@ -298,14 +301,16 @@ export default function ExamsPage() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
       });
-      if (searchQuery)      params.append('search', searchQuery);
+      if (searchQuery)          params.append('search', searchQuery);
       if (diffFilter !== 'all') params.append('difficulty', diffFilter);
+      if (tagFilter !== 'all')  params.append('tag', tagFilter);   // NEW
 
       const res = await fetch(`/api/exams?${params}`);
       if (!res.ok) throw new Error('Failed to fetch exams');
       const data = await res.json();
 
       setExams(data.exams);
+      if (data.allTags) setAllTags(data.allTags);   // NEW
       setPagination(prev => ({
         ...prev,
         total: data.pagination.total,
@@ -319,7 +324,7 @@ export default function ExamsPage() {
     }
   };
 
-  // client-side subject + price filtering (API doesn't support them yet)
+  // Client-side filters (subject + price stay client-side as before)
   const subjects = Array.from(
     new Map(exams.map(e => [e.subjectSlug, e.subject])).entries()
   ).map(([slug, name]) => ({ slug, name }));
@@ -334,17 +339,18 @@ export default function ExamsPage() {
   });
 
   const hasActiveFilters =
-    searchQuery || subjectFilter !== 'all' || diffFilter !== 'all' || priceFilter !== 'all';
+    searchQuery || subjectFilter !== 'all' || diffFilter !== 'all' ||
+    priceFilter !== 'all' || tagFilter !== 'all';
 
   const clearFilters = () => {
     setSearchQuery('');
     setSubjectFilter('all');
     setDiffFilter('all');
     setPriceFilter('all');
+    setTagFilter('all');    // NEW
     toast.info('Filters cleared');
   };
 
-  // ── render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-fade-in">
 
@@ -359,10 +365,10 @@ export default function ExamsPage() {
       {/* Filters bar */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex flex-col md:flex-row gap-3 flex-wrap">
 
             {/* Search */}
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 placeholder="Search exams by title..."
@@ -371,6 +377,26 @@ export default function ExamsPage() {
                 className="pl-9"
               />
             </div>
+
+            {/* NEW: Category / Tag filter */}
+            {allTags.length > 0 && (
+              <Select value={tagFilter} onValueChange={setTagFilter}>
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {allTags.map(tag => (
+                    <SelectItem key={tag} value={tag}>
+                      <span className="flex items-center gap-1.5">
+                        <Tag className="h-3 w-3 text-blue-500" />
+                        {tag}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             {/* Subject */}
             <Select value={subjectFilter} onValueChange={setSubjectFilter}>
@@ -415,9 +441,7 @@ export default function ExamsPage() {
               <button
                 onClick={() => setViewMode('grid')}
                 className={`px-2 rounded transition-colors ${
-                  viewMode === 'grid'
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-400 hover:text-gray-600'
+                  viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
                 }`}
                 title="Grid view"
               >
@@ -426,9 +450,7 @@ export default function ExamsPage() {
               <button
                 onClick={() => setViewMode('list')}
                 className={`px-2 rounded transition-colors ${
-                  viewMode === 'list'
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-400 hover:text-gray-600'
+                  viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
                 }`}
                 title="List view"
               >
@@ -442,6 +464,11 @@ export default function ExamsPage() {
             <div className="mt-4 flex items-center gap-2 animate-slide-in-right">
               <span className="text-sm text-gray-600">
                 Showing {filteredExams.length} exam{filteredExams.length !== 1 ? 's' : ''}
+                {tagFilter !== 'all' && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-blue-700 font-medium">
+                    in <Tag className="h-3 w-3" />{tagFilter}
+                  </span>
+                )}
               </span>
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
