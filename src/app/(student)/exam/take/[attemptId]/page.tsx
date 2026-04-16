@@ -704,13 +704,14 @@ export default function ExamInterface() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 bg-white">
-              <div className="max-w-5xl mx-auto">
+              <div key={question.id} className="max-w-5xl mx-auto"> 
                 <div className="mb-8">
                   <div className="text-lg leading-relaxed font-medium text-gray-800">
                     <SafeHtml html={question.statement} />
                   </div>
                   {question.imageUrl && (
                     <img
+                      key={question.id}           {/* ← forces remount on question change */}
                       src={question.imageUrl}
                       alt="Question"
                       className="max-w-full h-auto rounded-lg mt-4 border shadow-sm"
@@ -747,6 +748,7 @@ export default function ExamInterface() {
                         </div>
                         {option.imageUrl && (
                           <img
+                            key={`${question.id}-${option.key}`}   {/* ← unique per question+option */}
                             src={option.imageUrl}
                             alt={`Option ${option.key}`}
                             className="max-w-full h-auto rounded mt-3 ml-9 border"
