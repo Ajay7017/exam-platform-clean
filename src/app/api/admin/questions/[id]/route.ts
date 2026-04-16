@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth-utils'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { cache } from '@/lib/redis'
 
 // ✅ UPDATED: schema now handles both MCQ and NAT
 const questionUpdateSchema = z.object({
