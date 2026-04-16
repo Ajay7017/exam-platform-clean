@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
 import { queueExamGrading } from '@/lib/queue'
+import redis from '@/lib/redis' // ✅ Import Redis
 
 export async function POST(
   request: NextRequest,
@@ -27,14 +28,40 @@ export async function POST(
       return NextResponse.json({ error: 'Attempt already submitted' }, { status: 400 })
     }
 
-    // ── Dual write: Postgres first, then queue ────────────────────────────
-    // Postgres write is the source of truth. Even if Redis crashes after this,
-    // answers are safe and status shows grading_queued for manual requeue.
+    // ── ✅ NEW: PRIORITY FLUSH FROM REDIS TO POSTGRES ──────────────────
+    // Before grading starts, we MUST ensure the latest answers are in DB
+    if (redis) {
+      const REDIS_KEY = `exam:autosave:${attemptId}`
+      const rawData = await redis.get(REDIS_KEY)
+      
+      if (rawData) {
+        const data = JSON.parse(rawData)
+        console.log(`[SUBMIT] Priority flushing data for ${attemptId}`)
+        
+        // Sync Redis data to DB right now so the grader sees the latest work
+        await prisma.attempt.update({
+          where: { id: attemptId },
+          data: {
+            answers: data.answers,
+            timePerQuestion: data.timePerQuestion,
+            updatedAt: new Date(),
+          }
+        })
+
+        // Clean up Redis - we no longer need the buffer or the sync flag
+        await Promise.all([
+          redis.del(REDIS_KEY),
+          redis.srem('exam:pending_sync_attempts', attemptId)
+        ])
+      }
+    }
+
+    // ── Dual write: Update status ──────────────────────────────────────────
     await prisma.attempt.update({
       where: { id: attemptId },
       data:  {
         status:       'grading_queued',
-        hasSubmitted: true,             // set once, never changes — used by eligibility check
+        hasSubmitted: true,
         submittedAt:  new Date(),
       },
     })
@@ -46,7 +73,6 @@ export async function POST(
       isOfficial: attempt.isOfficial,
     })
 
-    // ── Return 202 immediately — do not wait for grading ─────────────────
     return NextResponse.json(
       {
         success:    true,
