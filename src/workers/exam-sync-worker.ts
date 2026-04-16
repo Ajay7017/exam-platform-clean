@@ -1,28 +1,16 @@
 import { PrismaClient } from '@prisma/client'
 import { Redis } from 'ioredis'
-import http from 'http'
 
 // ─── CATCH SILENT CRASHES ─────────────────────────────────────────
 process.on('unhandledRejection', (reason: any) => {
-  console.error('💥 UNHANDLED REJECTION - This is what is killing the worker:')
-  console.error(reason?.message || reason)
+  console.error('💥 UNHANDLED REJECTION:', reason?.message || reason)
   console.error(reason?.stack)
 })
 
 process.on('uncaughtException', (error) => {
-  console.error('💥 UNCAUGHT EXCEPTION - This is what is killing the worker:')
-  console.error(error.message)
+  console.error('💥 UNCAUGHT EXCEPTION:', error.message)
   console.error(error.stack)
 })
-
-// ─── RAILWAY HEALTH CHECK FIX ─────────────────────────────────────
-const port = process.env.PORT || 8080;
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Exam Sync Worker is running');
-}).listen(port);
-
-console.log(`[HEALTHCHECK] Dummy server listening on port ${port}`);
 
 // ─── INITIALIZATION ───────────────────────────────────────────────
 const prisma = new PrismaClient()
@@ -40,7 +28,6 @@ const SYNC_INTERVAL_MS = 10000;
 async function processSyncQueue() {
   try {
     const pendingAttempts = await redis.smembers('exam:pending_sync_attempts')
-
     if (!pendingAttempts || pendingAttempts.length === 0) return;
 
     console.log(`[SYNC] Found ${pendingAttempts.length} attempts to flush to Neon...`)
@@ -83,7 +70,14 @@ setInterval(() => {
 }, SYNC_INTERVAL_MS)
 
 process.on('SIGINT', async () => {
-  console.log('Shutting down worker...')
+  console.log('Shutting down worker gracefully...')
+  await prisma.$disconnect()
+  redis.quit()
+  process.exit(0)
+})
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...')
   await prisma.$disconnect()
   redis.quit()
   process.exit(0)
