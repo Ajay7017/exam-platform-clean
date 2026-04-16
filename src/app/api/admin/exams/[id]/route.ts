@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
+import { cache } from '@/lib/redis'
 import { updateExamSchema } from '@/lib/validations/exam'
 
 export async function GET(
@@ -49,7 +50,6 @@ export async function GET(
       )
     }
     
-    // Transform questions
     const questions = exam.questions.map(eq => ({
       id: eq.question.id,
       statement: eq.question.statement,
@@ -109,7 +109,6 @@ export async function PUT(
     const body = await request.json()
     const validated = updateExamSchema.parse({ ...body, id: params.id })
     
-    // Check if exam exists
     const existingExam = await prisma.exam.findUnique({
       where: { id: params.id }
     })
@@ -121,7 +120,6 @@ export async function PUT(
       )
     }
     
-    // If slug is being updated, check for conflicts
     if (validated.slug && validated.slug !== existingExam.slug) {
       const slugConflict = await prisma.exam.findUnique({
         where: { slug: validated.slug }
@@ -135,7 +133,6 @@ export async function PUT(
       }
     }
     
-    // If questions are being updated, recalculate total marks
     let totalMarks = existingExam.totalMarks
     
     if (validated.questionIds) {
@@ -154,7 +151,6 @@ export async function PUT(
       totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
     }
     
-    // Update exam
     const updateData: any = {}
     
     if (validated.title) updateData.title = validated.title
@@ -173,14 +169,11 @@ export async function PUT(
     
     updateData.totalMarks = totalMarks
     
-    // If questions are being updated, handle the relationship
     if (validated.questionIds) {
-      // Delete existing questions
       await prisma.examQuestion.deleteMany({
         where: { examId: params.id }
       })
       
-      // Create new questions
       updateData.questions = {
         create: validated.questionIds.map((questionId, index) => ({
           questionId,
@@ -201,6 +194,13 @@ export async function PUT(
         }
       }
     })
+
+    // Bust the cache so students get fresh exam data
+    try {
+      await cache.del(`exam:start-payload:${params.id}`)
+    } catch (e) {
+      console.warn('[Cache] Failed to invalidate exam cache on update:', e)
+    }
     
     return NextResponse.json({
       success: true,
@@ -233,7 +233,6 @@ export async function DELETE(
   try {
     await requireAdmin()
     
-    // Check if exam exists
     const exam = await prisma.exam.findUnique({
       where: { id: params.id },
       include: {
@@ -250,7 +249,6 @@ export async function DELETE(
       )
     }
     
-    // Prevent deletion if there are attempts or purchases
     if (exam._count.attempts > 0 || exam._count.purchases > 0) {
       return NextResponse.json(
         { error: 'Cannot delete exam with existing attempts or purchases. Unpublish it instead.' },
@@ -258,10 +256,16 @@ export async function DELETE(
       )
     }
     
-    // Delete exam (cascade will handle examQuestions)
     await prisma.exam.delete({
       where: { id: params.id }
     })
+
+    // Bust the cache so deleted exam is no longer served
+    try {
+      await cache.del(`exam:start-payload:${params.id}`)
+    } catch (e) {
+      console.warn('[Cache] Failed to invalidate exam cache on delete:', e)
+    }
     
     return NextResponse.json({
       success: true,

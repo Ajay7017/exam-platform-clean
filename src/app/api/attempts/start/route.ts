@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
+import { cache } from '@/lib/redis'
 import { z } from 'zod'
 
 const startExamSchema = z.object({
@@ -32,24 +33,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1. Get exam with all questions
-    const exam = await prisma.exam.findUnique({
-      where: { id: examId },
-      include: {
-        subject: { select: { name: true } },
-        questions: {
-          include: {
-            question: {
-              include: {
-                options: { orderBy: { sequence: 'asc' } },
-                topic:   { select: { name: true } }
+    // 1. Get exam with all questions (Cache Shield)
+    const CACHE_KEY = `exam:start-payload:${examId}`
+    let exam: any = null
+
+    try {
+      const cached = await cache.get(CACHE_KEY)
+      if (cached) {
+        exam = JSON.parse(cached)
+      }
+    } catch (e) {
+      console.warn('[Cache] Redis read failed, falling back to DB:', e)
+    }
+
+    if (!exam) {
+      exam = await prisma.exam.findUnique({
+        where: { id: examId },
+        include: {
+          subject: { select: { name: true } },
+          questions: {
+            include: {
+              question: {
+                include: {
+                  options: { orderBy: { sequence: 'asc' } },
+                  topic:   { select: { name: true } }
+                }
               }
-            }
-          },
-          orderBy: { sequence: 'asc' }
+            },
+            orderBy: { sequence: 'asc' }
+          }
+        }
+      })
+
+      if (exam) {
+        try {
+          await cache.set(CACHE_KEY, JSON.stringify(exam), 86400)
+        } catch (e) {
+          console.warn('[Cache] Redis write failed:', e)
         }
       }
-    })
+    }
 
     if (!exam) {
       return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
@@ -101,23 +124,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ✅ NEW: Determine if this is an official or practice attempt.
+    // Determine if this is an official or practice attempt.
     // Official = the student's FIRST completed attempt for this exam.
     // Any subsequent attempt is practice (doesn't affect leaderboard/rank).
     const previousCompletedAttempt = await prisma.attempt.findFirst({
       where: {
-        userId:     session.user.id,
+        userId:       session.user.id,
         examId,
         hasSubmitted: true,
-        isOfficial: true,          // only care if they already have an official one
+        isOfficial:   true,
       },
       select: { id: true }
     })
 
-    const isOfficial = !previousCompletedAttempt  // true only if no prior official attempt
+    const isOfficial = !previousCompletedAttempt
 
-    // 4. Prepare questions (randomize if enabled) — unchanged
-    let questions = exam.questions.map(eq => eq.question)
+    // 4. Prepare questions (randomize if enabled — unchanged)
+    let questions = exam.questions.map((eq: any) => eq.question)
     if (exam.randomizeOrder) {
       questions = questions.sort(() => Math.random() - 0.5)
     }
@@ -125,13 +148,13 @@ export async function POST(request: NextRequest) {
     // 5. Calculate expiry time — unchanged
     const expiresAt = new Date(Date.now() + exam.durationMin * 60 * 1000)
 
-    // 6. Create attempt — ✅ NEW: include isOfficial
+    // 6. Create attempt
     const attempt = await prisma.attempt.create({
       data: {
         userId:         session.user.id,
         examId,
         status:         'in_progress',
-        isOfficial,                          // ✅ NEW
+        isOfficial,
         startedAt:      new Date(),
         expiresAt,
         totalQuestions: questions.length,
@@ -148,7 +171,7 @@ export async function POST(request: NextRequest) {
       data:  { totalAttempts: { increment: 1 } }
     })
 
-    // 8. Return exam data — ✅ NEW: include isOfficial so client can show Practice badge
+    // 8. Return exam data
     return NextResponse.json({
       attemptId:       attempt.id,
       examId:          exam.id,
@@ -162,10 +185,10 @@ export async function POST(request: NextRequest) {
       instructions:    exam.instructions,
       randomizeOrder:  exam.randomizeOrder,
       allowReview:     exam.allowReview,
-      isOfficial,                            // ✅ NEW
+      isOfficial,
       startedAt:       attempt.startedAt.toISOString(),
       expiresAt:       attempt.expiresAt.toISOString(),
-      questions: questions.map((q, index) => ({
+      questions: questions.map((q: any, index: number) => ({
         id:            q.id,
         sequence:      index + 1,
         statement:     q.statement,
@@ -175,7 +198,7 @@ export async function POST(request: NextRequest) {
         negativeMarks: q.negativeMarks,
         difficulty:    q.difficulty,
         type:          q.type ?? 'mcq',
-        options: q.options.map(o => ({
+        options: q.options.map((o: any) => ({
           key:      o.optionKey,
           text:     o.text,
           imageUrl: o.imageUrl

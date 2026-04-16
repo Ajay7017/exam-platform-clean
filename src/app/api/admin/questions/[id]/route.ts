@@ -149,7 +149,6 @@ export async function PUT(
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
-    // ✅ EXISTING: Resolve topicId — untouched
     let topicId: string
 
     if (data.topicId) {
@@ -188,7 +187,6 @@ export async function PUT(
       topicId = topic.id
     }
 
-    // ✅ EXISTING: Resolve subTopicId — untouched
     let subTopicId: string | null = null
 
     if (data.subTopicId) {
@@ -224,7 +222,6 @@ export async function PUT(
 
     const isNumerical = data.questionType === 'numerical'
 
-    // ✅ UPDATED: transaction handles both MCQ and NAT
     const updatedQuestion = await prisma.$transaction(async (tx) => {
       const question = await tx.question.update({
         where: { id: params.id },
@@ -237,7 +234,6 @@ export async function PUT(
           difficulty: data.difficulty,
           explanation: data.explanation || '',
           isActive: data.isActive ?? true,
-          // ✅ NEW: update type and numerical fields
           type: data.questionType ?? 'mcq',
           correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
           correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
@@ -245,7 +241,6 @@ export async function PUT(
         }
       })
 
-      // ✅ EXISTING: only update options for MCQ
       if (!isNumerical) {
         const optionUpdates = [
           { key: 'A', text: data.optionA!, isCorrect: data.correctAnswer === 'A' },
@@ -267,6 +262,20 @@ export async function PUT(
 
       return question
     })
+
+    // Bust cache for all exams that contain this question
+    // so students get the updated question text/options immediately
+    try {
+      const affectedExams = await prisma.examQuestion.findMany({
+        where: { questionId: params.id },
+        select: { examId: true }
+      })
+      await Promise.all(
+        affectedExams.map(eq => cache.del(`exam:start-payload:${eq.examId}`))
+      )
+    } catch (e) {
+      console.warn('[Cache] Failed to invalidate exam caches for question update:', e)
+    }
 
     return NextResponse.json({
       success: true,
