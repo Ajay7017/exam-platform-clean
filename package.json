@@ -2,7 +2,7 @@
   "name": "exam-platform",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+"scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "worker": "tsx watch src/workers/question-import-worker.ts",
+    "worker": "tsx src/workers/exam-sync-worker.ts",
+    "worker:import": "tsx src/workers/question-import-worker.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run worker\""
   },
   "prisma": {
