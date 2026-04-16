@@ -1,8 +1,8 @@
-// src/app/api/attempts/[id]/save-batch/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
+import redis from '@/lib/redis' // ✅ Import your raw Redis client
 import { z } from 'zod'
 
 const batchSaveSchema = z.object({
@@ -10,20 +10,13 @@ const batchSaveSchema = z.object({
     .array(
       z.object({
         questionId: z.string().cuid(),
-        // MCQ option — A/B/C/D or null (cleared)
         selectedOption: z.enum(['A', 'B', 'C', 'D']).nullable().optional(),
-        // NAT numerical answer or null (cleared)
         numericalAnswer: z.number().nullable().optional(),
         markedForReview: z.boolean().optional(),
       })
     )
     .min(1)
     .max(200),
-
-  // ✅ NEW: optional map of questionId → seconds spent on that question
-  // Client sends the full accumulated map on every auto-save.
-  // We merge it with whatever is already stored (take the MAX per question
-  // so a stale auto-save never overwrites a newer one).
   timePerQuestion: z
     .record(z.string().cuid(), z.number().int().nonnegative())
     .optional(),
@@ -39,14 +32,15 @@ export async function POST(
     const { answers: newAnswers, timePerQuestion: incomingTime } = batchSaveSchema.parse(body)
     const attemptId = params.id
 
+    // 1. Verify Attempt (We still read from Prisma for security, but reads are cheap)
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
       select: {
-        userId:          true,
-        status:          true,
-        expiresAt:       true,
-        answers:         true,
-        timePerQuestion: true, // ✅ NEW
+        userId: true,
+        status: true,
+        expiresAt: true,
+        answers: true,
+        timePerQuestion: true,
       },
     })
 
@@ -61,22 +55,33 @@ export async function POST(
       )
     }
 
-    // ── merge answers (existing logic — untouched) ────────────────────────
-    const existingAnswers = (attempt.answers as Record<string, any>) || {}
+    // 2. Fetch the latest un-synced state from Redis (if it exists)
+    const REDIS_KEY = `exam:autosave:${attemptId}`
+    let existingRedisData: any = null
+    
+    if (redis) {
+      const rawRedisData = await redis.get(REDIS_KEY)
+      if (rawRedisData) {
+        existingRedisData = JSON.parse(rawRedisData)
+      }
+    }
+
+    // 3. Merge Logic (Redis State -> Prisma State -> Incoming Changes)
+    // We prioritize what's in Redis, fallback to Prisma, then apply new answers
+    const currentAnswers = existingRedisData?.answers || (attempt.answers as Record<string, any>) || {}
     const timestamp = new Date().toISOString()
 
     newAnswers.forEach(answer => {
-      existingAnswers[answer.questionId] = {
-        selectedOption:  answer.selectedOption  ?? null,
+      currentAnswers[answer.questionId] = {
+        selectedOption: answer.selectedOption ?? null,
         numericalAnswer: answer.numericalAnswer ?? null,
         markedForReview: answer.markedForReview || false,
-        answeredAt:      timestamp,
+        answeredAt: timestamp,
       }
     })
 
-    // ── ✅ NEW: merge timePerQuestion (take max per question) ─────────────
-    const existingTime = (attempt.timePerQuestion as Record<string, number>) || {}
-    let mergedTime = { ...existingTime }
+    const currentTimeMap = existingRedisData?.timePerQuestion || (attempt.timePerQuestion as Record<string, number>) || {}
+    let mergedTime = { ...currentTimeMap }
 
     if (incomingTime) {
       for (const [qId, seconds] of Object.entries(incomingTime)) {
@@ -84,18 +89,35 @@ export async function POST(
       }
     }
 
-    await prisma.attempt.update({
-      where: { id: attemptId },
-      data: {
-        answers:         existingAnswers,
-        timePerQuestion: mergedTime,       // ✅ NEW
-      },
-    })
+    // 4. Save to Redis INSTEAD of Prisma (The massive performance boost)
+    if (redis) {
+      const payloadToCache = {
+        attemptId: attemptId,
+        answers: currentAnswers,
+        timePerQuestion: mergedTime,
+        updatedAt: Date.now()
+      }
+      
+      // Save the specific attempt data
+      await redis.set(REDIS_KEY, JSON.stringify(payloadToCache), 'EX', 86400) // 24hr expiry
+      
+      // Add this attemptId to a Redis "Set" so our background worker knows which attempts have unsynced data
+      await redis.sadd('exam:pending_sync_attempts', attemptId)
+      
+    } else {
+      // Fallback if Redis is down: write directly to DB to prevent data loss
+      await prisma.attempt.update({
+        where: { id: attemptId },
+        data: { answers: currentAnswers, timePerQuestion: mergedTime },
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      saved:   newAnswers.length,
+      saved: newAnswers.length,
+      method: redis ? 'redis-cache' : 'database-direct'
     })
+
   } catch (error) {
     return handleApiError(error)
   }
