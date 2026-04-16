@@ -2,9 +2,20 @@ import { PrismaClient } from '@prisma/client'
 import { Redis } from 'ioredis'
 import http from 'http'
 
+// ─── CATCH SILENT CRASHES ─────────────────────────────────────────
+process.on('unhandledRejection', (reason: any) => {
+  console.error('💥 UNHANDLED REJECTION - This is what is killing the worker:')
+  console.error(reason?.message || reason)
+  console.error(reason?.stack)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('💥 UNCAUGHT EXCEPTION - This is what is killing the worker:')
+  console.error(error.message)
+  console.error(error.stack)
+})
+
 // ─── RAILWAY HEALTH CHECK FIX ─────────────────────────────────────
-// Background workers on Railway often get killed if they don't open a port.
-// This dummy server keeps the "Watchdog" happy.
 const port = process.env.PORT || 8080;
 http.createServer((req, res) => {
   res.writeHead(200);
@@ -24,7 +35,7 @@ const redis = new Redis({
   })
 })
 
-const SYNC_INTERVAL_MS = 10000; 
+const SYNC_INTERVAL_MS = 10000;
 
 async function processSyncQueue() {
   try {
@@ -67,12 +78,10 @@ async function processSyncQueue() {
 
 console.log('🚀 Exam Sync Worker started. Polling every 10 seconds...')
 
-// Continuous Loop
 setInterval(() => {
   processSyncQueue()
 }, SYNC_INTERVAL_MS)
 
-// Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down worker...')
   await prisma.$disconnect()
