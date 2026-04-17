@@ -1,3 +1,4 @@
+// src/components/layout/Footer.tsx
 'use client'
 
 import { useState } from 'react'
@@ -5,26 +6,35 @@ import Link from 'next/link'
 import { 
   GraduationCap,
   Mail,
-  Phone,
   MapPin,
   Facebook,
   Twitter,
   Instagram,
   Linkedin,
   Youtube,
-  Send,
-  CheckCircle2,
   ArrowRight,
   Heart,
   ExternalLink,
-  FileText,
   Shield,
   HelpCircle,
   BookOpen,
-  Users,
   Briefcase,
-  MessageCircle
+  Target,
+  Zap,
+  BarChart3,
+  Award,
+  Info
 } from 'lucide-react'
+
+// Import your UI Dialog components
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 interface FooterLink {
   label: string
@@ -38,53 +48,134 @@ interface FooterSection {
   links: FooterLink[]
 }
 
+// 1. CONTENT DICTIONARY: This holds the info for every popup
+const popupContentMap: Record<string, { title: string; content: React.ReactNode }> = {
+  // Company
+  'About Us': {
+    title: 'About Mockzy',
+    content: <p className="space-y-4">Mockzy was founded with a single mission: to democratize high-quality test preparation. We leverage advanced analytics and expertly curated content to give every student a fair shot at top engineering and medical institutions. Our team consists of IIT and AIIMS alumni dedicated to your success.</p>
+  },
+  'How It Works': {
+    title: 'How Mockzy Works',
+    content: <p className="space-y-4">1. <b>Sign Up:</b> Create a free account.<br/>2. <b>Select Exam:</b> Choose JEE or NEET.<br/>3. <b>Practice:</b> Take chapter-wise or full-length mocks.<br/>4. <b>Analyze:</b> Review detailed solutions and identify weak points using our AI analytics.</p>
+  },
+  'Success Stories': {
+    title: 'Student Success Stories',
+    content: <p className="space-y-4">We are currently compiling success stories from our latest batch of top rankers! Check back soon to read how Mockzy students improved their scores by an average of 40% within 3 months of consistent practice.</p>
+  },
+  'Pricing': {
+    title: 'Simple, Transparent Pricing',
+    content: <p className="space-y-4">We believe in transparent pricing. Currently, basic chapter-wise practice is free. Premium mock tests with detailed analytics and All-India Rank prediction are available through affordable exam-specific passes. Create an account to view customized pricing for your target exam.</p>
+  },
+  'Blog': {
+    title: 'Mockzy Blog',
+    content: <p className="space-y-4">Our blog is currently under construction. Soon, you will find expert tips on time management, subject-wise strategy, and the latest NTA exam updates right here.</p>
+  },
+  'Careers': {
+    title: 'Join the Mockzy Team',
+    content: <p className="space-y-4">We are always looking for passionate educators, full-stack developers, and content creators. If you want to revolutionize EdTech, send your resume to <b>ajay.phogat@mockzy.co.in</b>.</p>
+  },
+  
+  // Support
+  'Help Center': {
+    title: 'Help Center',
+    content: <p className="space-y-4">Need assistance? You can reach out to our support team 24/7. Whether it is a technical issue, a doubt in a question, or a billing inquiry, we are here to help. Email us directly at support@mockzy.co.in.</p>
+  },
+  'Contact Us': {
+    title: 'Contact Us',
+    content: <p className="space-y-4"><b>Email:</b> ajay.phogat@mockzy.co.in<br/><b>Location:</b> Delhi, India<br/><br/>Our support hours are Monday to Saturday, 10:00 AM to 7:00 PM IST.</p>
+  },
+  'FAQs': {
+    title: 'Frequently Asked Questions',
+    content: <p className="space-y-4"><b>Q: Are the mock tests updated for 2026?</b><br/>A: Yes, all questions adhere strictly to the latest NTA syllabus.<br/><br/><b>Q: Can I take tests on mobile?</b><br/>A: Yes, Mockzy is fully responsive, though we recommend a desktop for full-length exams to simulate the real environment.</p>
+  },
+  'System Status': {
+    title: 'System Status',
+    content: <p className="space-y-4 flex items-center gap-2"><span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span> All systems are operational. Exam engines and analytics databases are running smoothly.</p>
+  },
+  'Report Issue': {
+    title: 'Report an Issue',
+    content: <p className="space-y-4">Found a bug or an error in a question? Please email the question ID or screenshot to support@mockzy.co.in. We reward students who find genuine errors in our content!</p>
+  },
+  'Community Forum': {
+    title: 'Community Forum',
+    content: <p className="space-y-4">Our community discord server is launching soon! You will be able to discuss questions, share strategies, and interact with rankers.</p>
+  },
+
+  // Legal
+  'Privacy Policy': {
+    title: 'Privacy Policy',
+    content: <p className="space-y-4 text-sm text-gray-400">Your privacy is crucial to us. Mockzy collects minimal necessary data (name, email, test scores) to provide personalized analytics. We do not sell your personal data to third-party marketers. For full details or data deletion requests, please contact our administrative team.</p>
+  },
+  'Terms of Service': {
+    title: 'Terms of Service',
+    content: <p className="space-y-4 text-sm text-gray-400">By using Mockzy, you agree to engage in fair academic practices. The content provided is for personal preparation only and may not be redistributed or scraped. Mockzy reserves the right to suspend accounts utilizing automated bots or unauthorized sharing.</p>
+  },
+  'Refund Policy': {
+    title: 'Refund Policy',
+    content: <p className="space-y-4 text-sm text-gray-400">We offer a 3-day money-back guarantee on unused premium mock test packages. If you have attempted less than 2 premium tests and are unsatisfied, email us for a no-questions-asked refund.</p>
+  },
+  'Cookie Policy': {
+    title: 'Cookie Policy',
+    content: <p className="space-y-4 text-sm text-gray-400">Mockzy uses essential cookies to keep you logged in and track your test progress securely. We use anonymous analytics cookies to improve platform performance. You can manage your cookie preferences through your browser settings.</p>
+  },
+  'Academic Integrity': {
+    title: 'Academic Integrity',
+    content: <p className="space-y-4 text-sm text-gray-400">We simulate strict exam environments. Attempting to circumvent our anti-cheat mechanisms (tab switching, screenshots) will result in test invalidation. Practice honestly to ensure accurate rank predictions.</p>
+  },
+  'Disclaimer': {
+    title: 'Disclaimer',
+    content: <p className="space-y-4 text-sm text-gray-400">Mockzy is an independent test preparation platform and is not officially affiliated with NTA, IITs, or AIIMS. Ranks predicted by our AI are estimates based on historical data and do not guarantee actual exam performance.</p>
+  }
+}
+
 const footerSections: FooterSection[] = [
   {
     title: 'Exams',
     icon: <BookOpen className="w-4 h-4" />,
     links: [
-      { label: 'GATE Exams', href: '/exams?category=engineering' },
-      { label: 'SSC Exams', href: '/exams?category=government' },
-      { label: 'JEE Preparation', href: '/exams?category=engineering' },
-      { label: 'NEET Preparation', href: '/exams?category=medical' },
-      { label: 'Banking Exams', href: '/exams?category=banking' },
-      { label: 'All Exams', href: '/exams' }
+      { label: 'JEE Main Mocks', href: '/exams' },
+      { label: 'JEE Advanced Mocks', href: '/exams' },
+      { label: 'NEET UG Mocks', href: '/exams' },
+      { label: 'Class 11th Practice', href: '/exams' },
+      { label: 'Class 12th Practice', href: '/exams' },
+      { label: 'All Mock Tests', href: '/exams' }
     ]
   },
   {
     title: 'Company',
     icon: <Briefcase className="w-4 h-4" />,
     links: [
-      { label: 'About Us', href: '/#about' },
-      { label: 'How It Works', href: '/#features' },
-      { label: 'Success Stories', href: '/#testimonials' },
-      { label: 'Pricing', href: '/#pricing' },
-      { label: 'Blog', href: '/blog' },
-      { label: 'Careers', href: '/careers' }
+      { label: 'About Us', href: '#' },
+      { label: 'How It Works', href: '#' },
+      { label: 'Success Stories', href: '#' },
+      { label: 'Pricing', href: '#' },
+      { label: 'Blog', href: '#' },
+      { label: 'Careers', href: '#' }
     ]
   },
   {
     title: 'Support',
     icon: <HelpCircle className="w-4 h-4" />,
     links: [
-      { label: 'Help Center', href: '/help' },
-      { label: 'Contact Us', href: '/contact' },
-      { label: 'FAQs', href: '/faq' },
-      { label: 'System Status', href: '/status' },
-      { label: 'Report Issue', href: '/report' },
-      { label: 'Community Forum', href: '/forum' }
+      { label: 'Help Center', href: '#' },
+      { label: 'Contact Us', href: '#' },
+      { label: 'FAQs', href: '#' },
+      { label: 'System Status', href: '#' },
+      { label: 'Report Issue', href: '#' },
+      { label: 'Community Forum', href: '#' }
     ]
   },
   {
     title: 'Legal',
     icon: <Shield className="w-4 h-4" />,
     links: [
-      { label: 'Privacy Policy', href: '/privacy' },
-      { label: 'Terms of Service', href: '/terms' },
-      { label: 'Refund Policy', href: '/refund' },
-      { label: 'Cookie Policy', href: '/cookies' },
-      { label: 'Academic Integrity', href: '/integrity' },
-      { label: 'Disclaimer', href: '/disclaimer' }
+      { label: 'Privacy Policy', href: '#' },
+      { label: 'Terms of Service', href: '#' },
+      { label: 'Refund Policy', href: '#' },
+      { label: 'Cookie Policy', href: '#' },
+      { label: 'Academic Integrity', href: '#' },
+      { label: 'Disclaimer', href: '#' }
     ]
   }
 ]
@@ -105,12 +196,6 @@ const contactInfo = [
     href: 'mailto:ajay.phogat@mockzy.co.in'
   },
   {
-    icon: <Phone className="w-5 h-5" />,
-    label: 'Phone',
-    value: '+91 9876543210',
-    href: 'tel:+919876543210'
-  },
-  {
     icon: <MapPin className="w-5 h-5" />,
     label: 'Address',
     value: 'Delhi, India',
@@ -118,273 +203,211 @@ const contactInfo = [
   }
 ]
 
-const stats = [
-  { value: '50,000+', label: 'Active Students' },
-  { value: '450+', label: 'Exams Available' },
-  { value: '200K+', label: 'Questions' },
-  { value: '98%', label: 'Success Rate' }
+const guarantees = [
+  { icon: <Target className="w-8 h-8 mb-3" />, title: '100% NTA Aligned', desc: 'Latest exam patterns' },
+  { icon: <Zap className="w-8 h-8 mb-3" />, title: 'Instant Results', desc: 'Zero waiting time' },
+  { icon: <BarChart3 className="w-8 h-8 mb-3" />, title: 'Deep Analytics', desc: 'Weak-point tracking' },
+  { icon: <Award className="w-8 h-8 mb-3" />, title: 'Rank Predictor', desc: 'Know where you stand' }
 ]
 
 export function Footer() {
-  const [email, setEmail] = useState('')
-  const [isSubmitted, setIsSubmitted] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  // 2. DIALOG STATE
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [dialogContent, setDialogContent] = useState({ title: '', content: <></> })
 
-  const handleNewsletterSubmit = async (e: React.MouseEvent | React.KeyboardEvent) => {
-    e.preventDefault()
-    if (!email.includes('@')) return
-    
-    setIsSubmitting(true)
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    setIsSubmitted(true)
-    setIsSubmitting(false)
-    setEmail('')
-    
-    // Reset after 3 seconds
-    setTimeout(() => setIsSubmitted(false), 3000)
+  // 3. HANDLER FUNCTION
+  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, label: string, href: string) => {
+    // If the link label exists in our popup dictionary, open the dialog instead of routing
+    if (popupContentMap[label]) {
+      e.preventDefault()
+      setDialogContent(popupContentMap[label])
+      setIsDialogOpen(true)
+    }
+    // Otherwise, allow normal Next.js Link navigation (for Exam links)
   }
 
   return (
-    <footer className="relative bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white overflow-hidden">
-      
-      {/* Background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Gradient orbs */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+    <>
+      <footer className="relative bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white overflow-hidden">
         
-        {/* Grid pattern */}
-        <div 
-          className="absolute inset-0 opacity-5"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '4rem 4rem'
-          }}
-        />
-      </div>
+        {/* Background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+          <div 
+            className="absolute inset-0 opacity-5"
+            style={{
+              backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+              backgroundSize: '4rem 4rem'
+            }}
+          />
+        </div>
 
-      {/* Main footer content */}
-      <div className="relative">
-        
-        {/* Stats bar */}
-        <div className="border-b border-gray-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              {stats.map((stat, idx) => (
-                <div key={idx} className="text-center group">
-                  <div className="text-3xl lg:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-2 group-hover:scale-110 transition-transform">
-                    {stat.value}
+        {/* Main footer content */}
+        <div className="relative">
+          
+          {/* Platform Guarantees Bar */}
+          <div className="border-b border-gray-800">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+                {guarantees.map((item, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center group">
+                    <div className="text-blue-400 group-hover:scale-110 group-hover:text-cyan-400 transition-all duration-300">
+                      {item.icon}
+                    </div>
+                    <h4 className="text-lg font-bold text-gray-200 mb-1">
+                      {item.title}
+                    </h4>
+                    <p className="text-sm text-gray-500">
+                      {item.desc}
+                    </p>
                   </div>
-                  <div className="text-sm text-gray-400">
-                    {stat.label}
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Main footer sections */}
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-12 lg:gap-8">
+              
+              {/* Brand column */}
+              <div className="lg:col-span-2 space-y-6">
+                <Link href="/" className="flex items-center gap-3 group">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl blur-lg opacity-50 group-hover:opacity-100 transition-opacity" />
+                    <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-600 shadow-lg">
+                      <GraduationCap className="h-7 w-7 text-white" />
+                    </div>
                   </div>
+                  <span className="text-2xl font-bold">Mockzy</span>
+                </Link>
+
+                <p className="text-gray-400 leading-relaxed text-sm pr-4">
+                  Your trusted companion for JEE and NEET preparation. Practice with expert-curated mock tests, track your performance, and achieve your target rank.
+                </p>
+
+                <div className="space-y-3">
+                  {contactInfo.map((contact, idx) => (
+                    <div key={idx} className="flex items-start gap-3 text-sm group">
+                      <div className="text-blue-400 mt-0.5 group-hover:scale-110 transition-transform">
+                        {contact.icon}
+                      </div>
+                      {contact.href ? (
+                        <a href={contact.href} className="text-gray-400 hover:text-white transition-colors">
+                          <span className="text-gray-500 block text-xs uppercase tracking-wider mb-0.5">{contact.label}</span>
+                          {contact.value}
+                        </a>
+                      ) : (
+                        <div className="text-gray-400">
+                          <span className="text-gray-500 block text-xs uppercase tracking-wider mb-0.5">{contact.label}</span>
+                          {contact.value}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  {socialLinks.map((social, idx) => (
+                    <a
+                      key={idx}
+                      href={social.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`w-10 h-10 rounded-lg bg-gray-800/50 border border-gray-700 flex items-center justify-center text-gray-400 ${social.color} hover:text-white hover:border-transparent transition-all duration-300 hover:scale-110 hover:shadow-lg`}
+                      aria-label={social.label}
+                    >
+                      {social.icon}
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              {/* Link sections */}
+              {footerSections.map((section, idx) => (
+                <div key={idx} className="space-y-5">
+                  <div className="flex items-center gap-2 text-white font-semibold text-lg">
+                    <div className="text-blue-400">
+                      {section.icon}
+                    </div>
+                    <h3>{section.title}</h3>
+                  </div>
+                  <ul className="space-y-3">
+                    {section.links.map((link, linkIdx) => (
+                      <li key={linkIdx}>
+                        {/* 4. UPDATED LINK WITH ONCLICK HANDLER */}
+                        <Link
+                          href={link.href}
+                          onClick={(e) => handleLinkClick(e, link.label, link.href)}
+                          className="text-gray-400 hover:text-blue-400 transition-colors text-sm flex items-center gap-2 group cursor-pointer"
+                        >
+                          <span className="group-hover:translate-x-1 transition-transform">
+                            {link.label}
+                          </span>
+                          {link.external && (
+                            <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          )}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ))}
             </div>
           </div>
-        </div>
 
-        {/* Main footer sections */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-12 lg:gap-8">
-            
-            {/* Brand column - spans 2 columns on large screens */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Logo */}
-              <Link href="/" className="flex items-center gap-3 group">
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur-lg opacity-50 group-hover:opacity-100 transition-opacity" />
-                  <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 shadow-lg">
-                    <GraduationCap className="h-7 w-7 text-white" />
-                  </div>
+          {/* Bottom bar */}
+          <div className="border-t border-gray-800">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="text-sm text-gray-400 text-center md:text-left">
+                  <p className="flex items-center justify-center md:justify-start gap-2 flex-wrap">
+                    <span>© 2026 Mockzy. All rights reserved.</span>
+                    <span className="hidden md:inline text-gray-600">•</span>
+                    <span className="flex items-center gap-1">
+                      Made with <Heart className="w-4 h-4 text-red-500 fill-red-500 animate-pulse" /> in India
+                    </span>
+                  </p>
                 </div>
-                <span className="text-2xl font-bold">Mockzy</span>
-              </Link>
-
-              {/* Tagline */}
-              <p className="text-gray-400 leading-relaxed">
-                Your trusted companion for exam success. Practice with AI-powered analytics, compete on leaderboards, and achieve your dreams.
-              </p>
-
-              {/* Contact info */}
-              <div className="space-y-3">
-                {contactInfo.map((contact, idx) => (
-                  <div key={idx} className="flex items-start gap-3 text-sm group">
-                    <div className="text-blue-400 mt-0.5 group-hover:scale-110 transition-transform">
-                      {contact.icon}
-                    </div>
-                    {contact.href ? (
-                      <a 
-                        href={contact.href}
-                        className="text-gray-400 hover:text-white transition-colors"
-                      >
-                        <span className="text-gray-500 block">{contact.label}</span>
-                        {contact.value}
-                      </a>
-                    ) : (
-                      <div className="text-gray-400">
-                        <span className="text-gray-500 block">{contact.label}</span>
-                        {contact.value}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Social links */}
-              <div className="flex gap-3">
-                {socialLinks.map((social, idx) => (
-                  <a
-                    key={idx}
-                    href={social.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 ${social.color} hover:text-white transition-all duration-300 hover:scale-110 hover:shadow-lg`}
-                    aria-label={social.label}
-                  >
-                    {social.icon}
-                  </a>
-                ))}
-              </div>
-            </div>
-
-            {/* Link sections */}
-            {footerSections.map((section, idx) => (
-              <div key={idx} className="space-y-4">
-                <div className="flex items-center gap-2 text-white font-semibold text-lg">
-                  <div className="text-blue-400">
-                    {section.icon}
-                  </div>
-                  <h3>{section.title}</h3>
+                <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
+                  <span onClick={(e) => handleLinkClick(e as any, 'Privacy Policy', '#')} className="text-gray-400 hover:text-white transition-colors cursor-pointer">Privacy</span>
+                  <span onClick={(e) => handleLinkClick(e as any, 'Terms of Service', '#')} className="text-gray-400 hover:text-white transition-colors cursor-pointer">Terms</span>
                 </div>
-                <ul className="space-y-3">
-                  {section.links.map((link, linkIdx) => (
-                    <li key={linkIdx}>
-                      <Link
-                        href={link.href}
-                        className="text-gray-400 hover:text-white transition-colors text-sm flex items-center gap-2 group"
-                      >
-                        <span className="group-hover:translate-x-1 transition-transform">
-                          {link.label}
-                        </span>
-                        {link.external && (
-                          <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        )}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Newsletter section */}
-        <div className="border-t border-gray-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div className="max-w-2xl mx-auto text-center space-y-6">
-              <div className="space-y-2">
-                <h3 className="text-2xl font-bold">Stay Updated</h3>
-                <p className="text-gray-400">
-                  Subscribe to our newsletter for exam tips, updates, and exclusive offers
-                </p>
-              </div>
-
-              {/* Newsletter form */}
-              <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-                <div className="flex-1">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    disabled={isSubmitting || isSubmitted}
-                    className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && email.includes('@')) {
-                        handleNewsletterSubmit(e)
-                      }
-                    }}
-                  />
-                </div>
-                <button
-                  onClick={handleNewsletterSubmit}
-                  disabled={isSubmitting || isSubmitted || !email.includes('@')}
-                  className="px-6 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 font-semibold hover:from-blue-700 hover:to-purple-700 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
-                >
-                  {isSubmitted ? (
-                    <>
-                      <CheckCircle2 className="w-5 h-5" />
-                      <span>Subscribed!</span>
-                    </>
-                  ) : isSubmitting ? (
-                    <span>Subscribing...</span>
-                  ) : (
-                    <>
-                      <span>Subscribe</span>
-                      <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <p className="text-xs text-gray-500">
-                By subscribing, you agree to our Privacy Policy and consent to receive updates
-              </p>
             </div>
           </div>
         </div>
 
-        {/* Bottom bar */}
-        <div className="border-t border-gray-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-              
-              {/* Copyright */}
-              <div className="text-sm text-gray-400 text-center md:text-left">
-                <p className="flex items-center justify-center md:justify-start gap-2 flex-wrap">
-                  <span>© 2026 Mockzy. All rights reserved.</span>
-                  <span className="hidden md:inline">•</span>
-                  <span className="flex items-center gap-1">
-                    Made with <Heart className="w-4 h-4 text-red-500 fill-red-500 animate-pulse" /> in India
-                  </span>
-                </p>
-              </div>
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-8 right-8 w-12 h-12 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg hover:shadow-cyan-500/25 transition-all duration-300 hover:scale-110 flex items-center justify-center group z-50 border border-blue-400/20"
+          aria-label="Scroll to top"
+        >
+          <ArrowRight className="w-5 h-5 -rotate-90 group-hover:-translate-y-1 transition-transform" />
+        </button>
+      </footer>
 
-              {/* Bottom links */}
-              <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
-                <Link href="/privacy" className="text-gray-400 hover:text-white transition-colors">
-                  Privacy
-                </Link>
-                <Link href="/terms" className="text-gray-400 hover:text-white transition-colors">
-                  Terms
-                </Link>
-                <Link href="/sitemap" className="text-gray-400 hover:text-white transition-colors">
-                  Sitemap
-                </Link>
-                <Link href="/accessibility" className="text-gray-400 hover:text-white transition-colors">
-                  Accessibility
-                </Link>
+      {/* 5. RENDER THE DIALOG */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+          <DialogHeader>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                <Info className="w-5 h-5" />
               </div>
+              <DialogTitle className="text-xl text-gray-900 dark:text-white">
+                {dialogContent.title}
+              </DialogTitle>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Scroll to top button (optional - can be implemented later) */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-8 right-8 w-12 h-12 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 flex items-center justify-center group z-50"
-        aria-label="Scroll to top"
-      >
-        <ArrowRight className="w-5 h-5 -rotate-90 group-hover:-translate-y-1 transition-transform" />
-      </button>
-    </footer>
+            <ScrollArea className="max-h-[60vh] pr-4">
+              <DialogDescription className="text-gray-600 dark:text-gray-300 text-base leading-relaxed pt-2">
+                {dialogContent.content}
+              </DialogDescription>
+            </ScrollArea>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

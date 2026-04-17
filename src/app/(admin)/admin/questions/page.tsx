@@ -1,6 +1,8 @@
+// src/app/(admin)/admin/questions/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { SafeHtml } from '@/lib/utils/safe-html'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,8 +26,94 @@ import { QuestionForm } from '@/components/admin/QuestionForm'
 import { toast } from 'sonner'
 import {
   Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2,
-  ToggleLeft, ToggleRight, X,
+  ToggleLeft, ToggleRight, X, LayoutList, Rows3, ClipboardList, Tag
 } from 'lucide-react'
+
+// ─────────────────────────────────────────────
+// TAG INPUT COMPONENT (From Exam Builder)
+// ─────────────────────────────────────────────
+function TagInput({
+  tags,
+  onChange,
+  existingTags,
+}: {
+  tags: string[]
+  onChange: (tags: string[]) => void
+  existingTags: string[]
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  const suggestions = existingTags.filter(
+    t => t.toLowerCase().includes(inputValue.toLowerCase()) && !tags.includes(t)
+  )
+
+  const addTag = (tag: string) => {
+    const trimmed = tag.trim()
+    if (!trimmed || tags.includes(trimmed)) return
+    onChange([...tags, trimmed])
+    setInputValue('')
+    setShowSuggestions(false)
+  }
+
+  const removeTag = (tag: string) => {
+    onChange(tags.filter(t => t !== tag))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addTag(inputValue)
+    }
+    if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
+      removeTag(tags[tags.length - 1])
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div
+        className="min-h-10 w-full rounded-md border border-input bg-background px-3 py-2 flex flex-wrap gap-1.5 cursor-text"
+        onClick={() => document.getElementById('quick-tag-input')?.focus()}
+      >
+        {tags.map(tag => (
+          <span key={tag} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+            {tag}
+            <button type="button" onClick={e => { e.stopPropagation(); removeTag(tag) }} className="hover:text-red-500 transition-colors ml-0.5">
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ))}
+        <input
+          id="quick-tag-input"
+          type="text"
+          value={inputValue}
+          onChange={e => { setInputValue(e.target.value); setShowSuggestions(true) }}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+          placeholder={tags.length === 0 ? 'Type category (e.g. NEET)' : ''}
+          className="flex-1 min-w-[140px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      {showSuggestions && (inputValue || suggestions.length > 0) && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+          {suggestions.map(tag => (
+            <button key={tag} type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2" onMouseDown={() => addTag(tag)}>
+              <Tag className="h-3 w-3 text-gray-400" /> {tag}
+              <span className="ml-auto text-xs text-gray-400">existing</span>
+            </button>
+          ))}
+          {inputValue.trim() && !tags.includes(inputValue.trim()) && !existingTags.includes(inputValue.trim()) && (
+            <button type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700 flex items-center gap-2 border-t border-gray-100" onMouseDown={() => addTag(inputValue)}>
+              <Plus className="h-3 w-3" /> Create "{inputValue.trim()}"
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function stripHtml(html: string) {
   return html
@@ -36,9 +124,9 @@ function stripHtml(html: string) {
 
 function getTypeBadge(type?: 'mcq' | 'numerical') {
   if (type === 'numerical') {
-    return <Badge className="bg-blue-100 text-blue-800 text-xs font-medium"># Numerical</Badge>
+    return <Badge className="bg-blue-100 text-blue-800 text-[10px] sm:text-xs font-medium"># Numerical</Badge>
   }
-  return <Badge className="bg-purple-100 text-purple-800 text-xs font-medium">≡ MCQ</Badge>
+  return <Badge className="bg-purple-100 text-purple-800 text-[10px] sm:text-xs font-medium">≡ MCQ</Badge>
 }
 
 interface Subject { id: string; name: string }
@@ -76,6 +164,8 @@ interface QuestionDetail extends Question {
 }
 
 export default function AdminQuestionsPage() {
+  const router = useRouter()
+  
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -94,12 +184,28 @@ export default function AdminQuestionsPage() {
   const [subTopics, setSubTopics] = useState<SubTopic[]>([])
   const [filteredSubTopics, setFilteredSubTopics] = useState<SubTopic[]>([])
 
-  // ✅ NEW: bulk selection state
+  const [existingTags, setExistingTags] = useState<string[]>([])
+
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkActionLoading, setBulkActionLoading] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
 
-  // ✅ NEW: inline toggle loading per question
+  // ADVANCED QUICK EXAM CREATION STATE
+  const [quickExamDialogOpen, setQuickExamDialogOpen] = useState(false)
+  const [quickExamData, setQuickExamData] = useState({
+    title: '',
+    durationMin: '60',
+    price: 0,
+    isFree: true,
+    difficulty: 'medium' as 'easy' | 'medium' | 'hard',
+    randomizeOrder: true,
+    allowReview: true,
+    tags: [] as string[]
+  })
+  const [quickExamLoading, setQuickExamLoading] = useState(false)
+
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
@@ -119,6 +225,7 @@ export default function AdminQuestionsPage() {
     fetchSubjects()
     fetchTopics()
     fetchAllSubTopics()
+    fetchExistingTags()
   }, [])
 
   useEffect(() => {
@@ -144,7 +251,6 @@ export default function AdminQuestionsPage() {
     fetchQuestions()
   }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
 
-  // ✅ Clear selection when page/filters change
   useEffect(() => {
     setSelectedIds(new Set())
   }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
@@ -177,6 +283,15 @@ export default function AdminQuestionsPage() {
       setSubTopics(data || [])
       setFilteredSubTopics(data || [])
     } catch (e) { console.error('Failed to fetch subtopics', e) }
+  }
+
+  const fetchExistingTags = async () => {
+    try {
+      const res = await fetch('/api/admin/exams?limit=1')
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.allTags) setExistingTags(data.allTags)
+    } catch { /* silently fail */ }
   }
 
   const fetchQuestions = async () => {
@@ -217,7 +332,6 @@ export default function AdminQuestionsPage() {
 
   const hasActiveFilters = search || difficulty !== 'all' || subjectId !== 'all' || topicId !== 'all' || subTopicId !== 'all' || questionType !== 'all'
 
-  // ✅ NEW: checkbox handlers
   const allCurrentIds = questions.map(q => q.id)
   const allSelected = allCurrentIds.length > 0 && allCurrentIds.every(id => selectedIds.has(id))
   const someSelected = selectedIds.size > 0
@@ -237,7 +351,6 @@ export default function AdminQuestionsPage() {
     setSelectedIds(next)
   }
 
-  // ✅ NEW: inline status toggle
   const handleInlineToggle = async (question: Question) => {
     setTogglingId(question.id)
     try {
@@ -258,7 +371,6 @@ export default function AdminQuestionsPage() {
     }
   }
 
-  // ✅ NEW: bulk toggle
   const handleBulkToggle = async (isActive: boolean) => {
     setBulkActionLoading(true)
     try {
@@ -279,7 +391,6 @@ export default function AdminQuestionsPage() {
     }
   }
 
-  // ✅ NEW: bulk delete confirm
   const handleBulkDeleteConfirm = async () => {
     setBulkActionLoading(true)
     try {
@@ -298,6 +409,55 @@ export default function AdminQuestionsPage() {
       toast.error(e.message || 'Failed to delete questions')
     } finally {
       setBulkActionLoading(false)
+    }
+  }
+
+  // ADVANCED QUICK EXAM CREATION LOGIC
+  const handleQuickCreateExam = async () => {
+    if (!quickExamData.title.trim() || !quickExamData.durationMin) {
+      toast.error("Please provide a title and duration");
+      return;
+    }
+    
+    setQuickExamLoading(true)
+    
+    try {
+      const slug = quickExamData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      
+      const payload = {
+        title: quickExamData.title,
+        slug: slug,
+        isMultiSubject: true,
+        durationMin: parseInt(quickExamData.durationMin) || 60,
+        questionIds: Array.from(selectedIds),
+        price: quickExamData.price,
+        isFree: quickExamData.isFree || quickExamData.price === 0,
+        difficulty: quickExamData.difficulty,
+        allowReview: quickExamData.allowReview,
+        randomizeOrder: quickExamData.randomizeOrder,
+        tags: quickExamData.tags,
+        isPublished: false
+      }
+
+      const res = await fetch('/api/admin/exams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create exam')
+      
+      toast.success('Exam created successfully!')
+      setQuickExamDialogOpen(false)
+      setSelectedIds(new Set())
+      
+      router.push(`/admin/exams/${data.exam.id}/edit`)
+      
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create exam')
+    } finally {
+      setQuickExamLoading(false)
     }
   }
 
@@ -364,15 +524,32 @@ export default function AdminQuestionsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+      {/* Header with View Toggle */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Question Bank</h1>
           <p className="text-gray-600 mt-1">{total} questions available</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-white border border-gray-200 rounded-lg p-1 mr-2 shadow-sm">
+            <button 
+              onClick={() => setViewMode('table')} 
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              title="Compact Table View"
+            >
+              <LayoutList className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setViewMode('card')} 
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              title="Expanded Card View"
+            >
+              <Rows3 className="w-4 h-4" />
+            </button>
+          </div>
+
           <Button variant="outline" onClick={() => window.location.href = '/admin/questions/import'}>
-            <Upload className="w-4 h-4 mr-2" />Import Questions
+            <Upload className="w-4 h-4 mr-2" />Import
           </Button>
           <Button onClick={() => window.location.href = '/admin/questions/new'}>
             <Plus className="w-4 h-4 mr-2" />Add Question
@@ -450,13 +627,23 @@ export default function AdminQuestionsPage() {
         </CardContent>
       </Card>
 
-      {/* ✅ NEW: Sticky Bulk Action Bar — only shows when items selected */}
+      {/* Sticky Bulk Action Bar */}
       {someSelected && (
-        <div className="sticky top-4 z-20 flex items-center gap-3 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3">
+        <div className="sticky top-4 z-20 flex flex-wrap items-center gap-3 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3">
           <span className="text-sm font-medium text-gray-700">
             {selectedIds.size} selected
           </span>
-          <div className="h-4 w-px bg-gray-300" />
+          <div className="h-4 w-px bg-gray-300 hidden sm:block" />
+          
+          <Button
+            size="sm"
+            onClick={() => setQuickExamDialogOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+          >
+            <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+            Create Exam
+          </Button>
+
           <Button
             size="sm"
             variant="outline"
@@ -485,7 +672,7 @@ export default function AdminQuestionsPage() {
             className="text-red-600 border-red-300 hover:bg-red-50"
           >
             <Trash2 className="w-3 h-3 mr-1" />
-            Delete Selected
+            Delete
           </Button>
           <Button
             size="sm"
@@ -498,150 +685,245 @@ export default function AdminQuestionsPage() {
         </div>
       )}
 
-      {/* Questions Table */}
+      {/* Question Listing */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
-      ) : (
-        <>
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      {/* ✅ NEW: wired select-all checkbox */}
-                      <input
-                        type="checkbox"
-                        className="rounded border-gray-300 cursor-pointer"
-                        checked={allSelected}
-                        onChange={handleSelectAll}
-                      />
-                    </TableHead>
-                    <TableHead>Question</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Topic</TableHead>
-                    <TableHead>SubTopic</TableHead>
-                    <TableHead>Marks</TableHead>
-                    <TableHead>Difficulty</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {questions.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
-                        <div className="flex flex-col items-center gap-2">
-                          <Search className="h-12 w-12 text-gray-300" />
-                          <p className="text-gray-600">No questions found</p>
-                          <p className="text-sm text-gray-500">
-                            {hasActiveFilters ? 'Try adjusting your filters' : 'Add your first question to get started!'}
-                          </p>
-                          {hasActiveFilters && (
-                            <Button variant="outline" size="sm" onClick={handleClearFilters}>Clear filters</Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    questions.map(question => (
-                      <TableRow
-                        key={question.id}
-                        className={selectedIds.has(question.id) ? 'bg-blue-50' : ''}
-                      >
-                        {/* ✅ NEW: wired individual checkbox */}
-                        <TableCell>
-                          <input
-                            type="checkbox"
-                            className="rounded border-gray-300 cursor-pointer"
-                            checked={selectedIds.has(question.id)}
-                            onChange={() => handleSelectOne(question.id)}
-                          />
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          <p className="font-medium truncate text-sm" title={stripHtml(question.statement)}>
-                            {stripHtml(question.statement) || '(Image/rich content question)'}
-                          </p>
-                        </TableCell>
-                        <TableCell>{getTypeBadge(question.questionType)}</TableCell>
-                        <TableCell>{question.subjectName}</TableCell>
-                        <TableCell>{question.topicName}</TableCell>
-                        <TableCell className="text-gray-500 text-sm">
-                          {question.subTopicName || <span className="text-gray-300">—</span>}
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            <div className="text-green-600">+{question.marks}</div>
-                            <div className="text-red-600">-{question.negativeMarks}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getDifficultyColor(question.difficulty)}>
-                            {question.difficulty}
+      ) : questions.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <Search className="h-12 w-12 text-gray-300 mb-2" />
+            <p className="text-gray-600 font-medium">No questions found</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {hasActiveFilters ? 'Try adjusting your filters' : 'Add your first question to get started!'}
+            </p>
+            {hasActiveFilters && (
+              <Button variant="outline" size="sm" onClick={handleClearFilters} className="mt-4">Clear filters</Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : viewMode === 'table' ? (
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">
+                    <input type="checkbox" className="rounded border-gray-300 cursor-pointer text-blue-600" checked={allSelected} onChange={handleSelectAll} />
+                  </TableHead>
+                  <TableHead>Question</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Topic</TableHead>
+                  <TableHead>SubTopic</TableHead>
+                  <TableHead>Marks</TableHead>
+                  <TableHead>Difficulty</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {questions.map(question => (
+                  <TableRow key={question.id} className={selectedIds.has(question.id) ? 'bg-blue-50' : ''}>
+                    <TableCell>
+                      <input type="checkbox" className="rounded border-gray-300 cursor-pointer text-blue-600" checked={selectedIds.has(question.id)} onChange={() => handleSelectOne(question.id)} />
+                    </TableCell>
+                    <TableCell className="max-w-xs">
+                      <p className="font-medium truncate text-sm" title={stripHtml(question.statement)}>
+                        {stripHtml(question.statement) || '(Image/rich content question)'}
+                      </p>
+                    </TableCell>
+                    <TableCell>{getTypeBadge(question.questionType)}</TableCell>
+                    <TableCell>{question.subjectName}</TableCell>
+                    <TableCell>{question.topicName}</TableCell>
+                    <TableCell className="text-gray-500 text-sm">{question.subTopicName || <span className="text-gray-300">—</span>}</TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div className="text-green-600">+{question.marks}</div>
+                        <div className="text-red-600">-{question.negativeMarks}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell><Badge className={getDifficultyColor(question.difficulty)}>{question.difficulty}</Badge></TableCell>
+                    <TableCell>
+                      <button onClick={() => handleInlineToggle(question)} disabled={togglingId === question.id} className="focus:outline-none">
+                        {togglingId === question.id ? (
+                          <Badge className="bg-gray-100 text-gray-500 cursor-wait"><Loader2 className="w-3 h-3 animate-spin mr-1" />...</Badge>
+                        ) : (
+                          <Badge className={`cursor-pointer transition-opacity hover:opacity-75 ${question.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                            {question.isActive ? 'Active' : 'Inactive'}
                           </Badge>
-                        </TableCell>
+                        )}
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">{new Date(question.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleView(question.id)}><Eye className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(question.id)}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(question.id, question.statement)}><Trash2 className="h-4 w-4 text-red-600" /></Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={allSelected} onChange={handleSelectAll} className="rounded border-gray-300 w-4 h-4 text-blue-600 cursor-pointer" />
+              <span className="text-sm font-medium text-gray-700">Select All ({questions.length})</span>
+            </label>
+          </div>
 
-                        {/* ✅ NEW: Inline status toggle — click badge to toggle */}
-                        <TableCell>
-                          <button
-                            onClick={() => handleInlineToggle(question)}
-                            disabled={togglingId === question.id}
-                            className="focus:outline-none"
-                            title={`Click to mark as ${question.isActive ? 'Inactive' : 'Active'}`}
-                          >
-                            {togglingId === question.id ? (
-                              <Badge className="bg-gray-100 text-gray-500 cursor-wait">
-                                <Loader2 className="w-3 h-3 animate-spin mr-1" />...
-                              </Badge>
-                            ) : (
-                              <Badge className={`cursor-pointer transition-opacity hover:opacity-75 ${
-                                question.isActive
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {question.isActive ? 'Active' : 'Inactive'}
-                              </Badge>
-                            )}
-                          </button>
-                        </TableCell>
-
-                        <TableCell className="text-sm text-gray-600">
-                          {new Date(question.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" onClick={() => handleView(question.id)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleEdit(question.id)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(question.id, question.statement)}>
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-6">
-              <Button variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
-              <div className="flex items-center px-4">Page {page} of {totalPages}</div>
-              <Button variant="outline" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+          {questions.map(q => (
+            <div key={q.id} className={`relative flex gap-4 p-4 rounded-xl border bg-white shadow-sm transition-all ${selectedIds.has(q.id) ? 'border-blue-400 ring-1 ring-blue-400 bg-blue-50/30' : 'border-gray-200 hover:border-gray-300'}`}>
+              <div className="pt-1">
+                <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => handleSelectOne(q.id)} className="rounded border-gray-300 w-4 h-4 text-blue-600 cursor-pointer" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                  {getTypeBadge(q.questionType)}
+                  <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">{q.subjectName}</span>
+                  <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">{q.topicName}</span>
+                  {q.subTopicName && <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">{q.subTopicName}</span>}
+                  <Badge className={getDifficultyColor(q.difficulty)}>{q.difficulty}</Badge>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded border border-gray-200"><span className="text-green-600">+{q.marks}</span> <span className="text-red-500">-{q.negativeMarks}</span></span>
+                </div>
+                <div className="text-sm text-gray-800 line-clamp-3 mb-4 prose prose-sm max-w-none leading-relaxed">
+                  <SafeHtml html={q.statement} />
+                </div>
+                <div className="flex items-center gap-4 text-xs text-gray-500">
+                  <span>Created: {new Date(q.createdAt).toLocaleDateString()}</span>
+                  <div className="w-px h-3 bg-gray-300"></div>
+                  <button onClick={() => handleInlineToggle(q)} disabled={togglingId === q.id} className="hover:opacity-80 transition-opacity">
+                    {togglingId === q.id ? <span className="flex items-center gap-1 text-gray-500"><Loader2 className="w-3 h-3 animate-spin"/> Updating...</span> : q.isActive ? <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 className="w-3 h-3"/> Active</span> : <span className="flex items-center gap-1 text-gray-500 font-medium"><X className="w-3 h-3"/> Inactive</span>}
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 shrink-0 border-l border-gray-100 pl-3">
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleView(q.id)} title="View Details"><Eye className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900" onClick={() => handleEdit(q.id)} title="Edit Question"><Edit className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:text-red-600 hover:bg-red-50 mt-auto" onClick={() => handleDeleteClick(q.id, q.statement)} title="Delete Question"><Trash2 className="h-4 w-4" /></Button>
+              </div>
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
+
+      {totalPages > 1 && (
+        <div className="flex justify-center gap-2 mt-6">
+          <Button variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+          <div className="flex items-center px-4">Page {page} of {totalPages}</div>
+          <Button variant="outline" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+        </div>
+      )}
+
+      {/* ✅ NEW: ADVANCED QUICK EXAM CREATION DIALOG */}
+      <Dialog open={quickExamDialogOpen} onOpenChange={setQuickExamDialogOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Exam from Selected ({selectedIds.size} Questions)</DialogTitle>
+            <DialogDescription>
+              Instantly compile these questions into a new exam.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-4">
+            <div>
+              <Label className="text-sm font-medium">Exam Title *</Label>
+              <Input 
+                value={quickExamData.title} 
+                onChange={(e) => setQuickExamData(p => ({ ...p, title: e.target.value }))} 
+                placeholder="e.g. Physics Chapter Test 1" 
+                className="mt-1"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium">Duration (min) *</Label>
+                <Input 
+                  type="number" 
+                  value={quickExamData.durationMin} 
+                  onChange={(e) => setQuickExamData(p => ({ ...p, durationMin: e.target.value }))} 
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Price (₹)</Label>
+                <Input 
+                  type="number" 
+                  value={quickExamData.price / 100} 
+                  onChange={(e) => {
+                    const price = parseFloat(e.target.value) * 100
+                    setQuickExamData(p => ({ ...p, price, isFree: price === 0 }))
+                  }} 
+                  className="mt-1"
+                  placeholder="0 for free"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium">Difficulty</Label>
+                <Select value={quickExamData.difficulty} onValueChange={(v: any) => setQuickExamData(p => ({ ...p, difficulty: v }))}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Categories (Tags)</Label>
+                <div className="mt-1">
+                  <TagInput
+                    tags={quickExamData.tags}
+                    onChange={tags => setQuickExamData(p => ({ ...p, tags }))}
+                    existingTags={existingTags}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={quickExamData.randomizeOrder} 
+                  onChange={e => setQuickExamData(p => ({ ...p, randomizeOrder: e.target.checked }))} 
+                  className="rounded border-gray-300 w-4 h-4 text-blue-600" 
+                />
+                <span className="text-sm text-gray-700">Randomize question order</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={quickExamData.allowReview} 
+                  onChange={e => setQuickExamData(p => ({ ...p, allowReview: e.target.checked }))} 
+                  className="rounded border-gray-300 w-4 h-4 text-blue-600" 
+                />
+                <span className="text-sm text-gray-700">Allow review before submit</span>
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setQuickExamDialogOpen(false)} disabled={quickExamLoading}>
+              Cancel
+            </Button>
+            <Button onClick={handleQuickCreateExam} disabled={quickExamLoading} className="bg-blue-600 hover:bg-blue-700">
+              {quickExamLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ClipboardList className="w-4 h-4 mr-2" />}
+              Create Exam
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* VIEW DIALOG — untouched */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
@@ -754,7 +1036,7 @@ export default function AdminQuestionsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ✅ NEW: BULK DELETE DIALOG */}
+      {/* BULK DELETE DIALOG — untouched */}
       <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

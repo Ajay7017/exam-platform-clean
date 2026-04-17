@@ -1,3 +1,4 @@
+// src/components/marketing/PopularExams.tsx
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
@@ -13,14 +14,12 @@ import {
   Brain,
   Microscope,
   Calculator,
-  FlaskConical,
-  Atom,
+  GraduationCap,
   Sparkles,
   ArrowRight,
   CheckCircle2,
   Crown,
-  Target,
-  Award
+  Target
 } from 'lucide-react'
 
 interface Exam {
@@ -32,7 +31,7 @@ interface Exam {
   gradient: string
   color: string
   stats: {
-    students: string
+    targetClass: string
     questions: string
     duration: string
     difficulty: 'Easy' | 'Medium' | 'Hard'
@@ -44,26 +43,27 @@ interface Exam {
   trending: boolean
 }
 
+// Updated to feature ONLY your real offerings
 const exams: Exam[] = [
   {
     id: 'jee-main',
     name: 'JEE Main',
-    fullName: 'Joint Entrance Examination - Main Exam',
+    fullName: 'Joint Entrance Examination - Main',
     icon: <Calculator className="w-8 h-8" />,
     category: 'engineering',
     gradient: 'from-blue-500 via-cyan-500 to-teal-500',
     color: 'text-blue-600',
     stats: {
-      students: '12.5K+',
-      questions: '25,000+',
+      targetClass: '11th & 12th',
+      questions: '15,000+',
       duration: '3 Hours',
       difficulty: 'Hard'
     },
     features: [
-      'Full-length mock tests',
+      'NTA Pattern Mocks',
       'Chapter-wise practice',
       'Previous year papers',
-      'Video solutions'
+      'Detailed solutions'
     ],
     subjects: ['Physics', 'Chemistry', 'Mathematics'],
     rating: 4.8,
@@ -79,15 +79,15 @@ const exams: Exam[] = [
     gradient: 'from-purple-500 via-indigo-500 to-blue-500',
     color: 'text-purple-600',
     stats: {
-      students: '8.2K+',
-      questions: '18,000+',
+      targetClass: '11th & 12th',
+      questions: '10,000+',
       duration: '3 Hours',
       difficulty: 'Hard'
     },
     features: [
       'IIT-level questions',
       'Detailed analytics',
-      'Expert solutions',
+      'Multi-concept MCQs',
       'Rank predictor'
     ],
     subjects: ['Physics', 'Chemistry', 'Mathematics'],
@@ -104,96 +104,21 @@ const exams: Exam[] = [
     gradient: 'from-green-500 via-emerald-500 to-teal-500',
     color: 'text-green-600',
     stats: {
-      students: '15.8K+',
-      questions: '30,000+',
-      duration: '3 Hours',
-      difficulty: 'Hard'
+      targetClass: '11th & 12th',
+      questions: '20,000+',
+      duration: '3 Hours 20 Mins',
+      difficulty: 'Medium'
     },
     features: [
       'NCERT-focused',
-      'Biology emphasis',
-      'Medical MCQs',
+      'High-yield Biology',
+      'Assertion-Reasoning',
       'All India rank'
     ],
     subjects: ['Physics', 'Chemistry', 'Biology'],
     rating: 4.9,
     popular: true,
     trending: true
-  },
-  {
-    id: 'neet-pg',
-    name: 'NEET PG',
-    fullName: 'National Eligibility cum Entrance Test - PG',
-    icon: <FlaskConical className="w-8 h-8" />,
-    category: 'medical',
-    gradient: 'from-pink-500 via-rose-500 to-red-500',
-    color: 'text-pink-600',
-    stats: {
-      students: '5.3K+',
-      questions: '15,000+',
-      duration: '3.5 Hours',
-      difficulty: 'Hard'
-    },
-    features: [
-      'Clinical cases',
-      'Subject-wise tests',
-      'Image-based MCQs',
-      'Performance tracking'
-    ],
-    subjects: ['Medicine', 'Surgery', 'Pathology', 'Radiology'],
-    rating: 4.7,
-    popular: false,
-    trending: false
-  },
-  {
-    id: 'bitsat',
-    name: 'BITSAT',
-    fullName: 'Birla Institute of Technology and Science',
-    icon: <Atom className="w-8 h-8" />,
-    category: 'engineering',
-    gradient: 'from-orange-500 via-amber-500 to-yellow-500',
-    color: 'text-orange-600',
-    stats: {
-      students: '4.7K+',
-      questions: '12,000+',
-      duration: '3 Hours',
-      difficulty: 'Medium'
-    },
-    features: [
-      'Computer-based test',
-      'English & Logical',
-      'Instant scoring',
-      'Adaptive practice'
-    ],
-    subjects: ['Physics', 'Chemistry', 'Maths/Bio', 'English'],
-    rating: 4.6,
-    popular: false,
-    trending: true
-  },
-  {
-    id: 'aiims',
-    name: 'AIIMS',
-    fullName: 'All India Institute of Medical Sciences',
-    icon: <Award className="w-8 h-8" />,
-    category: 'medical',
-    gradient: 'from-indigo-500 via-violet-500 to-purple-500',
-    color: 'text-indigo-600',
-    stats: {
-      students: '6.1K+',
-      questions: '20,000+',
-      duration: '3.5 Hours',
-      difficulty: 'Hard'
-    },
-    features: [
-      'AIIMS pattern',
-      'Reasoning included',
-      'Mock interviews',
-      'Top college prep'
-    ],
-    subjects: ['Physics', 'Chemistry', 'Biology', 'Aptitude'],
-    rating: 4.8,
-    popular: true,
-    trending: false
   }
 ]
 
@@ -248,7 +173,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
 
   return (
     <div
-      className={`exam-card ${isVisible ? 'animate-card-entrance' : 'opacity-0'}`}
+      className={`exam-card ${isVisible ? 'animate-card-entrance' : 'opacity-0'} h-full`}
       style={{
         animationDelay: `${index * 150}ms`
       }}
@@ -261,7 +186,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
         <div className={`absolute -inset-1 bg-gradient-to-r ${exam.gradient} opacity-0 group-hover:opacity-75 blur-2xl transition-all duration-500 rounded-3xl ${isHovered ? 'animate-pulse-glow' : ''}`} />
 
         {/* Card container */}
-        <div className="relative h-full bg-white dark:bg-gray-900 rounded-3xl border-2 border-gray-200 dark:border-gray-800 group-hover:border-transparent overflow-hidden transition-all duration-500 hover:shadow-2xl hover:scale-[1.02] hover:-translate-y-2">
+        <div className="relative h-full bg-white dark:bg-gray-900 rounded-3xl border-2 border-gray-200 dark:border-gray-800 group-hover:border-transparent overflow-hidden transition-all duration-500 hover:shadow-2xl hover:scale-[1.02] hover:-translate-y-2 flex flex-col">
           
           {/* Floating particles */}
           {particlesActive && (
@@ -269,7 +194,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
               {[...Array(8)].map((_, i) => (
                 <div
                   key={i}
-                  className={`absolute w-2 h-2 rounded-full bg-gradient-to-r ${exam.gradient} animate-particle-float`}
+                  className={`absolute w-2 h-2 rounded-full bg-gradient-to-r ${exam.gradient} animate-particle-float z-10`}
                   style={{
                     left: `${Math.random() * 100}%`,
                     top: `${Math.random() * 100}%`,
@@ -282,7 +207,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
           )}
 
           {/* Header section */}
-          <div className={`relative p-8 bg-gradient-to-br ${exam.gradient} overflow-hidden`}>
+          <div className={`relative p-8 bg-gradient-to-br ${exam.gradient} overflow-hidden shrink-0`}>
             
             {/* Pattern overlay */}
             <div 
@@ -294,7 +219,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
             />
 
             {/* Badges row */}
-            <div className="relative flex items-start justify-between mb-6">
+            <div className="relative z-10 flex items-start justify-between mb-6">
               <div className="flex gap-2">
                 {exam.popular && (
                   <span className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-white text-xs font-bold">
@@ -314,9 +239,9 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
             </div>
 
             {/* Icon and title */}
-            <div className="relative flex items-center gap-4 mb-4">
+            <div className="relative z-10 flex items-center gap-4 mb-4">
               {/* Icon with rotating border */}
-              <div className="relative">
+              <div className="relative shrink-0">
                 <div className={`absolute inset-0 rounded-2xl bg-white/30 ${isHovered ? 'animate-spin-slow' : ''}`} />
                 <div className="relative w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-xl group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
                   {exam.icon}
@@ -328,14 +253,14 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
                 <h3 className="text-2xl font-bold text-white mb-1">
                   {exam.name}
                 </h3>
-                <p className="text-white/80 text-sm">
+                <p className="text-white/80 text-sm line-clamp-2">
                   {exam.fullName}
                 </p>
               </div>
             </div>
 
             {/* Subjects pills */}
-            <div className="relative flex flex-wrap gap-2">
+            <div className="relative z-10 flex flex-wrap gap-2">
               {exam.subjects.map((subject, idx) => (
                 <span
                   key={idx}
@@ -347,21 +272,21 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
             </div>
           </div>
 
-          {/* Body section */}
-          <div className="p-8 space-y-6">
+          {/* Body section - using flex-grow to push the button to the bottom */}
+          <div className="p-8 flex flex-col flex-grow space-y-6">
             
             {/* Stats grid */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800 group-hover:bg-gradient-to-r group-hover:from-blue-50 group-hover:to-purple-50 dark:group-hover:from-blue-900/20 dark:group-hover:to-purple-900/20 transition-all">
-                <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <GraduationCap className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
                 <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Students</p>
-                  <p className="text-sm font-bold text-gray-900 dark:text-white">{exam.stats.students}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Target</p>
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">{exam.stats.targetClass}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800 group-hover:bg-gradient-to-r group-hover:from-purple-50 group-hover:to-pink-50 dark:group-hover:from-purple-900/20 dark:group-hover:to-pink-900/20 transition-all">
-                <BookOpen className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <BookOpen className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" />
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">Questions</p>
                   <p className="text-sm font-bold text-gray-900 dark:text-white">{exam.stats.questions}</p>
@@ -369,7 +294,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
               </div>
 
               <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800 group-hover:bg-gradient-to-r group-hover:from-green-50 group-hover:to-emerald-50 dark:group-hover:from-green-900/20 dark:group-hover:to-emerald-900/20 transition-all">
-                <Clock className="w-5 h-5 text-green-600 dark:text-green-400" />
+                <Clock className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0" />
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">Duration</p>
                   <p className="text-sm font-bold text-gray-900 dark:text-white">{exam.stats.duration}</p>
@@ -377,7 +302,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
               </div>
 
               <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800 group-hover:bg-gradient-to-r group-hover:from-orange-50 group-hover:to-red-50 dark:group-hover:from-orange-900/20 dark:group-hover:to-red-900/20 transition-all">
-                <Target className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                <Target className="w-5 h-5 text-orange-600 dark:text-orange-400 shrink-0" />
                 <div className="flex items-center gap-2">
                   <div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">Level</p>
@@ -388,7 +313,7 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
             </div>
 
             {/* Features list */}
-            <div className="space-y-3">
+            <div className="space-y-3 flex-grow">
               {exam.features.map((feature, idx) => (
                 <div
                   key={idx}
@@ -407,13 +332,13 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
               ))}
             </div>
 
-            {/* CTA Button */}
-            <Link href={`/exams/${exam.id}`}>
+            {/* CTA Button -> Relying on middleware for routing */}
+            <Link href="/exams">
               <button className={`w-full py-4 rounded-xl bg-gradient-to-r ${exam.gradient} text-white font-bold shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] group/btn relative overflow-hidden`}>
                 {/* Shine effect */}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000" />
                 
-                <span className="relative flex items-center justify-center gap-2">
+                <span className="relative flex items-center justify-center gap-2 z-10">
                   Start Practicing
                   <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
                 </span>
@@ -422,8 +347,8 @@ function ExamCard({ exam, index, isVisible }: { exam: Exam; index: number; isVis
           </div>
 
           {/* Decorative corner elements */}
-          <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${exam.gradient} opacity-5 rounded-bl-full`} />
-          <div className={`absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr ${exam.gradient} opacity-5 rounded-tr-full`} />
+          <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${exam.gradient} opacity-5 rounded-bl-full pointer-events-none`} />
+          <div className={`absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr ${exam.gradient} opacity-5 rounded-tr-full pointer-events-none`} />
         </div>
       </div>
     </div>
@@ -495,7 +420,7 @@ export function PopularExams() {
           <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 border border-blue-200 dark:border-blue-800 shadow-lg">
             <Trophy className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span className="text-sm font-semibold text-blue-900 dark:text-blue-300">
-              Most Popular Exams
+              Targeted Preparation
             </span>
           </div>
 
@@ -509,7 +434,7 @@ export function PopularExams() {
             </h2>
             
             <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto leading-relaxed">
-              Premium mock tests designed by experts for engineering and medical entrance exams
+              Premium mock tests designed exactly like the real NTA exams
             </p>
           </div>
 
@@ -536,8 +461,8 @@ export function PopularExams() {
           </div>
         </div>
 
-        {/* Exams grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10">
+        {/* Exams grid - Strictly 3 columns on Desktop using CSS Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10">
           {filteredExams.map((exam, index) => (
             <ExamCard
               key={exam.id}
@@ -548,18 +473,14 @@ export function PopularExams() {
           ))}
         </div>
 
-        {/* Bottom CTA */}
-        <div className="mt-8 text-center space-y-6">
-          <p className="text-lg text-gray-600 dark:text-gray-400">
-            Want to explore more exams?
-          </p>
-          
+        {/* Bottom CTA -> relying on middleware.ts */}
+        <div className="mt-12 text-center space-y-6">
           <Link href="/exams">
             <button className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white font-bold text-lg shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105 overflow-hidden">
               {/* Shine effect */}
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
               
-              <span className="relative">View All 450+ Exams</span>
+              <span className="relative">Explore All Mock Tests</span>
               <Zap className="relative w-6 h-6 group-hover:rotate-12 transition-transform" />
             </button>
           </Link>

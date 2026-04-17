@@ -37,8 +37,9 @@ export function AdminSidebar() {
         { label: 'Topics', href: '/admin/topics', icon: List },
         { label: 'SubTopics', href: '/admin/subtopics', icon: Layers }, // ✅ NEW
         { label: 'Question Bank', href: '/admin/questions', icon: FileQuestion },
-        { label: 'Image Upload', href: '/admin/images', icon: Image },
+        // { label: 'Image Upload', href: '/admin/images', icon: Image },
         { label: 'Exam Management', href: '/admin/exams', icon: ClipboardList },
+        { label: 'Study Materials', href: '/admin/materials', icon: BookOpen }, // Fixed this line
       ],
     },
     {

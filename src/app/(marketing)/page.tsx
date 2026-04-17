@@ -12,13 +12,13 @@ export default function HomePage() {
   return (
     <main>
       <Hero />
-      <StatsBar />
-      <Features />
+      {/* <StatsBar /> */}
+      {/* <Features /> */}
       <HowItWorks />
       <PopularExams />
-      <Testimonials />
-      <Pricing />
-      <FinalCTA />
+      {/* <Testimonials /> */}
+      {/* <Pricing /> */}
+      {/* <FinalCTA /> */}
     </main>
   )
 }

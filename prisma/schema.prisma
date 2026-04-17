@@ -438,3 +438,21 @@ model EmailLog {
   @@index([status])
   @@index([type])
 }
+
+// ============================================
+// STUDY MATERIAL MODELS
+// ============================================
+model StudyMaterial {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  subject     String   // e.g., "Physics", "Chemistry", "Mathematics", "Biology"
+  type        String   // e.g., "PDF", "Drive Folder", "Video"
+  link        String   // The Google Drive or external URL
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([subject])
+  @@index([isPublished])
+}

@@ -1,6 +1,8 @@
+// src/components/marketing/HowItWorks.tsx
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import Link from 'next/link'
 import { 
   UserPlus, 
   FileSearch, 
@@ -27,7 +29,7 @@ const steps: Step[] = [
     icon: <UserPlus className="w-8 h-8" />,
     step: 'Step 1',
     title: 'Create Account',
-    description: 'Sign up in seconds with Google or email. No credit card required for free practice',
+    description: 'Sign up in seconds with Google or email. No credit card required for free practice.',
     features: [
       'Quick Google sign-in',
       'Instant access',
@@ -39,12 +41,12 @@ const steps: Step[] = [
   {
     icon: <FileSearch className="w-8 h-8" />,
     step: 'Step 2',
-    title: 'Choose Your Exam',
-    description: 'Browse through 450+ exams across GATE, SSC, JEE, NEET, UPSC, and more',
+    title: 'Choose Your Target',
+    description: 'Select your specific goal across JEE Main, JEE Advanced, and NEET UG.',
     features: [
-      '450+ exam options',
-      'Multiple categories',
-      'Difficulty levels'
+      'Class 11th & 12th syllabus',
+      'Chapter-wise practice',
+      'Full-length mock tests'
     ],
     color: 'text-purple-600',
     gradient: 'from-purple-500 to-pink-500'
@@ -53,7 +55,7 @@ const steps: Step[] = [
     icon: <TrendingUp className="w-8 h-8" />,
     step: 'Step 3',
     title: 'Practice & Improve',
-    description: 'Take tests, analyze results, and track your progress with detailed analytics',
+    description: 'Take tests, analyze results, and track your progress with detailed analytics.',
     features: [
       'Real-time analytics',
       'Performance tracking',
@@ -240,14 +242,6 @@ export function HowItWorks() {
         
         {/* Section header */}
         <div className="text-center space-y-6 mb-16 md:mb-8">
-          
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 border border-blue-200 dark:border-blue-800 shadow-lg">
-            <Play className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-sm font-semibold text-blue-900 dark:text-blue-300">
-              Simple Process
-            </span>
-          </div>
 
           {/* Main heading */}
           <div className="space-y-4">
@@ -259,7 +253,7 @@ export function HowItWorks() {
             </h2>
             
             <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto leading-relaxed">
-              Get started in three simple steps and begin your journey to success
+              Get started in three simple steps and begin your journey to a top rank.
             </p>
           </div>
 
@@ -305,16 +299,19 @@ export function HowItWorks() {
             Ready to get started? Join thousands of successful students today!
           </p>
           
-          <button className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white font-bold text-lg shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105 overflow-hidden">
-            {/* Shine effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-            
-            <span className="relative">Start Your Free Trial</span>
-            <Rocket className="relative w-6 h-6 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-          </button>
+          {/* Wrapped Button in Link tag */}
+          <Link href="/login">
+            <button className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white font-bold text-lg shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105 overflow-hidden">
+              {/* Shine effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+              
+              <span className="relative">Start Your Free Trial</span>
+              <Rocket className="relative w-6 h-6 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+            </button>
+          </Link>
 
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            No credit card required • Cancel anytime • 450+ exams available
+            No credit card required • Cancel anytime • Latest NTA Patterns
           </p>
         </div>
       </div>
