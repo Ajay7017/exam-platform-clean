@@ -1,6 +1,15 @@
 import { PrismaClient } from '@prisma/client'
 import { startQuestionImportWorker, startExamGradingWorker } from '@/lib/queue'
 import redis from '@/lib/redis'
+import http from 'http'
+
+const PORT = parseInt(process.env.PORT || '8080')
+http.createServer((req, res) => {
+  res.writeHead(200)
+  res.end('ok')
+}).listen(PORT, '0.0.0.0', () => {
+  console.log(`[HEALTHCHECK] Listening on port ${PORT}`)
+})
 
 // ─── CATCH SILENT CRASHES ─────────────────────────────────────────
 process.on('unhandledRejection', (reason: any) => {
