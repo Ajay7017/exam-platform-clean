@@ -30,6 +30,8 @@ model User {
   attempts    Attempt[]
   purchases   Purchase[]
   leaderboard LeaderboardEntry[]
+  feedbacks   ExamFeedback[]
+  errorReports ErrorReport[]
   
   @@index([email])
   @@index([phone])
@@ -157,6 +159,7 @@ model Question {
   
   options       Option[]
   examQuestions ExamQuestion[]
+  errorReports  ErrorReport[]
   
   @@index([topicId, isActive])
   @@index([subTopicId])
@@ -211,6 +214,9 @@ model Exam {
   leaderboard       LeaderboardEntry[]
   subscriptionExams SubscriptionExam[]
   bundleExams       BundleExam[]
+
+  feedbacks         ExamFeedback[]
+  errorReports      ErrorReport[]
 
   tags  String[]  @default([])
   
@@ -449,10 +455,72 @@ model StudyMaterial {
   subject     String   // e.g., "Physics", "Chemistry", "Mathematics", "Biology"
   type        String   // e.g., "PDF", "Drive Folder", "Video"
   link        String   // The Google Drive or external URL
+  thumbnailUrl String?
   isPublished Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([subject])
   @@index([isPublished])
+}
+
+// ============================================
+// FEEDBACK & ERROR REPORT MODELS
+// ============================================
+
+model ExamFeedback {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  examId        String
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  attemptId     String
+
+  // Student inputs
+  difficultyRating  Int      // 1-5
+  experienceRating  Int      // 1-5
+  comments          String?  @db.Text
+
+  // Admin response
+  status        String   @default("pending") // "pending" | "acknowledged" | "fixed"
+  adminReply    String?  @db.Text
+  repliedAt     DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([examId])
+  @@index([attemptId])
+  @@index([status])
+}
+
+model ErrorReport {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  examId        String
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  attemptId     String
+  questionId    String
+  question      Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  // Student inputs
+  questionNumber  Int      // for display reference
+  issueType       String   // "wrong_answer" | "wrong_question" | "typo" | "image_issue" | "other"
+  description     String   @db.Text
+
+  // Admin response
+  status        String   @default("pending") // "pending" | "acknowledged" | "fixed"
+  adminReply    String?  @db.Text
+  repliedAt     DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([examId])
+  @@index([attemptId])
+  @@index([questionId])
+  @@index([status])
 }

@@ -17,6 +17,7 @@ import {
   List,
   Layers,  // ✅ NEW: for SubTopics
   ClipboardList,
+  MessageSquare,
 } from 'lucide-react';
 
 export function AdminSidebar() {
@@ -46,6 +47,7 @@ export function AdminSidebar() {
       title: 'Users',
       items: [
         { label: 'User Management', href: '/admin/users', icon: Users },
+        { label: 'Feedback & Reports', href: '/admin/feedback', icon: MessageSquare },
       ],
     },
     {

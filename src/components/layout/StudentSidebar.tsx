@@ -16,7 +16,8 @@ import {
   ChevronRight,
   LogOut,
   ShoppingBag,
-  GraduationCap, // NEW ICON
+  GraduationCap,
+  MessageSquare,
 } from 'lucide-react';
 
 export function StudentSidebar() {
@@ -50,6 +51,11 @@ export function StudentSidebar() {
           label: 'My Purchases',
           href: '/purchases',
           icon: ShoppingBag,
+        },
+        {
+          label: 'Feedback',
+          href: '/feedback',
+          icon: MessageSquare,
         },
       ],
     },

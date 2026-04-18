@@ -10,6 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LeaderboardCard } from '@/components/student/LeaderboardCard';
 import { OptimizedImage } from '@/components/ui/optimized-image';
+// ADD these two imports after existing imports
+import { FeedbackTab }    from '@/components/results/FeedbackTab'
+import { ErrorReportTab } from '@/components/results/ErrorReportTab'
 import {
   RefreshCw, CheckCircle, XCircle, Circle,
   Clock, Trophy, TrendingUp, AlertCircle,
@@ -479,6 +482,8 @@ export default function ResultPage() {
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
           <TabsTrigger value="solutions">Solutions</TabsTrigger>
+          <TabsTrigger value="feedback">Feedback</TabsTrigger>
+          <TabsTrigger value="report-error">Report Error</TabsTrigger>
         </TabsList>
 
         {/* Summary Tab */}
@@ -636,6 +641,22 @@ export default function ResultPage() {
               )
             })
           )}
+        </TabsContent>
+        {/* Feedback Tab */}
+        <TabsContent value="feedback">
+          <FeedbackTab
+            examId={result.examId}
+            attemptId={attemptId}
+          />
+        </TabsContent>
+
+        {/* Report Error Tab */}
+        <TabsContent value="report-error">
+          <ErrorReportTab
+            examId={result.examId}
+            attemptId={attemptId}
+            questionResults={result.questionResults || []}
+          />
         </TabsContent>
       </Tabs>
     </div>

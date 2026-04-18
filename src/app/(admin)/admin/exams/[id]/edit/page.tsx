@@ -799,7 +799,7 @@ export default function EditExamPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-[220px_1fr_280px] gap-4 items-start">
+            <div className="grid grid-cols-[200px_1fr_260px] gap-4 items-start">
 
               {/* ── LEFT: Filters ── */}
               <div className="sticky top-4 space-y-4">
@@ -835,8 +835,12 @@ export default function EditExamPage() {
                         <Select value={filterSubject} onValueChange={v => { setFilterSubject(v); setFilterTopic('all'); setFilterSubTopic('all') }}>
                           <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All ({allQuestions.length})</SelectItem>
-                            {availableSubjectsInQuestions.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({allQuestions.filter(q => q.subjectId === s.id).length})</SelectItem>)}
+                            <SelectItem value="all">All Subjects ({allQuestions.length}q)</SelectItem>
+                            {availableSubjectsInQuestions.map(s => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name} • {allQuestions.filter(q => q.subjectId === s.id).length}q
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -931,7 +935,7 @@ export default function EditExamPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="max-h-[600px] overflow-y-auto divide-y divide-gray-100">
+                  <div className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-gray-100">
                     {loadingQuestions ? (
                       <div className="flex flex-col items-center justify-center py-16 gap-2">
                         <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
@@ -984,8 +988,47 @@ export default function EditExamPage() {
                       </CardTitle>
                       <span className="text-xs text-gray-500 font-medium">{totalSelectedMarks} marks</span>
                     </div>
-                    {selectedIds.length > 0 && !formData.randomizeOrder && <p className="text-xs text-gray-400 mt-1">Drag to reorder</p>}
-                    {selectedIds.length > 0 && formData.randomizeOrder && <p className="text-xs text-amber-500 mt-1">Order randomized for students</p>}
+
+                    {/* ── Per-subject breakdown ── */}
+                    {selectedIds.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {availableSubjectsInQuestions.map(s => {
+                          const count = selectedQuestions.filter(q => q.subjectId === s.id).length
+                          if (count === 0) return null
+                          const subjectMarks = selectedQuestions
+                            .filter(q => q.subjectId === s.id)
+                            .reduce((sum, q) => sum + q.marks, 0)
+                          return (
+                            <div key={s.id} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded-md border border-gray-100">
+                              <span className="text-xs font-medium text-gray-700 truncate">{s.name}</span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                                <span className="text-xs text-blue-600 font-semibold">{count}Q</span>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-xs text-gray-500">{subjectMarks}m</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {/* show total only for multi-subject */}
+                        {availableSubjectsInQuestions.length > 1 && (
+                          <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded-md border border-blue-100 mt-1">
+                            <span className="text-xs font-semibold text-blue-700">Total</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-blue-700 font-semibold">{selectedIds.length}Q</span>
+                              <span className="text-blue-300 text-xs">·</span>
+                              <span className="text-xs text-blue-600">{totalSelectedMarks}m</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {selectedIds.length > 0 && !formData.randomizeOrder && (
+                      <p className="text-xs text-gray-400 mt-1">Drag to reorder</p>
+                    )}
+                    {selectedIds.length > 0 && formData.randomizeOrder && (
+                      <p className="text-xs text-amber-500 mt-1">Order randomized for students</p>
+                    )}
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
                     {selectedIds.length === 0 ? (
@@ -996,7 +1039,7 @@ export default function EditExamPage() {
                     ) : (
                       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                         <SortableContext items={selectedIds} strategy={verticalListSortingStrategy}>
-                          <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-0.5">
+                          <div className="space-y-1.5 max-h-[calc(100vh-420px)] overflow-y-auto pr-0.5">
                             {selectedQuestions.map((q, i) => (
                               <SortableQuestionRow key={q.id} question={q} index={i} onRemove={removeSelected} />
                             ))}

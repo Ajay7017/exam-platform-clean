@@ -31,17 +31,20 @@ export function handleApiError(error: any): NextResponse {
     )
   }
   
-  // Zod validation errors
   if (error instanceof ZodError) {
-    const errors = error.errors.map(err => ({
-      field: err.path.join('.'),
-      message: err.message
-    }))
-    
+    // handle both Zod v3 and v4 error structures safely
+    const issues = error.errors ?? error.issues ?? []
+    const errors = Array.isArray(issues)
+      ? issues.map((err: any) => ({
+          field:   Array.isArray(err.path) ? err.path.join('.') : String(err.path ?? ''),
+          message: err.message ?? 'Invalid value',
+        }))
+      : []
+
     return NextResponse.json(
       {
-        error: 'Validation failed',
-        details: errors
+        error:   'Validation failed',
+        details: errors,
       },
       { status: 400 }
     )

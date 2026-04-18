@@ -50,10 +50,16 @@ export default function NewMaterialPage() {
     setError('')
 
     try {
+      // strip empty thumbnailUrl so Zod doesn't reject it as invalid URL
+      const payload = {
+        ...formData,
+        thumbnailUrl: formData.thumbnailUrl?.trim() || undefined,
+      }
+
       const res = await fetch('/api/admin/materials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       })
 
       const data = await res.json()

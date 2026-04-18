@@ -19,7 +19,13 @@ import {
   ChevronRight, Search, CheckSquare, Square, Eye, Edit3,
   CheckCircle2, Clock, FileText, Award, AlertCircle, BarChart3,
   GripVertical, Trash2, ChevronLeft, Check, Image as ImageIcon,
+  Edit, Trash,
 } from 'lucide-react'
+
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
+import { QuestionForm } from '@/components/admin/QuestionForm'
 
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -144,11 +150,40 @@ function SortableQuestionRow({
 
 function ExamPreview({
   formData, questions, totalMarks, onEdit, onSubmit, submitting,
+  onQuestionUpdated, onQuestionRemoved,
 }: {
   formData: any; questions: QuestionDetail[]; totalMarks: number
   onEdit: () => void; onSubmit: () => void; submitting: boolean
+  onQuestionUpdated: (questionId: string) => void
+  onQuestionRemoved:  (questionId: string) => void
 }) {
-  const [showAnswers, setShowAnswers] = useState(false)
+  const [showAnswers,      setShowAnswers]      = useState(false)
+  const [editQuestionId,   setEditQuestionId]   = useState<string | null>(null)
+  const [editQuestionData, setEditQuestionData] = useState<any>(null)
+  const [editDialogOpen,   setEditDialogOpen]   = useState(false)
+  const [loadingEdit,      setLoadingEdit]      = useState(false)
+
+  const handleEditClick = async (questionId: string) => {
+    setLoadingEdit(true)
+    try {
+      const res  = await fetch(`/api/admin/questions/${questionId}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setEditQuestionId(questionId)
+      setEditQuestionData(data.question)
+      setEditDialogOpen(true)
+    } catch {
+      toast.error('Failed to load question for editing')
+    } finally {
+      setLoadingEdit(false)
+    }
+  }
+
+  const handleEditSuccess = () => {
+    setEditDialogOpen(false)
+    onQuestionUpdated(editQuestionId!)
+    toast.success('Question updated! Preview refreshed.')
+  }
 
   const diffStats = useMemo(() => ({
     easy: questions.filter(q => q.difficulty === 'easy').length,
@@ -262,7 +297,15 @@ function ExamPreview({
 
         <div className="space-y-4">
           {questions.map((question, index) => (
-            <QuestionCard key={question.id} question={question} index={index} showAnswer={showAnswers} />
+            <QuestionCard
+              key={question.id}
+              question={question}
+              index={index}
+              showAnswer={showAnswers}
+              onEdit={() => handleEditClick(question.id)}
+              onRemove={() => onQuestionRemoved(question.id)}
+              loadingEdit={loadingEdit && editQuestionId === question.id}
+            />
           ))}
         </div>
 
@@ -282,11 +325,40 @@ function ExamPreview({
           </div>
         </div>
       </div>
+      {/* ── Edit Question Dialog ── */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Question</DialogTitle>
+            <DialogDescription>
+              Changes apply globally across all exams using this question.
+            </DialogDescription>
+          </DialogHeader>
+          {editQuestionId && editQuestionData && (
+            <QuestionForm
+              questionId={editQuestionId}
+              initialData={editQuestionData}
+              mode="dialog"
+              onSuccess={handleEditSuccess}
+              onCancel={() => setEditDialogOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function QuestionCard({ question, index, showAnswer }: { question: QuestionDetail; index: number; showAnswer: boolean }) {
+function QuestionCard({
+  question, index, showAnswer, onEdit, onRemove, loadingEdit,
+}: {
+  question:    QuestionDetail
+  index:       number
+  showAnswer:  boolean
+  onEdit:      () => void
+  onRemove:    () => void
+  loadingEdit: boolean
+}) {
   const isNumerical = question.questionType === 'numerical'
 
   return (
@@ -346,12 +418,44 @@ function QuestionCard({ question, index, showAnswer }: { question: QuestionDetai
       <div className="border-t border-gray-100 px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 text-xs">
           <span className="text-emerald-600 font-semibold">+{question.marks} marks</span>
-          {question.negativeMarks > 0 && <span className="text-red-500 font-semibold">-{question.negativeMarks} negative</span>}
+          {question.negativeMarks > 0 && (
+            <span className="text-red-500 font-semibold">-{question.negativeMarks} negative</span>
+          )}
         </div>
+
+        {/* ── Edit + Remove buttons ── */}
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={loadingEdit}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+          >
+            {loadingEdit
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <Edit className="h-3 w-3" />
+            }
+            Edit Question
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <Trash className="h-3 w-3" />
+            Remove
+          </button>
+        </div>
+
         {question.explanation && showAnswer && (
           <div className="w-full mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-            <p className="text-xs font-semibold text-blue-700 mb-1 flex items-center gap-1"><BookOpen className="h-3 w-3" />Explanation</p>
-            <p className="text-xs text-blue-800 leading-relaxed [&_p]:inline [&_*]:inline" dangerouslySetInnerHTML={{ __html: question.explanation }} />
+            <p className="text-xs font-semibold text-blue-700 mb-1 flex items-center gap-1">
+              <BookOpen className="h-3 w-3" />Explanation
+            </p>
+            <p
+              className="text-xs text-blue-800 leading-relaxed [&_p]:inline [&_*]:inline"
+              dangerouslySetInnerHTML={{ __html: question.explanation }}
+            />
           </div>
         )}
       </div>
@@ -774,6 +878,42 @@ export default function CreateExamPage() {
     } finally { setSubmitting(false) }
   }
 
+  // refresh a single question in preview after edit
+  const handlePreviewQuestionUpdated = useCallback(async (questionId: string) => {
+    try {
+      const res  = await fetch(`/api/admin/questions/${questionId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const q    = data.question
+      const meta = allQuestions.find(aq => aq.id === questionId)
+      const updated: QuestionDetail = {
+        ...q,
+        topicName:   meta?.topicName   || '',
+        subTopicName: meta?.subTopicName || '',
+        subjectName: meta?.subjectName  || '',
+      }
+      setPreviewQuestions(prev =>
+        prev.map(pq => pq.id === questionId ? updated : pq)
+      )
+    } catch {
+      toast.error('Failed to refresh question preview')
+    }
+  }, [allQuestions])
+
+  // remove a question from preview
+  const handlePreviewQuestionRemoved = useCallback((questionId: string) => {
+    const remaining = previewQuestions.filter(q => q.id !== questionId)
+    setPreviewQuestions(remaining)
+    setSelectedIds(prev => prev.filter(id => id !== questionId))
+    if (remaining.length < 2) {
+      toast.warning(
+        remaining.length === 0
+          ? 'No questions left. Add questions before creating.'
+          : 'You need at least 2 questions to create an exam.'
+      )
+    }
+  }, [previewQuestions])
+
   if (step === 3) {
     return (
       <ExamPreview
@@ -783,6 +923,8 @@ export default function CreateExamPage() {
         onEdit={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
         onSubmit={handleSubmit}
         submitting={submitting}
+        onQuestionUpdated={handlePreviewQuestionUpdated}
+        onQuestionRemoved={handlePreviewQuestionRemoved}
       />
     )
   }
@@ -1008,7 +1150,7 @@ export default function CreateExamPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-[220px_1fr_280px] gap-4 items-start">
+            <div className="grid grid-cols-[200px_1fr_260px] gap-4 items-start">
 
               {/* LEFT: Filters sidebar */}
               <div className="sticky top-4 space-y-4">
@@ -1044,9 +1186,11 @@ export default function CreateExamPage() {
                         <Select value={filterSubject} onValueChange={v => { setFilterSubject(v); setFilterTopic('all'); setFilterSubTopic('all') }}>
                           <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All ({allQuestions.length})</SelectItem>
+                            <SelectItem value="all">All Subjects ({allQuestions.length}q)</SelectItem>
                             {availableSubjectsInQuestions.map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name} ({allQuestions.filter(q => q.subjectId === s.id).length})</SelectItem>
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name} • {allQuestions.filter(q => q.subjectId === s.id).length}q
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1146,7 +1290,7 @@ export default function CreateExamPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="max-h-[600px] overflow-y-auto divide-y divide-gray-100">
+                  <div className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-gray-100">
                     {loadingQuestions ? (
                       <div className="flex flex-col items-center justify-center py-16 gap-2">
                         <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
@@ -1213,6 +1357,41 @@ export default function CreateExamPage() {
                       </CardTitle>
                       <span className="text-xs text-gray-500 font-medium">{totalSelectedMarks} marks</span>
                     </div>
+
+                    {/* ── Per-subject breakdown ── */}
+                    {selectedIds.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {availableSubjectsInQuestions.map(s => {
+                          const count = selectedQuestions.filter(q => q.subjectId === s.id).length
+                          if (count === 0) return null
+                          const subjectMarks = selectedQuestions
+                            .filter(q => q.subjectId === s.id)
+                            .reduce((sum, q) => sum + q.marks, 0)
+                          return (
+                            <div key={s.id} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded-md border border-gray-100">
+                              <span className="text-xs font-medium text-gray-700 truncate">{s.name}</span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                                <span className="text-xs text-blue-600 font-semibold">{count}Q</span>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-xs text-gray-500">{subjectMarks}m</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {/* show total only for multi-subject */}
+                        {availableSubjectsInQuestions.length > 1 && (
+                          <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded-md border border-blue-100 mt-1">
+                            <span className="text-xs font-semibold text-blue-700">Total</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-blue-700 font-semibold">{selectedIds.length}Q</span>
+                              <span className="text-blue-300 text-xs">·</span>
+                              <span className="text-xs text-blue-600">{totalSelectedMarks}m</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {selectedIds.length > 0 && !formData.randomizeOrder && (
                       <p className="text-xs text-gray-400 mt-1">Drag to reorder</p>
                     )}
@@ -1229,7 +1408,7 @@ export default function CreateExamPage() {
                     ) : (
                       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                         <SortableContext items={selectedIds} strategy={verticalListSortingStrategy}>
-                          <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-0.5">
+                          <div className="space-y-1.5 max-h-[calc(100vh-420px)] overflow-y-auto pr-0.5">
                             {selectedQuestions.map((q, i) => (
                               <SortableQuestionRow key={q.id} question={q} index={i} onRemove={removeSelected} />
                             ))}

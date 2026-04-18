@@ -66,9 +66,6 @@ const questionSchema = z.object({
   (data) => data.topicId || data.topicName,
   { message: 'Topic is required', path: ['topicId'] }
 ).refine(
-  (data) => data.subTopicId || data.subTopicName,
-  { message: 'SubTopic is required', path: ['subTopicId'] }
-).refine(
   // ── CHANGED: MCQ options now accept image-only content ──────────────────
   (data) => {
     if (data.questionType === 'mcq') {
@@ -372,8 +369,6 @@ export function QuestionForm({
         payload.subTopicId = data.subTopicId;
       } else if (subTopicMode === 'create' && data.subTopicName) {
         payload.subTopicName = data.subTopicName;
-      } else {
-        throw new Error('Please select or create a subtopic');
       }
 
       if (questionType === 'mcq') {
@@ -579,7 +574,7 @@ export function QuestionForm({
             {/* SubTopic */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>SubTopic *</Label>
+                <Label>SubTopic <span className="text-gray-400 font-normal text-xs">(optional)</span></Label>
                 {subTopics.length > 0 && (
                   <button
                     type="button"

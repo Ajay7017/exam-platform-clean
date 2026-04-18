@@ -2,6 +2,7 @@
 import { Navbar } from '@/components/layout/Navbar';
 import { StudentSidebar } from '@/components/layout/StudentSidebar';
 import { PhoneRequiredBanner } from '@/components/layout/PhoneRequiredBanner';
+import { FeedbackNotificationPopup } from '@/components/student/FeedbackNotificationPopup';
 
 export default function StudentLayout({
   children,
@@ -20,6 +21,7 @@ export default function StudentLayout({
           </div>
         </main>
       </div>
+      <FeedbackNotificationPopup />
     </div>
   );
 }
