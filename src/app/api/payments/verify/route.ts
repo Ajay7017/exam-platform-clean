@@ -9,41 +9,37 @@ import { cache } from '@/lib/redis'
 
 export async function POST(request: Request) {
   try {
-    // 1. Authenticate user
+    // 1. Authenticate
     const session = await requireAuth()
     const userId = session.user.id
 
-    // 2. Parse and validate request
+    // 2. Parse and validate
     const body = await request.json()
     const {
       razorpayOrderId,
       razorpayPaymentId,
       razorpaySignature,
-      purchaseId
+      purchaseId,
     } = verifyPaymentSchema.parse(body)
 
-    // 3. Fetch purchase record with related data
+    // 3. Fetch purchase — include both exam and bundle relations
     const purchase = await prisma.purchase.findUnique({
       where: { id: purchaseId },
       include: {
         exam: {
-          select: {
-            id: true,
-            title: true,
-          }
+          select: { id: true, title: true },
+        },
+        bundle: {
+          select: { id: true, name: true },
         },
         payment: true,
         user: {
-          select: {
-            id: true,
-            email: true,
-            name: true
-          }
-        }
-      }
+          select: { id: true, email: true, name: true },
+        },
+      },
     })
 
-    // 4. Validate purchase record
+    // 4. Validate purchase exists
     if (!purchase) {
       console.error('Purchase not found:', purchaseId)
       return NextResponse.json(
@@ -52,32 +48,35 @@ export async function POST(request: Request) {
       )
     }
 
-    // 5. Authorization check
+    // 5. Authorization
     if (purchase.userId !== userId) {
-      console.error('Unauthorized purchase access:', {
-        purchaseId,
-        userId,
-        purchaseUserId: purchase.userId
-      })
+      console.error('Unauthorized purchase access:', { purchaseId, userId })
       return NextResponse.json(
         { error: 'Unauthorized access to purchase' },
         { status: 403 }
       )
     }
 
-    // 6. Check if already verified
+    // 6. Determine purchase type
+    const isBundle = purchase.type === 'bundle'
+    const displayName = isBundle
+      ? (purchase.bundle?.name ?? 'Bundle')
+      : (purchase.exam?.title ?? 'Exam')
+
+    // 7. Already verified
     if (purchase.status === 'active') {
       console.log('Payment already verified:', purchaseId)
       return NextResponse.json({
         success: true,
         message: 'Payment already verified',
         purchaseId: purchase.id,
-        examId: purchase.exam.id,
-        examTitle: purchase.exam.title,
+        ...(isBundle
+          ? { bundleId: purchase.bundle?.id, bundleName: purchase.bundle?.name }
+          : { examId: purchase.exam?.id, examTitle: purchase.exam?.title }),
       })
     }
 
-    // 7. Validate payment record exists
+    // 8. Validate payment record
     if (!purchase.payment) {
       console.error('Payment record missing for purchase:', purchaseId)
       return NextResponse.json(
@@ -86,19 +85,16 @@ export async function POST(request: Request) {
       )
     }
 
-    // 8. Verify order ID matches
+    // 9. Verify order ID matches
     if (purchase.payment.razorpayOrderId !== razorpayOrderId) {
       console.error('Order ID mismatch:', {
         expected: purchase.payment.razorpayOrderId,
-        received: razorpayOrderId
+        received: razorpayOrderId,
       })
-      return NextResponse.json(
-        { error: 'Order ID mismatch' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Order ID mismatch' }, { status: 400 })
     }
 
-    // 9. CRITICAL: Verify Razorpay signature
+    // 10. Verify Razorpay signature
     const isValidSignature = verifyRazorpaySignature(
       razorpayOrderId,
       razorpayPaymentId,
@@ -106,36 +102,27 @@ export async function POST(request: Request) {
     )
 
     if (!isValidSignature) {
-      // Log security event
       console.error('⚠️ PAYMENT VERIFICATION FAILED - Invalid signature:', {
         purchaseId,
         userId,
         razorpayOrderId,
         razorpayPaymentId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       })
 
-      // Mark payment as failed
       await prisma.payment.update({
         where: { id: purchase.payment.id },
-        data: {
-          status: 'failed',
-          razorpayPaymentId,
-        }
+        data: { status: 'failed', razorpayPaymentId },
       })
 
       return NextResponse.json(
-        { 
-          success: false,
-          error: 'Payment verification failed. Invalid signature.' 
-        },
+        { success: false, error: 'Payment verification failed. Invalid signature.' },
         { status: 400 }
       )
     }
 
-    // 10. Use transaction for atomic updates
+    // 11. Atomic update
     const result = await prisma.$transaction(async (tx) => {
-      // Update payment record
       const updatedPayment = await tx.payment.update({
         where: { id: purchase.payment!.id },
         data: {
@@ -143,63 +130,67 @@ export async function POST(request: Request) {
           razorpaySignature,
           status: 'captured',
           paidAt: new Date(),
-        }
+        },
       })
 
-      // Calculate validity period
       const validFrom = new Date()
-      const validUntil = new Date(validFrom)
-      validUntil.setFullYear(validUntil.getFullYear() + 1) // Valid for 1 year
 
-      // Activate purchase
+      // Bundles: lifetime (validUntil = null)
+      // Single exams: 1 year
+      const validUntil = isBundle
+        ? null
+        : (() => {
+            const d = new Date(validFrom)
+            d.setFullYear(d.getFullYear() + 1)
+            return d
+          })()
+
       const updatedPurchase = await tx.purchase.update({
         where: { id: purchaseId },
-        data: {
-          status: 'active',
-          validFrom,
-          validUntil,
-        }
+        data: { status: 'active', validFrom, validUntil },
       })
 
       return { updatedPayment, updatedPurchase, validUntil }
     })
 
-    // 11. Clear cache for purchase status
-    await cache.del(`purchase:${userId}:${purchase.examId}`)
-    await cache.delPattern(`exam:${purchase.examId}:*`)
+    // 12. Clear relevant cache
+    if (isBundle && purchase.bundleId) {
+      await cache.del(`bundle:${userId}:${purchase.bundleId}`)
+    } else if (purchase.examId) {
+      await cache.del(`purchase:${userId}:${purchase.examId}`)
+      await cache.delPattern(`exam:${purchase.examId}:*`)
+    }
 
-    // 12. Log successful verification
+    // 13. Log success
     console.log('✅ Payment verified successfully:', {
       purchaseId,
       userId,
-      examId: purchase.examId,
-      examTitle: purchase.exam.title,
+      type: purchase.type,
+      displayName,
       amount: purchase.price,
       razorpayPaymentId,
       userEmail: purchase.user.email,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
 
-    // 13. TODO: Send confirmation email (implement in production)
-    // await sendPaymentConfirmationEmail({
-    //   to: purchase.user.email,
-    //   name: purchase.user.name,
-    //   examTitle: purchase.exam.title,
-    //   amount: purchase.price,
-    //   purchaseId
-    // })
-
-    // 14. Return success response
+    // 14. Return success — shape differs by type
     return NextResponse.json({
       success: true,
       message: 'Payment verified successfully',
       purchaseId: purchase.id,
-      examId: purchase.exam.id,
-      examTitle: purchase.exam.title,
-      validUntil: result.validUntil.toISOString(),
       amount: purchase.price,
+      ...(isBundle
+        ? {
+            bundleId:   purchase.bundle?.id,
+            bundleName: purchase.bundle?.name,
+            validUntil: null,
+          }
+        : {
+            examId:    purchase.exam?.id,
+            examTitle: purchase.exam?.title,
+            validUntil: result.validUntil?.toISOString(),
+          }),
     })
-
   } catch (error) {
     console.error('Payment verification error:', error)
     return handleApiError(error)

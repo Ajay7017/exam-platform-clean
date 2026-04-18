@@ -25,8 +25,13 @@ import {
   LayoutGrid,
   List,
   Tag,
+  Package,
+  Sparkles,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+// ── types ───────────────────────────────────────────────────────────────────
 
 interface Exam {
   id: string;
@@ -44,10 +49,23 @@ interface Exam {
   isPurchased: boolean;
   topics: string[];
   totalAttempts: number;
-  tags: string[];   // NEW
+  tags: string[];
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────
+interface Bundle {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number;
+  originalPrice: number;
+  discount: number;
+  totalExams: number;
+  isPurchased: boolean;
+  examTitles: string[];
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 const SUBJECT_GRADIENTS = [
   'from-violet-500 to-purple-700',
@@ -80,7 +98,7 @@ function getDifficultyColor(d: string) {
   }
 }
 
-// ── Card Header ────────────────────────────────────────────────────────────
+// ── Exam Card Header ─────────────────────────────────────────────────────────
 
 function ExamCardHeader({ exam }: { exam: Exam }) {
   const gradient = getSubjectGradient(exam.subject);
@@ -104,9 +122,7 @@ function ExamCardHeader({ exam }: { exam: Exam }) {
         </span>
       </div>
       <div className="absolute top-3 left-3">
-        <Badge className={getDifficultyColor(exam.difficulty)}>
-          {exam.difficulty}
-        </Badge>
+        <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
       </div>
       <div className="absolute top-3 right-3">
         {exam.isFree ? (
@@ -121,7 +137,7 @@ function ExamCardHeader({ exam }: { exam: Exam }) {
   );
 }
 
-// ── Grid Card ──────────────────────────────────────────────────────────────
+// ── Exam Grid Card ───────────────────────────────────────────────────────────
 
 function ExamGridCard({ exam }: { exam: Exam }) {
   return (
@@ -134,7 +150,6 @@ function ExamGridCard({ exam }: { exam: Exam }) {
           </h3>
           <p className="text-sm text-gray-500 mb-2">{exam.subject}</p>
 
-          {/* NEW: tag pills on card */}
           {exam.tags && exam.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-3">
               {exam.tags.map(tag => (
@@ -194,7 +209,7 @@ function ExamGridCard({ exam }: { exam: Exam }) {
   );
 }
 
-// ── List Row ───────────────────────────────────────────────────────────────
+// ── Exam List Row ────────────────────────────────────────────────────────────
 
 function ExamListRow({ exam }: { exam: Exam }) {
   const gradient = getSubjectGradient(exam.subject);
@@ -210,7 +225,6 @@ function ExamListRow({ exam }: { exam: Exam }) {
         <p className="font-semibold text-gray-900 truncate">{exam.title}</p>
         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
           <span className="text-sm text-gray-500">{exam.subject}</span>
-          {/* NEW: tags in list row */}
           {exam.tags && exam.tags.map(tag => (
             <span
               key={tag}
@@ -222,9 +236,7 @@ function ExamListRow({ exam }: { exam: Exam }) {
         </div>
       </div>
 
-      <Badge className={getDifficultyColor(exam.difficulty)}>
-        {exam.difficulty}
-      </Badge>
+      <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
 
       <div className="hidden md:flex items-center gap-4 text-sm text-gray-600">
         <div className="flex items-center gap-1">
@@ -245,9 +257,7 @@ function ExamListRow({ exam }: { exam: Exam }) {
         {exam.isFree ? (
           <span className="text-green-600 font-semibold">Free</span>
         ) : (
-          <span className="font-semibold text-gray-900">
-            ₹{(exam.price / 100).toFixed(0)}
-          </span>
+          <span className="font-semibold text-gray-900">₹{(exam.price / 100).toFixed(0)}</span>
         )}
       </div>
 
@@ -265,66 +275,236 @@ function ExamListRow({ exam }: { exam: Exam }) {
   );
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────
+// ── Bundle Card ──────────────────────────────────────────────────────────────
+
+// PATCH for BundleCard component inside src/app/(student)/exams/page.tsx
+// Replace the existing BundleCard function with this one.
+// Only the description rendering changes — line-clamp-2 → per-line rendering.
+
+function BundleCard({ bundle }: { bundle: Bundle }) {
+  return (
+    <Card className="hover:shadow-lg transition-shadow overflow-hidden group">
+      <CardContent className="p-0">
+        {/* Header */}
+        <div className="relative h-36 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-t-lg overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-10"
+            style={{
+              backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
+              backgroundSize: '18px 18px',
+            }}
+          />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+              <Package className="h-7 w-7 text-white" />
+            </div>
+            <span className="text-white/80 text-xs font-medium tracking-wide uppercase">
+              Test Bundle
+            </span>
+          </div>
+          {bundle.discount > 0 && (
+            <div className="absolute top-3 left-3">
+              <Badge className="bg-orange-100 text-orange-700">{bundle.discount}% OFF</Badge>
+            </div>
+          )}
+          <div className="absolute top-3 right-3">
+            <Badge className="bg-white/20 text-white border border-white/30">
+              {bundle.totalExams} Exams
+            </Badge>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-4">
+          <h3 className="font-semibold text-gray-900 truncate mb-1" title={bundle.name}>
+            {bundle.name}
+          </h3>
+
+          {/* Description — each line rendered separately */}
+          {bundle.description && (
+            <div className="mb-3 space-y-0.5">
+              {bundle.description.split('\n').filter(Boolean).map((line, i) => (
+                <p key={i} className="text-xs text-gray-500 leading-relaxed">
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Stats row */}
+          <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+            <div className="flex items-center gap-1">
+              <Package className="h-3.5 w-3.5" />
+              <span>{bundle.totalExams} exams</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Lifetime access</span>
+            </div>
+          </div>
+
+          {/* Price */}
+          <div className="mb-4">
+            {bundle.isPurchased ? (
+              <Badge className="bg-green-100 text-green-800">Purchased</Badge>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-base font-bold text-gray-900">
+                  ₹{(bundle.price / 100).toFixed(0)}
+                </span>
+                {bundle.discount > 0 && (
+                  <>
+                    <span className="text-sm text-gray-400 line-through">
+                      ₹{(bundle.originalPrice / 100).toFixed(0)}
+                    </span>
+                    <span className="text-xs text-green-600 font-semibold flex items-center gap-0.5">
+                      <Sparkles className="h-3 w-3" />
+                      Save ₹{((bundle.originalPrice - bundle.price) / 100).toFixed(0)}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* CTA */}
+          <Button className="w-full" size="sm" asChild>
+            <Link href={`/bundles/${bundle.slug}`} className="flex items-center justify-center gap-1">
+              Explore Bundle
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Bundle Skeleton ───────────────────────────────────────────────────────────
+
+function BundleSkeleton() {
+  return (
+    <Card className="overflow-hidden animate-pulse">
+      <div className="h-36 bg-gray-200 rounded-t-lg" />
+      <div className="p-4 space-y-3">
+        <div className="h-4 bg-gray-200 rounded w-3/4" />
+        <div className="h-3 bg-gray-200 rounded w-full" />
+        <div className="h-3 bg-gray-200 rounded w-2/3" />
+        <div className="h-8 bg-gray-200 rounded" />
+      </div>
+    </Card>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
+type TabType = 'exams' | 'bundles';
 
 export default function ExamsPage() {
-  const [isLoading, setIsLoading]         = useState(true);
-  const [exams, setExams]                 = useState<Exam[]>([]);
-  const [allTags, setAllTags]             = useState<string[]>([]);  // NEW
-  const [searchQuery, setSearchQuery]     = useState('');
-  const [subjectFilter, setSubjectFilter] = useState('all');
-  const [diffFilter, setDiffFilter]       = useState('all');
-  const [priceFilter, setPriceFilter]     = useState('all');
-  const [tagFilter, setTagFilter]         = useState('all');         // NEW
-  const [viewMode, setViewMode]           = useState<'grid' | 'list'>(() => {
+  const [activeTab, setActiveTab] = useState<TabType>('exams');
+
+  // ── Exam state (unchanged) ──────────────────────────────────────────────
+  const [isLoadingExams, setIsLoadingExams]   = useState(true);
+  const [exams, setExams]                     = useState<Exam[]>([]);
+  const [allTags, setAllTags]                 = useState<string[]>([]);
+  const [searchQuery, setSearchQuery]         = useState('');
+  const [subjectFilter, setSubjectFilter]     = useState('all');
+  const [diffFilter, setDiffFilter]           = useState('all');
+  const [priceFilter, setPriceFilter]         = useState('all');
+  const [tagFilter, setTagFilter]             = useState('all');
+  const [viewMode, setViewMode]               = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('studentExamViewMode') as 'grid' | 'list') || 'grid';
     }
     return 'grid';
   });
-
-  const [pagination, setPagination] = useState({
+  const [examPagination, setExamPagination] = useState({
     page: 1, limit: 20, total: 0, totalPages: 0,
   });
 
-  // Re-fetch when search, difficulty, or tag changes (server-side filters)
+  // ── Bundle state ────────────────────────────────────────────────────────
+  const [isLoadingBundles, setIsLoadingBundles] = useState(false);
+  const [bundles, setBundles]                   = useState<Bundle[]>([]);
+  const [bundleSearch, setBundleSearch]         = useState('');
+  const [bundlePagination, setBundlePagination] = useState({
+    page: 1, limit: 20, total: 0, totalPages: 0,
+  });
+
+  // ── effects ─────────────────────────────────────────────────────────────
+
   useEffect(() => { fetchExams(); }, [searchQuery, diffFilter, tagFilter]);
+
+  useEffect(() => {
+    if (activeTab === 'bundles' && bundles.length === 0) fetchBundles();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'bundles') fetchBundles();
+  }, [bundleSearch]);
 
   useEffect(() => {
     localStorage.setItem('studentExamViewMode', viewMode);
   }, [viewMode]);
 
+  // ── fetchers ─────────────────────────────────────────────────────────────
+
   const fetchExams = async () => {
     try {
-      setIsLoading(true);
+      setIsLoadingExams(true);
       const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
+        page: examPagination.page.toString(),
+        limit: examPagination.limit.toString(),
       });
       if (searchQuery)          params.append('search', searchQuery);
       if (diffFilter !== 'all') params.append('difficulty', diffFilter);
-      if (tagFilter !== 'all')  params.append('tag', tagFilter);   // NEW
+      if (tagFilter !== 'all')  params.append('tag', tagFilter);
 
       const res = await fetch(`/api/exams?${params}`);
       if (!res.ok) throw new Error('Failed to fetch exams');
       const data = await res.json();
 
       setExams(data.exams);
-      if (data.allTags) setAllTags(data.allTags);   // NEW
-      setPagination(prev => ({
+      if (data.allTags) setAllTags(data.allTags);
+      setExamPagination(prev => ({
         ...prev,
         total: data.pagination.total,
         totalPages: data.pagination.totalPages,
       }));
-    } catch (error: any) {
-      console.error('Failed to fetch exams:', error);
+    } catch {
       toast.error('Failed to load exams');
     } finally {
-      setIsLoading(false);
+      setIsLoadingExams(false);
     }
   };
 
-  // Client-side filters (subject + price stay client-side as before)
+  const fetchBundles = async () => {
+    try {
+      setIsLoadingBundles(true);
+      const params = new URLSearchParams({
+        page: '1',
+        limit: '20',
+      });
+      if (bundleSearch) params.append('search', bundleSearch);
+
+      const res = await fetch(`/api/bundles?${params}`);
+      if (!res.ok) throw new Error('Failed to fetch bundles');
+      const data = await res.json();
+
+      setBundles(data.bundles);
+      setBundlePagination(prev => ({
+        ...prev,
+        total: data.pagination.total,
+        totalPages: data.pagination.totalPages,
+      }));
+    } catch {
+      toast.error('Failed to load bundles');
+    } finally {
+      setIsLoadingBundles(false);
+    }
+  };
+
+  // ── client-side exam filters ─────────────────────────────────────────────
+
   const subjects = Array.from(
     new Map(exams.map(e => [e.subjectSlug, e.subject])).entries()
   ).map(([slug, name]) => ({ slug, name }));
@@ -343,13 +523,12 @@ export default function ExamsPage() {
     priceFilter !== 'all' || tagFilter !== 'all';
 
   const clearFilters = () => {
-    setSearchQuery('');
-    setSubjectFilter('all');
-    setDiffFilter('all');
-    setPriceFilter('all');
-    setTagFilter('all');    // NEW
+    setSearchQuery(''); setSubjectFilter('all'); setDiffFilter('all');
+    setPriceFilter('all'); setTagFilter('all');
     toast.info('Filters cleared');
   };
+
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -358,180 +537,245 @@ export default function ExamsPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Browse Exams</h1>
         <p className="mt-2 text-gray-600">
-          Choose from {pagination.total} available exams across multiple subjects
+          Choose from {examPagination.total} available exams and {bundlePagination.total || ''} bundles
         </p>
       </div>
 
-      {/* Filters bar */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-3 flex-wrap">
-
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Search exams by title..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-
-            {/* NEW: Category / Tag filter */}
-            {allTags.length > 0 && (
-              <Select value={tagFilter} onValueChange={setTagFilter}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {allTags.map(tag => (
-                    <SelectItem key={tag} value={tag}>
-                      <span className="flex items-center gap-1.5">
-                        <Tag className="h-3 w-3 text-blue-500" />
-                        {tag}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {/* Subject */}
-            <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-              <SelectTrigger className="w-44">
-                <SelectValue placeholder="All Subjects" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Subjects</SelectItem>
-                {subjects.map(s => (
-                  <SelectItem key={s.slug} value={s.slug}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Difficulty */}
-            <Select value={diffFilter} onValueChange={setDiffFilter}>
-              <SelectTrigger className="w-44">
-                <SelectValue placeholder="All Difficulties" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Difficulties</SelectItem>
-                <SelectItem value="easy">Easy</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="hard">Hard</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Free / Paid */}
-            <Select value={priceFilter} onValueChange={setPriceFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="All Exams" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Exams</SelectItem>
-                <SelectItem value="free">Free Only</SelectItem>
-                <SelectItem value="paid">Paid Only</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Grid / List toggle */}
-            <div className="flex gap-1 border rounded-md p-1 h-10 self-start flex-shrink-0">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-2 rounded transition-colors ${
-                  viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
-                }`}
-                title="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-2 rounded transition-colors ${
-                  viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
-                }`}
-                title="List view"
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Active filter summary */}
-          {hasActiveFilters && (
-            <div className="mt-4 flex items-center gap-2 animate-slide-in-right">
-              <span className="text-sm text-gray-600">
-                Showing {filteredExams.length} exam{filteredExams.length !== 1 ? 's' : ''}
-                {tagFilter !== 'all' && (
-                  <span className="ml-1 inline-flex items-center gap-1 text-blue-700 font-medium">
-                    in <Tag className="h-3 w-3" />{tagFilter}
-                  </span>
-                )}
+      {/* ── Tab switcher ── */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+        {([
+          { key: 'exams',   label: 'Single Exams', icon: BookOpen },
+          { key: 'bundles', label: 'Test Bundles',  icon: Package  },
+        ] as const).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === key
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+            {key === 'bundles' && bundlePagination.total > 0 && (
+              <span className="ml-1 bg-indigo-100 text-indigo-700 text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                {bundlePagination.total}
               </span>
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Clear filters
-              </Button>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ══ EXAMS TAB ══════════════════════════════════════════════════════ */}
+      {activeTab === 'exams' && (
+        <>
+          {/* Filters bar */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col md:flex-row gap-3 flex-wrap">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Search exams by title..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+
+                {allTags.length > 0 && (
+                  <Select value={tagFilter} onValueChange={setTagFilter}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {allTags.map(tag => (
+                        <SelectItem key={tag} value={tag}>
+                          <span className="flex items-center gap-1.5">
+                            <Tag className="h-3 w-3 text-blue-500" />{tag}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="All Subjects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map(s => (
+                      <SelectItem key={s.slug} value={s.slug}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={diffFilter} onValueChange={setDiffFilter}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="All Difficulties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Difficulties</SelectItem>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={priceFilter} onValueChange={setPriceFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="All Exams" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Exams</SelectItem>
+                    <SelectItem value="free">Free Only</SelectItem>
+                    <SelectItem value="paid">Paid Only</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="flex gap-1 border rounded-md p-1 h-10 self-start flex-shrink-0">
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className={`px-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="Grid view"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={`px-2 rounded transition-colors ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="List view"
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <div className="mt-4 flex items-center gap-2 animate-slide-in-right">
+                  <span className="text-sm text-gray-600">
+                    Showing {filteredExams.length} exam{filteredExams.length !== 1 ? 's' : ''}
+                    {tagFilter !== 'all' && (
+                      <span className="ml-1 inline-flex items-center gap-1 text-blue-700 font-medium">
+                        in <Tag className="h-3 w-3" />{tagFilter}
+                      </span>
+                    )}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Loading */}
+          {isLoadingExams && (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => <ExamCardSkeleton key={i} />)}
             </div>
           )}
-        </CardContent>
-      </Card>
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <ExamCardSkeleton key={i} />
-          ))}
-        </div>
-      )}
+          {/* Empty */}
+          {!isLoadingExams && filteredExams.length === 0 && (
+            <Card>
+              <CardContent className="py-12">
+                <EmptyState
+                  icon={BookOpen}
+                  title="No exams found"
+                  description="Try adjusting your search or filters to find what you're looking for"
+                  action={{ label: 'Clear Filters', onClick: clearFilters }}
+                />
+              </CardContent>
+            </Card>
+          )}
 
-      {/* Empty */}
-      {!isLoading && filteredExams.length === 0 && (
-        <Card>
-          <CardContent className="py-12">
-            <EmptyState
-              icon={BookOpen}
-              title="No exams found"
-              description="Try adjusting your search or filters to find what you're looking for"
-              action={{ label: 'Clear Filters', onClick: clearFilters }}
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Grid view */}
-      {!isLoading && filteredExams.length > 0 && viewMode === 'grid' && (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredExams.map((exam, index) => (
-            <div
-              key={exam.id}
-              className="animate-scale-in"
-              style={{ animationDelay: `${index * 0.05}s` }}
-            >
-              <ExamGridCard exam={exam} />
+          {/* Grid view */}
+          {!isLoadingExams && filteredExams.length > 0 && viewMode === 'grid' && (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {filteredExams.map((exam, index) => (
+                <div key={exam.id} className="animate-scale-in" style={{ animationDelay: `${index * 0.05}s` }}>
+                  <ExamGridCard exam={exam} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+
+          {/* List view */}
+          {!isLoadingExams && filteredExams.length > 0 && viewMode === 'list' && (
+            <Card>
+              <CardContent className="p-0">
+                {filteredExams.map(exam => <ExamListRow key={exam.id} exam={exam} />)}
+              </CardContent>
+            </Card>
+          )}
+
+          {!isLoadingExams && filteredExams.length > 0 && (
+            <div className="text-center text-sm text-gray-600">
+              Showing {filteredExams.length} of {examPagination.total} exams
+            </div>
+          )}
+        </>
       )}
 
-      {/* List view */}
-      {!isLoading && filteredExams.length > 0 && viewMode === 'list' && (
-        <Card>
-          <CardContent className="p-0">
-            {filteredExams.map(exam => (
-              <ExamListRow key={exam.id} exam={exam} />
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      {/* ══ BUNDLES TAB ════════════════════════════════════════════════════ */}
+      {activeTab === 'bundles' && (
+        <>
+          {/* Bundle search bar */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  placeholder="Search bundles..."
+                  value={bundleSearch}
+                  onChange={e => setBundleSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-      {/* Count footer */}
-      {!isLoading && filteredExams.length > 0 && (
-        <div className="text-center text-sm text-gray-600">
-          Showing {filteredExams.length} of {pagination.total} exams
-        </div>
+          {/* Loading */}
+          {isLoadingBundles && (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => <BundleSkeleton key={i} />)}
+            </div>
+          )}
+
+          {/* Empty */}
+          {!isLoadingBundles && bundles.length === 0 && (
+            <Card>
+              <CardContent className="py-12">
+                <EmptyState
+                  icon={Package}
+                  title="No bundles available"
+                  description="Check back soon — test bundles will appear here when available."
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Bundle grid */}
+          {!isLoadingBundles && bundles.length > 0 && (
+            <>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {bundles.map((bundle, index) => (
+                  <div key={bundle.id} className="animate-scale-in" style={{ animationDelay: `${index * 0.05}s` }}>
+                    <BundleCard bundle={bundle} />
+                  </div>
+                ))}
+              </div>
+              <div className="text-center text-sm text-gray-600">
+                Showing {bundles.length} of {bundlePagination.total} bundle{bundlePagination.total !== 1 ? 's' : ''}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );

@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     if (!user?.phone || user.phone.trim() === '') {
       return NextResponse.json(
-        { 
+        {
           error: 'Phone number required',
           code: 'PHONE_REQUIRED',
           message: 'Please add your phone number to your profile before taking an exam.'
@@ -78,8 +78,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
     }
 
+    // ── Published check with bundle ownership bypass ───────────────────────
+    // An unpublished exam is accessible if the student owns it via a bundle.
     if (!exam.isPublished) {
-      return NextResponse.json({ error: 'This exam is not yet published' }, { status: 403 })
+      const bundlePurchase = await prisma.purchase.findFirst({
+        where: {
+          userId: session.user.id,
+          type: 'bundle',
+          status: 'active',
+          OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }],
+          bundle: { exams: { some: { examId } } },
+        },
+      })
+
+      if (!bundlePurchase) {
+        return NextResponse.json(
+          { error: 'This exam is not yet published' },
+          { status: 403 }
+        )
+      }
+      // Student has bundle access — allow through
     }
 
     // 2. Check for existing ACTIVE attempt (resume flow — unchanged)
@@ -125,8 +143,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine if this is an official or practice attempt.
-    // Official = the student's FIRST completed attempt for this exam.
-    // Any subsequent attempt is practice (doesn't affect leaderboard/rank).
     const previousCompletedAttempt = await prisma.attempt.findFirst({
       where: {
         userId:       session.user.id,

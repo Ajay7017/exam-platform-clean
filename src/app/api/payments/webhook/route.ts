@@ -8,13 +8,13 @@ import { cache } from '@/lib/redis'
 /**
  * Razorpay Webhook Handler
  * Processes asynchronous payment events
- * 
+ *
  * CRITICAL: This endpoint must be publicly accessible
  * Security is handled via signature verification
  */
 export async function POST(request: Request) {
   const startTime = Date.now()
-  
+
   try {
     // 1. Get raw body for signature verification (IMPORTANT: Don't use request.json())
     const rawBody = await request.text()
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     // 3. Verify webhook signature (CRITICAL SECURITY CHECK)
     const isValid = verifyWebhookSignature(rawBody, signature)
-    
+
     if (!isValid) {
       console.error('⚠️ Webhook rejected: Invalid signature', {
         timestamp: new Date().toISOString(),
@@ -46,12 +46,12 @@ export async function POST(request: Request) {
 
     // 4. Parse webhook payload
     const event = JSON.parse(rawBody)
-    
+
     console.log('Webhook received:', {
       event: event.event,
       paymentId: event.payload?.payment?.entity?.id,
       orderId: event.payload?.payment?.entity?.order_id,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
 
     // 5. Handle different webhook events
@@ -60,21 +60,21 @@ export async function POST(request: Request) {
       case 'payment.captured':
         result = await handlePaymentCaptured(event.payload.payment.entity)
         break
-      
+
       case 'payment.failed':
         result = await handlePaymentFailed(event.payload.payment.entity)
         break
-      
+
       case 'payment.authorized':
         // Payment authorized but not captured yet
         console.log('Payment authorized:', event.payload.payment.entity.id)
         break
-      
+
       case 'order.paid':
         // All payments for an order are successful
         console.log('Order fully paid:', event.payload.order.entity.id)
         break
-      
+
       default:
         console.log('Unhandled webhook event:', event.event)
     }
@@ -83,23 +83,22 @@ export async function POST(request: Request) {
     const duration = Date.now() - startTime
     console.log(`Webhook processed in ${duration}ms`)
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       received: true,
       event: event.event,
-      processingTime: duration
+      processingTime: duration,
     })
-
   } catch (error) {
     console.error('Webhook processing error:', error)
-    
+
     // Return 200 to prevent Razorpay retries for parse errors
     // Return 500 for actual processing errors to trigger retries
     const statusCode = error instanceof SyntaxError ? 200 : 500
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Webhook processing failed',
-        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined,
       },
       { status: statusCode }
     )
@@ -107,32 +106,38 @@ export async function POST(request: Request) {
 }
 
 /**
- * Handle successful payment capture
+ * Handle successful payment capture.
+ * Works for both single exam purchases (type = "exam") and
+ * bundle purchases (type = "bundle").
  */
 async function handlePaymentCaptured(payment: any) {
-  const orderId = payment.order_id
+  const orderId  = payment.order_id
   const paymentId = payment.id
-  const amount = payment.amount
-  const method = payment.method
+  const amount   = payment.amount
+  const method   = payment.method
 
   console.log('Processing payment.captured:', { orderId, paymentId, amount })
 
   try {
-    // Find payment record
+    // Find payment record — include both exam and bundle relations
+    // so we can determine purchase type and clear the right cache keys.
     const paymentRecord = await prisma.payment.findUnique({
       where: { razorpayOrderId: orderId },
-      include: { 
+      include: {
         purchase: {
           include: {
             exam: {
-              select: { id: true, title: true }
+              select: { id: true, title: true },
+            },
+            bundle: {
+              select: { id: true, name: true },
             },
             user: {
-              select: { id: true, email: true, name: true }
-            }
-          }
-        }
-      }
+              select: { id: true, email: true, name: true },
+            },
+          },
+        },
+      },
     })
 
     if (!paymentRecord) {
@@ -151,10 +156,13 @@ async function handlePaymentCaptured(payment: any) {
       console.error('Amount mismatch:', {
         expected: paymentRecord.amount,
         received: amount,
-        orderId
+        orderId,
       })
-      // Don't fail - just log. Razorpay might include fees.
+      // Don't fail — just log. Razorpay might include fees.
     }
+
+    // Determine purchase type — drives validUntil and cache key logic below
+    const isBundle = paymentRecord.purchase.type === 'bundle'
 
     // Use transaction for atomic updates
     const result = await prisma.$transaction(async (tx) => {
@@ -166,15 +174,23 @@ async function handlePaymentCaptured(payment: any) {
           status: 'captured',
           method,
           paidAt: new Date(payment.created_at * 1000),
-        }
+        },
       })
 
       // Activate purchase if not already active
       let updatedPurchase = paymentRecord.purchase
       if (paymentRecord.purchase.status !== 'active') {
         const validFrom = new Date()
-        const validUntil = new Date(validFrom)
-        validUntil.setFullYear(validUntil.getFullYear() + 1)
+
+        // Bundles: lifetime access — validUntil must stay null.
+        // Single exams: 1-year access.
+        const validUntil = isBundle
+          ? null
+          : (() => {
+              const d = new Date(validFrom)
+              d.setFullYear(d.getFullYear() + 1)
+              return d
+            })()
 
         updatedPurchase = await tx.purchase.update({
           where: { id: paymentRecord.purchaseId },
@@ -182,31 +198,40 @@ async function handlePaymentCaptured(payment: any) {
             status: 'active',
             validFrom,
             validUntil,
-          }
+          },
         })
       }
 
       return { updatedPayment, updatedPurchase }
     })
 
-    // Clear cache
-    await cache.del(`purchase:${paymentRecord.purchase.userId}:${paymentRecord.purchase.examId}`)
-    await cache.delPattern(`exam:${paymentRecord.purchase.examId}:*`)
+    // Clear the correct cache keys based on purchase type
+    const { userId } = paymentRecord.purchase
+    if (isBundle && paymentRecord.purchase.bundleId) {
+      await cache.del(`bundle:${userId}:${paymentRecord.purchase.bundleId}`)
+    } else if (paymentRecord.purchase.examId) {
+      await cache.del(`purchase:${userId}:${paymentRecord.purchase.examId}`)
+      await cache.delPattern(`exam:${paymentRecord.purchase.examId}:*`)
+    }
+
+    const displayName = isBundle
+      ? (paymentRecord.purchase.bundle?.name ?? 'Bundle')
+      : (paymentRecord.purchase.exam?.title ?? 'Exam')
 
     console.log('✅ Payment captured via webhook:', {
       purchaseId: paymentRecord.purchaseId,
+      type: paymentRecord.purchase.type,
+      displayName,
       paymentId,
-      userId: paymentRecord.purchase.userId,
-      examId: paymentRecord.purchase.examId,
+      userId,
       amount,
-      method
+      method,
     })
 
     // TODO: Send confirmation email
     // await sendPaymentConfirmationEmail({...})
 
     return { success: true, purchaseId: paymentRecord.purchaseId }
-
   } catch (error) {
     console.error('Error processing payment.captured:', error)
     throw error // Re-throw to trigger Razorpay retry
@@ -214,19 +239,20 @@ async function handlePaymentCaptured(payment: any) {
 }
 
 /**
- * Handle failed payment
+ * Handle failed payment.
+ * No type-specific logic needed — just mark both records as failed.
  */
 async function handlePaymentFailed(payment: any) {
-  const orderId = payment.order_id
-  const paymentId = payment.id
-  const errorCode = payment.error_code
+  const orderId          = payment.order_id
+  const paymentId        = payment.id
+  const errorCode        = payment.error_code
   const errorDescription = payment.error_description
 
   console.log('Processing payment.failed:', {
     orderId,
     paymentId,
     errorCode,
-    errorDescription
+    errorDescription,
   })
 
   try {
@@ -236,11 +262,11 @@ async function handlePaymentFailed(payment: any) {
         purchase: {
           include: {
             user: {
-              select: { email: true, name: true }
-            }
-          }
-        }
-      }
+              select: { email: true, name: true },
+            },
+          },
+        },
+      },
     })
 
     if (!paymentRecord) {
@@ -255,26 +281,25 @@ async function handlePaymentFailed(payment: any) {
         data: {
           status: 'failed',
           razorpayPaymentId: paymentId,
-        }
+        },
       }),
       prisma.purchase.update({
         where: { id: paymentRecord.purchaseId },
-        data: { status: 'failed' }
-      })
+        data: { status: 'failed' },
+      }),
     ])
 
     console.log('Payment marked as failed:', {
       purchaseId: paymentRecord.purchaseId,
       paymentId,
       errorCode,
-      errorDescription
+      errorDescription,
     })
 
     // TODO: Send failure notification email
     // await sendPaymentFailedEmail({...})
 
     return { success: true, marked: 'failed' }
-
   } catch (error) {
     console.error('Error processing payment.failed:', error)
     throw error

@@ -279,6 +279,7 @@ model Bundle {
   isActive     Boolean  @default(true)
   validityDays Int      @default(365)
   createdAt    DateTime @default(now())
+  thumbnail       String?
   
   exams     BundleExam[]
   purchases Purchase[]

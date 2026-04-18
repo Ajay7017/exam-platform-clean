@@ -10,79 +10,129 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
-    // Optional auth - works for both logged in and guest users
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id
-    
     const { slug } = params
-    
-    // Fetch exam by slug
-    const exam = await prisma.exam.findUnique({
-      where: { 
-        slug,
-        isPublished: true // Only show published exams
-      },
+
+    // ── Step 1: try published exam first (normal path) ────────────────────
+    let exam = await prisma.exam.findUnique({
+      where: { slug, isPublished: true },
       include: {
-        subject: {
-          select: { name: true, slug: true }
-        },
+        subject: { select: { name: true, slug: true } },
         questions: {
           include: {
             question: {
               include: {
-                topic: {
-                  select: { name: true, subject: { select: { name: true } } }
-                },
+                topic: { select: { name: true, subject: { select: { name: true } } } },
                 options: {
-                  select: {
-                    id: true,
-                    optionKey: true,
-                    text: true,
-                    imageUrl: true
-                    // CRITICAL: DO NOT include isCorrect field for students!
-                  },
-                  orderBy: { sequence: 'asc' }
-                }
-              }
-            }
+                  select: { id: true, optionKey: true, text: true, imageUrl: true },
+                  orderBy: { sequence: 'asc' },
+                },
+              },
+            },
           },
-          orderBy: { sequence: 'asc' }
+          orderBy: { sequence: 'asc' },
         },
-        _count: {
-          select: { attempts: true }
+        _count: { select: { attempts: true } },
+      },
+    })
+
+    // ── Step 2: if not published, check bundle ownership ──────────────────
+    // An unpublished exam can be accessed if the student owns a bundle
+    // that contains it (bundle-only / exclusive exam).
+    let isBundleOnlyExam = false
+
+    if (!exam && userId) {
+      // Find the exam by slug without isPublished filter
+      const draftExam = await prisma.exam.findUnique({
+        where: { slug },
+        select: { id: true },
+      })
+
+      if (draftExam) {
+        // Check if student has an active bundle purchase containing this exam
+        const bundlePurchase = await prisma.purchase.findFirst({
+          where: {
+            userId,
+            type: 'bundle',
+            status: 'active',
+            OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }],
+            bundle: { exams: { some: { examId: draftExam.id } } },
+          },
+        })
+
+        if (bundlePurchase) {
+          // Student owns this exam via bundle — fetch full exam details
+          exam = await prisma.exam.findUnique({
+            where: { slug },
+            include: {
+              subject: { select: { name: true, slug: true } },
+              questions: {
+                include: {
+                  question: {
+                    include: {
+                      topic: { select: { name: true, subject: { select: { name: true } } } },
+                      options: {
+                        select: { id: true, optionKey: true, text: true, imageUrl: true },
+                        orderBy: { sequence: 'asc' },
+                      },
+                    },
+                  },
+                },
+                orderBy: { sequence: 'asc' },
+              },
+              _count: { select: { attempts: true } },
+            },
+          })
+          isBundleOnlyExam = true
         }
       }
-    })
-    
+    }
+
     if (!exam) {
-      return NextResponse.json(
-        { error: 'Exam not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
     }
-    
-    // Check purchase status for logged-in users
+
+    // ── Purchase check ────────────────────────────────────────────────────
     let isPurchased = false
-    
+
     if (userId && !exam.isFree) {
-      const purchase = await prisma.purchase.findFirst({
-        where: {
-          userId,
-          examId: exam.id,
-          status: 'active',
-          validUntil: { gte: new Date() }
+      if (isBundleOnlyExam) {
+        // Already verified bundle ownership above
+        isPurchased = true
+      } else {
+        const now = new Date()
+
+        // 1. Direct exam purchase
+        const directPurchase = await prisma.purchase.findFirst({
+          where: {
+            userId,
+            examId: exam.id,
+            status: 'active',
+            validUntil: { gte: now },
+          },
+        })
+
+        if (directPurchase) {
+          isPurchased = true
+        } else {
+          // 2. Bundle ownership
+          const bundlePurchase = await prisma.purchase.findFirst({
+            where: {
+              userId,
+              type: 'bundle',
+              status: 'active',
+              OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+              bundle: { exams: { some: { examId: exam.id } } },
+            },
+          })
+          isPurchased = !!bundlePurchase
         }
-      })
-      
-      isPurchased = !!purchase
+      }
     }
-    
-    // Get unique topics
-    const topics = [...new Set(
-      exam.questions.map(eq => eq.question.topic.name)
-    )]
-    
-    // Transform response - REMOVE SENSITIVE DATA
+
+    const topics = [...new Set(exam.questions.map((eq) => eq.question.topic.name))]
+
     const response = {
       id: exam.id,
       title: exam.title,
@@ -96,30 +146,28 @@ export async function GET(
       difficulty: exam.difficulty,
       price: exam.price,
       isFree: exam.isFree,
-      isPurchased: isPurchased,
+      isPurchased,
       instructions: exam.instructions,
       topics,
       totalAttempts: exam._count.attempts,
-      // SECURITY: Transform questions to REMOVE correct answers
-      questions: exam.questions.map(eq => ({
+      questions: exam.questions.map((eq) => ({
         id: eq.question.id,
         statement: eq.question.statement,
         imageUrl: eq.question.imageUrl,
         marks: eq.question.marks,
         difficulty: eq.question.difficulty,
-        options: eq.question.options.map(opt => ({
+        options: eq.question.options.map((opt) => ({
           key: opt.optionKey,
           text: opt.text,
-          imageUrl: opt.imageUrl
+          imageUrl: opt.imageUrl,
           // NO isCorrect field! ✅
-        }))
+        })),
         // NO correctAnswer field! ✅
         // NO explanation field! ✅
-      }))
+      })),
     }
-    
+
     return NextResponse.json(response)
-    
   } catch (error) {
     return handleApiError(error)
   }

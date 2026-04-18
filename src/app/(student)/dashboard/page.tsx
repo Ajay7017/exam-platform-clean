@@ -1,20 +1,27 @@
+// src/app/(student)/dashboard/page.tsx
 'use client';
 
 import { useSearchParams } from 'next/navigation'
-import { ResultsProcessingBanner } from '@/components/student/ResultsProcessingBanner'
+import { ResultsProcessingBanner } from '@/components/student/ResultsProcessingBanner';
+import { WelcomeModal } from '@/components/student/WelcomeModal';
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { StatsCardSkeleton } from '@/components/student/StatsCardSkeleton';
 import { SubjectLeaderboardTabs } from '@/components/student/SubjectLeaderboardTabs';
+
 import {
   BookOpen, Trophy, Award, Clock,
   TrendingUp, TrendingDown, ChevronRight,
-  BarChart2, Play,
+  BarChart2, Play, Package, Infinity, ExternalLink,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 interface DashboardData {
   stats: {
@@ -41,6 +48,30 @@ interface DashboardData {
     score: string;
     submittedAt: string | null;
   }>;
+}
+
+// Minimal shape we need from the purchases API — only bundle purchases
+interface BundleExamItem {
+  id: string
+  title: string
+  slug: string
+  subject: string
+  duration: number
+  totalQuestions: number
+  difficulty: string
+}
+
+interface BundlePurchase {
+  id: string
+  purchasedAt: string
+  bundle: {
+    id: string
+    name: string
+    slug: string
+    description: string | null
+    totalExams: number
+    exams: BundleExamItem[]
+  }
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -77,7 +108,6 @@ function getTimeAgo(dateString: string | null) {
 }
 
 function parseScoreValue(scoreStr: string): number | null {
-  // e.g. "12/48 (25%)" → 25
   const match = scoreStr.match(/\((\d+(?:\.\d+)?)%\)/)
   if (match) return parseFloat(match[1])
   return null
@@ -91,7 +121,137 @@ function ScoreColor(score: string) {
   return 'text-red-500'
 }
 
-// ── page ───────────────────────────────────────────────────────────────────
+// ── Bundle Access Section ──────────────────────────────────────────────────
+// Fetches from /api/student/purchases (built in Phase 5) and renders
+// a compact card per bundle. Silently hidden if student has no bundles.
+
+function BundleAccessSection() {
+  const router = useRouter()
+  const [bundles, setBundles] = useState<BundlePurchase[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/student/purchases')
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((data) => setBundles(data.bundlePurchases ?? []))
+      .catch(() => {/* silently fail — dashboard must not break */})
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Don't render anything while loading or if student has no bundles
+  if (loading || bundles.length === 0) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Package className="h-4 w-4 text-violet-500" />
+            My Bundle Access
+          </CardTitle>
+          <Button variant="ghost" size="sm" className="text-xs text-gray-400 h-7" asChild>
+            <Link href="/purchases?tab=bundles">
+              View all <ExternalLink className="h-3 w-3 ml-1" />
+            </Link>
+          </Button>
+        </div>
+        <p className="text-xs text-gray-400">
+          {bundles.length} bundle{bundles.length !== 1 ? 's' : ''} — lifetime access
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {bundles.map((purchase) => {
+          const isExpanded = expandedId === purchase.id
+          return (
+            <div
+              key={purchase.id}
+              className="rounded-xl border border-gray-100 overflow-hidden"
+            >
+              {/* Bundle header row */}
+              <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-violet-50 to-purple-50">
+                {/* Icon */}
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center flex-shrink-0 relative">
+                  <Package className="h-4 w-4 text-white" />
+                  <span className="absolute -top-1 -right-1 bg-white border border-purple-200 text-purple-700 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {purchase.bundle.totalExams}
+                  </span>
+                </div>
+
+                {/* Name + meta */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 text-sm truncate">
+                    {purchase.bundle.name}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-500">
+                      {purchase.bundle.totalExams} exams
+                    </span>
+                    <span className="text-xs text-violet-600 flex items-center gap-0.5">
+                      <Infinity className="h-3 w-3" /> Lifetime
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expand toggle */}
+                <button
+                  onClick={() => setExpandedId(isExpanded ? null : purchase.id)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 flex-shrink-0"
+                >
+                  {isExpanded ? 'Hide' : 'Exams'}
+                  <ChevronRight
+                    className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                  />
+                </button>
+              </div>
+
+              {/* Included exams — collapsible */}
+              {isExpanded && (
+                <div className="divide-y divide-gray-50 bg-white">
+                  {purchase.bundle.exams.map((exam) => {
+                    const gradient = getSubjectGradient(exam.subject)
+                    const initial  = getSubjectInitial(exam.subject)
+                    return (
+                      <div
+                        key={exam.id}
+                        className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors group"
+                      >
+                        {/* Subject avatar */}
+                        <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
+                          <span className="text-white font-bold text-xs">{initial}</span>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">
+                            {exam.title}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {exam.subject} · {exam.duration}m · {exam.totalQuestions} Qs
+                          </p>
+                        </div>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => router.push(`/exam/${exam.slug}/start`)}
+                        >
+                          Start
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────
 
 export default function StudentDashboard() {
   const searchParams        = useSearchParams()
@@ -166,6 +326,14 @@ export default function StudentDashboard() {
   return (
     <div className="space-y-6 animate-fade-in">
 
+      {/* Welcome modal — shows only on first visit */}
+      {session?.user && (
+        <WelcomeModal
+          userName={session.user.name || 'Student'}
+          userId={session.user.id}
+        />
+      )}
+
       {/* Processing banner */}
       {processingAttemptId && (
         <ResultsProcessingBanner attemptId={processingAttemptId} />
@@ -235,7 +403,6 @@ export default function StudentDashboard() {
                   className="flex items-center gap-4 p-3 rounded-lg border border-gray-100 hover:border-primary/30 hover:bg-primary/5 transition-all cursor-pointer group"
                   onClick={() => router.push(`/exam/take/${exam.attemptId}`)}
                 >
-                  {/* mini gradient avatar */}
                   <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
                     <span className="text-white font-bold text-sm">{initial}</span>
                   </div>
@@ -245,7 +412,6 @@ export default function StudentDashboard() {
                     <p className="text-xs text-gray-500 mt-0.5">
                       {exam.answeredCount} of {exam.totalQuestions} questions answered
                     </p>
-                    {/* progress bar */}
                     <div className="w-full h-1.5 bg-gray-200 rounded-full mt-1.5">
                       <div
                         className="h-1.5 bg-primary rounded-full transition-all"
@@ -267,6 +433,9 @@ export default function StudentDashboard() {
         </Card>
       )}
 
+      {/* ── Bundle Access (only renders if student has purchased bundles) ── */}
+      <BundleAccessSection />
+
       {/* ── Recent Activity ── */}
       {!isLoading && data && data.recentActivity.length > 0 && (
         <Card>
@@ -277,7 +446,7 @@ export default function StudentDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-gray-100">
-            {data.recentActivity.map((activity, idx) => {
+            {data.recentActivity.map((activity) => {
               const gradient = getSubjectGradient(activity.examTitle)
               const initial  = getSubjectInitial(activity.examTitle)
               const scoreColor = ScoreColor(activity.score)
@@ -287,7 +456,6 @@ export default function StudentDashboard() {
                   className="flex items-center gap-4 py-3 first:pt-0 last:pb-0 hover:bg-gray-50 -mx-2 px-2 rounded-lg transition-colors cursor-pointer group"
                   onClick={() => router.push(`/results/${activity.id}`)}
                 >
-                  {/* gradient avatar */}
                   <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0`}>
                     <span className="text-white font-bold text-xs">{initial}</span>
                   </div>

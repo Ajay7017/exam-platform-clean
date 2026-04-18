@@ -13,11 +13,11 @@ import {
   Settings,
   FolderTree,
   ChevronRight,
-  Image,
   List,
-  Layers,  // ✅ NEW: for SubTopics
+  Layers,
   ClipboardList,
   MessageSquare,
+  Package,
 } from 'lucide-react';
 
 export function AdminSidebar() {
@@ -36,11 +36,11 @@ export function AdminSidebar() {
       items: [
         { label: 'Subjects', href: '/admin/subjects', icon: FolderTree },
         { label: 'Topics', href: '/admin/topics', icon: List },
-        { label: 'SubTopics', href: '/admin/subtopics', icon: Layers }, // ✅ NEW
+        { label: 'SubTopics', href: '/admin/subtopics', icon: Layers },
         { label: 'Question Bank', href: '/admin/questions', icon: FileQuestion },
-        // { label: 'Image Upload', href: '/admin/images', icon: Image },
         { label: 'Exam Management', href: '/admin/exams', icon: ClipboardList },
-        { label: 'Study Materials', href: '/admin/materials', icon: BookOpen }, // Fixed this line
+        { label: 'Bundles', href: '/admin/bundles', icon: Package },
+        { label: 'Study Materials', href: '/admin/materials', icon: BookOpen },
       ],
     },
     {
