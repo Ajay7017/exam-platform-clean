@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
     }
 
     const transformed = bundles.map(bundle => {
-      const originalPrice = bundle.price // price is already in paise
+      const originalPrice = bundle.price
       const discountAmount = Math.round(originalPrice * (bundle.discount / 100))
       const finalPrice = originalPrice - discountAmount
 
@@ -81,6 +81,7 @@ export async function GET(request: NextRequest) {
         name: bundle.name,
         slug: bundle.slug,
         description: bundle.description,
+        thumbnail: (bundle as any).thumbnail || null,
         price: finalPrice,
         originalPrice,
         discount: bundle.discount,

@@ -31,6 +31,7 @@ interface Bundle {
   name: string
   slug: string
   description: string | null
+  thumbnail: string | null
   price: number
   discount: number
   finalPrice: number
@@ -181,19 +182,21 @@ export default function AdminBundlesPage() {
 
   function BundleCardHeader({ bundle }: { bundle: Bundle }) {
     const gradient = getBundleGradient(bundle.name)
-    const initial = getBundleInitial(bundle.name)
     return (
-      <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }}
-        />
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-          <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-            <Package className="h-7 w-7 text-white" />
-          </div>
-          <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Test Bundle</span>
-        </div>
+      <div className={`relative h-36 rounded-t-lg overflow-hidden ${!bundle.thumbnail ? `bg-gradient-to-br ${gradient}` : ''}`}>
+        {bundle.thumbnail ? (
+          <img src={bundle.thumbnail} alt={bundle.name} className="w-full h-full object-cover" />
+        ) : (
+          <>
+            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+                <Package className="h-7 w-7 text-white" />
+              </div>
+              <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Test Bundle</span>
+            </div>
+          </>
+        )}
         <div className="absolute top-3 left-3">
           <Badge className={bundle.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
             {bundle.isActive ? 'Active' : 'Inactive'}

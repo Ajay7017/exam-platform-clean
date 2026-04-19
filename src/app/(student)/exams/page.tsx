@@ -57,6 +57,7 @@ interface Bundle {
   name: string;
   slug: string;
   description: string | null;
+  thumbnail: string | null;
   price: number;
   originalPrice: number;
   discount: number;
@@ -286,23 +287,21 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
     <Card className="hover:shadow-lg transition-shadow overflow-hidden group">
       <CardContent className="p-0">
         {/* Header */}
-        <div className="relative h-36 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-t-lg overflow-hidden">
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
-              backgroundSize: '18px 18px',
-            }}
-          />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-              <Package className="h-7 w-7 text-white" />
-            </div>
-            <span className="text-white/80 text-xs font-medium tracking-wide uppercase">
-              Test Bundle
-            </span>
-          </div>
-          {bundle.discount > 0 && (
+        <div className={`relative h-36 rounded-t-lg overflow-hidden ${!bundle.thumbnail ? 'bg-gradient-to-br from-indigo-600 to-purple-700' : ''}`}>
+            {bundle.thumbnail ? (
+              <img src={bundle.thumbnail} alt={bundle.name} className="w-full h-full object-cover" />
+            ) : (
+              <>
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                  <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+                    <Package className="h-7 w-7 text-white" />
+                  </div>
+                  <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Test Bundle</span>
+                </div>
+              </>
+            )}
+            {bundle.discount > 0 && (
             <div className="absolute top-3 left-3">
               <Badge className="bg-orange-100 text-orange-700">{bundle.discount}% OFF</Badge>
             </div>
