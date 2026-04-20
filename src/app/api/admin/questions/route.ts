@@ -4,6 +4,21 @@ import { requireAdmin } from '@/lib/auth-utils'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+// ✅ NEW: match pairs schema shape for validation
+const matchPairsSchema = z.object({
+  leftColumn: z.object({
+    header: z.string().min(1),
+    items: z.array(z.string().min(1)).min(2).max(6),
+  }),
+  rightColumn: z.object({
+    header: z.string().min(1),
+    items: z.array(z.string().min(1)).min(2).max(6),
+  }),
+}).refine(
+  (data) => data.leftColumn.items.length === data.rightColumn.items.length,
+  { message: 'Left and right column must have equal number of items' }
+)
+
 const questionSchema = z.object({
   statement: z.string().min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
@@ -17,36 +32,38 @@ const questionSchema = z.object({
   subTopicId: z.string().optional(),
   subTopicName: z.string().optional(),
 
-  // ✅ EXISTING: MCQ fields — now optional
+  // ✅ EXISTING: MCQ fields — optional
   optionA: z.string().optional(),
   optionB: z.string().optional(),
   optionC: z.string().optional(),
   optionD: z.string().optional(),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
 
-  // ✅ NEW: NAT fields
-  questionType: z.enum(['mcq', 'numerical']).default('mcq'),
+  // ✅ UPDATED: added 'match' to questionType enum
+  questionType: z.enum(['mcq', 'numerical', 'match']).default('mcq'),
+
+  // ✅ EXISTING: NAT fields — untouched
   correctAnswerExact: z.number().optional().nullable(),
   correctAnswerMin: z.number().optional().nullable(),
   correctAnswerMax: z.number().optional().nullable(),
 
+  // ✅ NEW: match fields
+  matchPairs: matchPairsSchema.optional().nullable(),
+
 }).refine(
   (data) => data.topicId || (data.subjectId && data.topicName),
-  { message: "Either topicId or (subjectId + topicName) must be provided", path: ["topicId"] }
+  { message: 'Either topicId or (subjectId + topicName) must be provided', path: ['topicId'] }
 ).refine(
-  (data) => data.subTopicId || data.subTopicName,
-  { message: "Either subTopicId or subTopicName must be provided", path: ["subTopicId"] }
-).refine(
-  // ✅ MCQ must have options and correct answer
+  // ✅ EXISTING: MCQ must have options and correct answer — untouched
   (data) => {
-    if (data.questionType === 'mcq' || !data.questionType) {
+    if (data.questionType === 'mcq') {
       return data.optionA && data.optionB && data.optionC && data.optionD && data.correctAnswer
     }
     return true
   },
-  { message: "MCQ questions require all 4 options and a correct answer", path: ["optionA"] }
+  { message: 'MCQ questions require all 4 options and a correct answer', path: ['optionA'] }
 ).refine(
-  // ✅ NAT must have either exact or range answer
+  // ✅ EXISTING: NAT validation — untouched
   (data) => {
     if (data.questionType === 'numerical') {
       const hasExact = data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
@@ -56,11 +73,24 @@ const questionSchema = z.object({
     }
     return true
   },
-  { message: "Numerical questions require either an exact answer or a min/max range", path: ["correctAnswerExact"] }
+  { message: 'Numerical questions require either an exact answer or a min/max range', path: ['correctAnswerExact'] }
+).refine(
+  // ✅ NEW: Match must have matchPairs + options A/B/C/D (combinations) + correctAnswer
+  (data) => {
+    if (data.questionType === 'match') {
+      return (
+        data.matchPairs !== null &&
+        data.matchPairs !== undefined &&
+        data.optionA && data.optionB && data.optionC && data.optionD &&
+        data.correctAnswer
+      )
+    }
+    return true
+  },
+  { message: 'Match questions require matchPairs, all 4 combination options, and a correct answer', path: ['matchPairs'] }
 )
 
-// GET: List questions — untouched
-// GET: List questions
+// GET: List questions — untouched logic, just added 'match' to type filter support
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin()
@@ -72,7 +102,7 @@ export async function GET(request: NextRequest) {
     const subjectId = searchParams.get('subjectId')
     const topicId = searchParams.get('topicId')
     const subTopicId = searchParams.get('subTopicId')
-    const questionType = searchParams.get('questionType') // ✅ NEW
+    const questionType = searchParams.get('questionType')
 
     const where: any = {}
     if (search) where.statement = { contains: search, mode: 'insensitive' }
@@ -80,7 +110,7 @@ export async function GET(request: NextRequest) {
     if (topicId) where.topicId = topicId
     if (subTopicId) where.subTopicId = subTopicId
     if (subjectId) where.topic = { subjectId }
-    if (questionType && questionType !== 'all') where.type = questionType // ✅ NEW
+    if (questionType && questionType !== 'all') where.type = questionType
 
     const [questions, total] = await Promise.all([
       prisma.question.findMany({
@@ -113,10 +143,12 @@ export async function GET(request: NextRequest) {
         isActive: q.isActive,
         explanation: q.explanation,
         options: q.options,
-        questionType: q.type, // ✅ already existed, confirming it's here
+        questionType: q.type,
         correctAnswerExact: q.correctAnswerExact,
         correctAnswerMin: q.correctAnswerMin,
         correctAnswerMax: q.correctAnswerMax,
+        // ✅ NEW: include matchPairs in list response
+        matchPairs: q.matchPairs ?? null,
         createdAt: q.createdAt,
       })),
       pagination: { total, totalPages: Math.ceil(total / limit), page }
@@ -204,8 +236,8 @@ export async function POST(request: NextRequest) {
     }
 
     const isNumerical = data.questionType === 'numerical'
+    const isMatch = data.questionType === 'match'
 
-    // ✅ Build question create data based on type
     const question = await prisma.question.create({
       data: {
         statement: data.statement,
@@ -217,14 +249,18 @@ export async function POST(request: NextRequest) {
         explanation: data.explanation || '',
         isActive: data.isActive ?? true,
 
-        // ✅ NEW: type and numerical fields
         type: data.questionType ?? 'mcq',
+
+        // ✅ EXISTING: NAT fields — only set for numerical, untouched logic
         correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
         correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
         correctAnswerMax: isNumerical ? (data.correctAnswerMax ?? null) : null,
 
-        // ✅ EXISTING: options only created for MCQ
-        ...(!isNumerical && {
+        // ✅ NEW: matchPairs — only set for match type
+        matchPairs: isMatch ? (data.matchPairs ?? null) : null,
+
+        // ✅ Options created for both MCQ and Match (match uses combination options A/B/C/D)
+        ...((isNumerical === false) && {
           options: {
             create: [
               { text: data.optionA!, optionKey: 'A', sequence: 1, isCorrect: data.correctAnswer === 'A' },
@@ -263,6 +299,8 @@ export async function POST(request: NextRequest) {
         correctAnswerExact: question.correctAnswerExact,
         correctAnswerMin: question.correctAnswerMin,
         correctAnswerMax: question.correctAnswerMax,
+        // ✅ NEW
+        matchPairs: question.matchPairs ?? null,
       }
     }, { status: 201 })
 

@@ -270,7 +270,9 @@ export function RichTextEditor({
     onUpdate: ({ editor }) => {
       isInternalChange.current = true;
       const html = editor.getHTML();
-      onChange(html === '<p></p>' ? '' : html);
+      // Only emit empty string if truly empty — preserve image-only content
+      const isEmpty = html === '<p></p>' || html === '';
+      onChange(isEmpty ? '' : html);
     },
     editorProps: {
       attributes: {
@@ -310,8 +312,10 @@ export function RichTextEditor({
     }
     const incoming = value || '';
     const current = editor.getHTML();
-    const normalise = (html: string) =>
-      html === '<p></p>' || html === '' ? '' : html;
+    const normalise = (html: string) => {
+      if (!html || html === '<p></p>') return '';
+      return html;
+    };
     if (normalise(incoming) !== normalise(current)) {
       editor.commands.setContent(incoming, false);
     }

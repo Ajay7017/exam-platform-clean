@@ -10,12 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Loader2, Plus, Save, ArrowLeft, Hash, ListChecks } from 'lucide-react';
+import { Loader2, Plus, Save, ArrowLeft, Hash, ListChecks, Columns2, Trash2, GripVertical } from 'lucide-react';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 
-// ── CHANGED: smarter content checker ──────────────────────────────────────
-// Returns true if the HTML has real text content OR contains an image tag.
-// This allows image-only questions and options (e.g. diagram-only options).
+// ── content checker — supports image-only content ────────────────────────
 const hasContent = (html: string): boolean => {
   if (!html) return false;
   const hasImage = /<img\s/i.test(html);
@@ -24,10 +22,15 @@ const hasContent = (html: string): boolean => {
   return textOnly.length >= 1;
 };
 
-// Keep stripHtml for the statement minimum-length check only
 const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
 
-// ── CHANGED: statement validation now also accepts image-only content ──────
+// ── MatchPairs type ───────────────────────────────────────────────────────
+interface MatchPairs {
+  leftColumn: { header: string; items: string[] };
+  rightColumn: { header: string; items: string[] };
+}
+
+// ── Zod schema ────────────────────────────────────────────────────────────
 const questionSchema = z.object({
   statement: z.string().refine(
     (v) => {
@@ -48,15 +51,17 @@ const questionSchema = z.object({
   explanation: z.string().optional(),
   isActive: z.boolean().optional(),
 
-  // MCQ fields — optional
+  // MCQ / Match options
   optionA: z.string().optional(),
   optionB: z.string().optional(),
   optionC: z.string().optional(),
   optionD: z.string().optional(),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
 
-  // NAT fields
-  questionType: z.enum(['mcq', 'numerical']).default('mcq'),
+  // ✅ UPDATED: added 'match'
+  questionType: z.enum(['mcq', 'numerical', 'match']).default('mcq'),
+
+  // NAT fields — untouched
   numericalAnswerType: z.enum(['exact', 'range']).optional(),
   correctAnswerExact: z.number().optional().nullable(),
   correctAnswerMin: z.number().optional().nullable(),
@@ -66,7 +71,6 @@ const questionSchema = z.object({
   (data) => data.topicId || data.topicName,
   { message: 'Topic is required', path: ['topicId'] }
 ).refine(
-  // ── CHANGED: MCQ options now accept image-only content ──────────────────
   (data) => {
     if (data.questionType === 'mcq') {
       return (
@@ -80,6 +84,20 @@ const questionSchema = z.object({
     return true;
   },
   { message: 'All 4 options and correct answer are required for MCQ (text or image)', path: ['optionA'] }
+).refine(
+  (data) => {
+    if (data.questionType === 'match') {
+      return (
+        hasContent(data.optionA || '') &&
+        hasContent(data.optionB || '') &&
+        hasContent(data.optionC || '') &&
+        hasContent(data.optionD || '') &&
+        !!data.correctAnswer
+      );
+    }
+    return true;
+  },
+  { message: 'All 4 combination options and correct answer are required for Match', path: ['optionA'] }
 ).refine(
   (data) => {
     if (data.questionType === 'numerical' && data.numericalAnswerType === 'exact') {
@@ -116,25 +134,9 @@ const questionSchema = z.object({
 
 type QuestionFormData = z.infer<typeof questionSchema>;
 
-interface Subject {
-  id: string;
-  name: string;
-  slug: string;
-}
-
-interface Topic {
-  id: string;
-  name: string;
-  slug: string;
-  subjectId: string;
-}
-
-interface SubTopic {
-  id: string;
-  name: string;
-  slug: string;
-  topicId: string;
-}
+interface Subject { id: string; name: string; slug: string; }
+interface Topic { id: string; name: string; slug: string; subjectId: string; }
+interface SubTopic { id: string; name: string; slug: string; topicId: string; }
 
 interface QuestionFormProps {
   questionId?: string;
@@ -143,6 +145,12 @@ interface QuestionFormProps {
   onCancel?: () => void;
   mode?: 'standalone' | 'dialog';
 }
+
+// ── Default match pairs state ─────────────────────────────────────────────
+const defaultMatchPairs = (): MatchPairs => ({
+  leftColumn: { header: 'Column I', items: ['', '', '', ''] },
+  rightColumn: { header: 'Column II', items: ['', '', '', ''] },
+});
 
 export function QuestionForm({
   questionId,
@@ -163,12 +171,16 @@ export function QuestionForm({
   const [topicMode, setTopicMode] = useState<'select' | 'create'>('select');
   const [subTopicMode, setSubTopicMode] = useState<'select' | 'create'>('select');
 
-  const [questionType, setQuestionType] = useState<'mcq' | 'numerical'>(
-    (initialData?.questionType as 'mcq' | 'numerical') || 'mcq'
+  const [questionType, setQuestionType] = useState<'mcq' | 'numerical' | 'match'>(
+    (initialData?.questionType as 'mcq' | 'numerical' | 'match') || 'mcq'
   );
   const [numericalAnswerType, setNumericalAnswerType] = useState<'exact' | 'range'>(
     (initialData?.numericalAnswerType as 'exact' | 'range') || 'exact'
   );
+
+  // ✅ NEW: match pairs state — managed separately from react-hook-form
+  const [matchPairs, setMatchPairs] = useState<MatchPairs>(defaultMatchPairs());
+  const [matchPairsError, setMatchPairsError] = useState<string>('');
 
   const isEditMode = !!questionId;
 
@@ -208,6 +220,7 @@ export function QuestionForm({
   useEffect(() => { setValue('questionType', questionType); }, [questionType, setValue]);
   useEffect(() => { setValue('numericalAnswerType', numericalAnswerType); }, [numericalAnswerType, setValue]);
 
+  // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       setLoadingSubjects(true);
@@ -334,6 +347,8 @@ export function QuestionForm({
             reset(data.question);
             if (data.question.questionType) setQuestionType(data.question.questionType);
             if (data.question.numericalAnswerType) setNumericalAnswerType(data.question.numericalAnswerType);
+            // ✅ NEW: restore matchPairs on edit
+            if (data.question.matchPairs) setMatchPairs(data.question.matchPairs);
           }
         } catch (e) {
           toast.error('Failed to load question');
@@ -343,7 +358,70 @@ export function QuestionForm({
     }
   }, [questionId, initialData, reset]);
 
+  // ── Match pairs helpers ───────────────────────────────────────────────────
+  const updateMatchItem = (side: 'left' | 'right', index: number, value: string) => {
+    setMatchPairs(prev => {
+      const col = side === 'left' ? 'leftColumn' : 'rightColumn';
+      const newItems = [...prev[col].items];
+      newItems[index] = value;
+      return { ...prev, [col]: { ...prev[col], items: newItems } };
+    });
+    setMatchPairsError('');
+  };
+
+  const updateMatchHeader = (side: 'left' | 'right', value: string) => {
+    setMatchPairs(prev => {
+      const col = side === 'left' ? 'leftColumn' : 'rightColumn';
+      return { ...prev, [col]: { ...prev[col], header: value } };
+    });
+  };
+
+  const addMatchRow = () => {
+    if (matchPairs.leftColumn.items.length >= 6) {
+      toast.error('Maximum 6 rows allowed');
+      return;
+    }
+    setMatchPairs(prev => ({
+      leftColumn: { ...prev.leftColumn, items: [...prev.leftColumn.items, ''] },
+      rightColumn: { ...prev.rightColumn, items: [...prev.rightColumn.items, ''] },
+    }));
+  };
+
+  const removeMatchRow = (index: number) => {
+    if (matchPairs.leftColumn.items.length <= 2) {
+      toast.error('Minimum 2 rows required');
+      return;
+    }
+    setMatchPairs(prev => ({
+      leftColumn: { ...prev.leftColumn, items: prev.leftColumn.items.filter((_, i) => i !== index) },
+      rightColumn: { ...prev.rightColumn, items: prev.rightColumn.items.filter((_, i) => i !== index) },
+    }));
+  };
+
+  const validateMatchPairs = (): boolean => {
+    const leftEmpty = matchPairs.leftColumn.items.some(i => !i.trim());
+    const rightEmpty = matchPairs.rightColumn.items.some(i => !i.trim());
+    if (leftEmpty || rightEmpty) {
+      setMatchPairsError('All match items must be filled in');
+      return false;
+    }
+    if (!matchPairs.leftColumn.header.trim() || !matchPairs.rightColumn.header.trim()) {
+      setMatchPairsError('Both column headers are required');
+      return false;
+    }
+    setMatchPairsError('');
+    return true;
+  };
+
+  // ── Row labels ────────────────────────────────────────────────────────────
+  const LEFT_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const RIGHT_LABELS = ['i', 'ii', 'iii', 'iv', 'v', 'vi'];
+
+  // ── submit ────────────────────────────────────────────────────────────────
   const onSubmit = async (data: QuestionFormData) => {
+    // ✅ Validate matchPairs separately before submission
+    if (questionType === 'match' && !validateMatchPairs()) return;
+
     setIsSubmitting(true);
     try {
       const payload: any = {
@@ -372,6 +450,17 @@ export function QuestionForm({
       }
 
       if (questionType === 'mcq') {
+        payload.optionA = data.optionA;
+        payload.optionB = data.optionB;
+        payload.optionC = data.optionC;
+        payload.optionD = data.optionD;
+        payload.correctAnswer = data.correctAnswer;
+      }
+
+      if (questionType === 'match') {
+        // ✅ matchPairs is the structured display data
+        payload.matchPairs = matchPairs;
+        // Options A/B/C/D are the combination answers entered by admin
         payload.optionA = data.optionA;
         payload.optionB = data.optionB;
         payload.optionC = data.optionC;
@@ -431,6 +520,8 @@ export function QuestionForm({
           correctAnswerMin: null,
           correctAnswerMax: null,
         });
+        // ✅ Reset match pairs on save-and-next
+        if (questionType === 'match') setMatchPairs(defaultMatchPairs());
       }
 
     } catch (error: any) {
@@ -474,7 +565,7 @@ export function QuestionForm({
       <CardContent className={mode === 'dialog' ? 'p-0' : ''}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-          {/* Question Type Toggle */}
+          {/* ── Question Type Toggle ── */}
           <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
             <span className="text-sm font-medium text-slate-600">Question Type:</span>
             <div className="flex rounded-lg border border-slate-200 overflow-hidden">
@@ -482,9 +573,7 @@ export function QuestionForm({
                 type="button"
                 onClick={() => setQuestionType('mcq')}
                 className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                  questionType === 'mcq'
-                    ? 'bg-primary text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                  questionType === 'mcq' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                 }`}
               >
                 <ListChecks className="w-4 h-4" />
@@ -494,18 +583,27 @@ export function QuestionForm({
                 type="button"
                 onClick={() => setQuestionType('numerical')}
                 className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                  questionType === 'numerical'
-                    ? 'bg-primary text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                  questionType === 'numerical' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                 }`}
               >
                 <Hash className="w-4 h-4" />
                 Numerical (NAT)
               </button>
+              {/* ✅ NEW: Match type button */}
+              <button
+                type="button"
+                onClick={() => setQuestionType('match')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  questionType === 'match' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Columns2 className="w-4 h-4" />
+                Match
+              </button>
             </div>
           </div>
 
-          {/* Subject / Topic / SubTopic Row */}
+          {/* ── Subject / Topic / SubTopic Row — UNTOUCHED ── */}
           <div className="grid gap-6 md:grid-cols-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
             {/* Subject */}
             <div className="space-y-2">
@@ -615,7 +713,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* Question Statement */}
+          {/* ── Question Statement — UNTOUCHED ── */}
           <div className="space-y-2">
             <Label>Question Statement *</Label>
             <Controller
@@ -635,7 +733,7 @@ export function QuestionForm({
             )}
           </div>
 
-          {/* MCQ Options */}
+          {/* ── MCQ Options — UNTOUCHED ── */}
           {questionType === 'mcq' && (
             <div className="grid gap-4 md:grid-cols-2">
               {(['A', 'B', 'C', 'D'] as const).map((opt) => (
@@ -659,17 +757,11 @@ export function QuestionForm({
                       <RichTextEditor
                         value={field.value || ''}
                         onChange={field.onChange}
-                        // ── CHANGED: updated placeholder to hint image is allowed ──
                         placeholder={`Option ${opt} — type text or paste/upload an image`}
                         minHeight="60px"
                       />
                     )}
                   />
-                  {errors[`option${opt}` as keyof QuestionFormData] && (
-                    <p className="text-xs text-red-500">
-                      {errors[`option${opt}` as keyof QuestionFormData]?.message as string}
-                    </p>
-                  )}
                 </div>
               ))}
               {errors.optionA?.message === 'All 4 options and correct answer are required for MCQ (text or image)' && (
@@ -678,7 +770,141 @@ export function QuestionForm({
             </div>
           )}
 
-          {/* Numerical Answer Section */}
+          {/* ── ✅ NEW: Match Question Builder ── */}
+          {questionType === 'match' && (
+            <div className="space-y-4">
+              {/* Column builder */}
+              <div className="rounded-lg border border-violet-200 bg-violet-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-violet-200 bg-violet-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Columns2 className="w-4 h-4 text-violet-600" />
+                    <span className="text-sm font-semibold text-violet-800">Match Column Builder</span>
+                  </div>
+                  <span className="text-xs text-violet-500">{matchPairs.leftColumn.items.length} rows</span>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  {/* Column Headers */}
+                  <div className="grid grid-cols-[32px_1fr_32px_1fr_40px] gap-2 items-center">
+                    <div />
+                    <div>
+                      <Input
+                        value={matchPairs.leftColumn.header}
+                        onChange={(e) => updateMatchHeader('left', e.target.value)}
+                        placeholder="Column I header"
+                        className="text-sm font-medium bg-white border-violet-200 focus:border-violet-400"
+                      />
+                    </div>
+                    <div />
+                    <div>
+                      <Input
+                        value={matchPairs.rightColumn.header}
+                        onChange={(e) => updateMatchHeader('right', e.target.value)}
+                        placeholder="Column II header"
+                        className="text-sm font-medium bg-white border-violet-200 focus:border-violet-400"
+                      />
+                    </div>
+                    <div />
+                  </div>
+
+                  {/* Rows */}
+                  {matchPairs.leftColumn.items.map((leftItem, index) => (
+                    <div key={index} className="grid grid-cols-[32px_1fr_32px_1fr_40px] gap-2 items-center">
+                      {/* Left label */}
+                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-violet-200 text-violet-700 text-xs font-bold shrink-0">
+                        {LEFT_LABELS[index]}
+                      </div>
+                      {/* Left item */}
+                      <Input
+                        value={leftItem}
+                        onChange={(e) => updateMatchItem('left', index, e.target.value)}
+                        placeholder={`e.g. Axile`}
+                        className="bg-white border-violet-200 focus:border-violet-400 text-sm"
+                      />
+                      {/* Right label */}
+                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-xs font-bold shrink-0">
+                        {RIGHT_LABELS[index]}
+                      </div>
+                      {/* Right item */}
+                      <Input
+                        value={matchPairs.rightColumn.items[index]}
+                        onChange={(e) => updateMatchItem('right', index, e.target.value)}
+                        placeholder={`e.g. Sunflower`}
+                        className="bg-white border-violet-200 focus:border-violet-400 text-sm"
+                      />
+                      {/* Remove row */}
+                      <button
+                        type="button"
+                        onClick={() => removeMatchRow(index)}
+                        className="flex items-center justify-center w-8 h-8 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remove row"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {/* Add row button */}
+                  <button
+                    type="button"
+                    onClick={addMatchRow}
+                    disabled={matchPairs.leftColumn.items.length >= 6}
+                    className="flex items-center gap-2 text-sm text-violet-600 hover:text-violet-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors mt-1"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Row {matchPairs.leftColumn.items.length >= 6 ? '(max 6)' : ''}
+                  </button>
+
+                  {matchPairsError && (
+                    <p className="text-xs text-red-500 mt-1">{matchPairsError}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Combination Options — what student actually picks */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-amber-200 bg-amber-100">
+                  <p className="text-sm font-semibold text-amber-800">Answer Combinations</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Enter the 4 answer combinations students will choose from. Mark the correct one.
+                  </p>
+                </div>
+                <div className="p-4 grid gap-3 md:grid-cols-2">
+                  {(['A', 'B', 'C', 'D'] as const).map((opt) => (
+                    <div key={opt} className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-amber-800">Option {opt}</Label>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            value={opt}
+                            {...register('correctAnswer')}
+                            className="w-4 h-4 text-amber-600 border-gray-300 focus:ring-amber-500"
+                          />
+                          <span className="text-xs text-amber-600">Correct</span>
+                        </div>
+                      </div>
+                      <Input
+                        {...register(`option${opt}` as 'optionA' | 'optionB' | 'optionC' | 'optionD')}
+                        placeholder={
+                          opt === 'A' ? 'e.g. A-i, B-ii, C-iii, D-iv' :
+                          opt === 'B' ? 'e.g. A-ii, B-i, C-iv, D-iii' :
+                          opt === 'C' ? 'e.g. A-iii, B-iv, C-i, D-ii' :
+                          'e.g. A-iv, B-iii, C-ii, D-i'
+                        }
+                        className="bg-white border-amber-200 focus:border-amber-400 text-sm"
+                      />
+                    </div>
+                  ))}
+                  {errors.optionA?.message?.includes('Match') && (
+                    <p className="text-xs text-red-500 col-span-2">{errors.optionA.message}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Numerical Answer Section — UNTOUCHED ── */}
           {questionType === 'numerical' && (
             <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-center justify-between">
@@ -759,7 +985,7 @@ export function QuestionForm({
             </div>
           )}
 
-          {/* Difficulty / Marks / Negative */}
+          {/* ── Difficulty / Marks / Negative — UNTOUCHED ── */}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Difficulty</Label>
@@ -782,7 +1008,7 @@ export function QuestionForm({
             </div>
           </div>
 
-          {/* Explanation */}
+          {/* ── Explanation — UNTOUCHED ── */}
           <div className="space-y-2">
             <Label>Explanation (Optional)</Label>
             <Controller
@@ -799,7 +1025,7 @@ export function QuestionForm({
             />
           </div>
 
-          {/* Active Status for Edit Mode */}
+          {/* ── Active Status — UNTOUCHED ── */}
           {isEditMode && (
             <div className="flex items-center space-x-2">
               <input

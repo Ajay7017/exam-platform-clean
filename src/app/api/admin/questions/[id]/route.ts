@@ -5,7 +5,22 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { cache } from '@/lib/redis'
 
-// ✅ UPDATED: schema now handles both MCQ and NAT
+// ✅ NEW: match pairs schema — same shape as in route.ts
+const matchPairsSchema = z.object({
+  leftColumn: z.object({
+    header: z.string().min(1),
+    items: z.array(z.string().min(1)).min(2).max(6),
+  }),
+  rightColumn: z.object({
+    header: z.string().min(1),
+    items: z.array(z.string().min(1)).min(2).max(6),
+  }),
+}).refine(
+  (data) => data.leftColumn.items.length === data.rightColumn.items.length,
+  { message: 'Left and right column must have equal number of items' }
+)
+
+// ✅ UPDATED: schema now handles MCQ, NAT, and Match
 const questionUpdateSchema = z.object({
   statement: z.string().min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
@@ -19,23 +34,29 @@ const questionUpdateSchema = z.object({
   subTopicId: z.string().optional(),
   subTopicName: z.string().optional(),
 
-  // ✅ EXISTING: MCQ fields — now optional
+  // ✅ EXISTING: MCQ fields — optional
   optionA: z.string().optional(),
   optionB: z.string().optional(),
   optionC: z.string().optional(),
   optionD: z.string().optional(),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
 
-  // ✅ NEW: NAT fields
-  questionType: z.enum(['mcq', 'numerical']).default('mcq'),
+  // ✅ UPDATED: added 'match' to enum
+  questionType: z.enum(['mcq', 'numerical', 'match']).default('mcq'),
+
+  // ✅ EXISTING: NAT fields — untouched
   correctAnswerExact: z.number().optional().nullable(),
   correctAnswerMin: z.number().optional().nullable(),
   correctAnswerMax: z.number().optional().nullable(),
+
+  // ✅ NEW: match fields
+  matchPairs: matchPairsSchema.optional().nullable(),
 
 }).refine(
   (data) => data.topicId || (data.subjectId && data.topicName),
   { message: 'Either topicId or (subjectId + topicName) must be provided', path: ['topicId'] }
 ).refine(
+  // ✅ EXISTING: MCQ validation — untouched
   (data) => {
     if (data.questionType === 'mcq') {
       return data.optionA && data.optionB && data.optionC && data.optionD && data.correctAnswer
@@ -44,6 +65,7 @@ const questionUpdateSchema = z.object({
   },
   { message: 'MCQ questions require all 4 options and correct answer', path: ['optionA'] }
 ).refine(
+  // ✅ EXISTING: NAT validation — untouched
   (data) => {
     if (data.questionType === 'numerical') {
       const hasExact = data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
@@ -54,6 +76,20 @@ const questionUpdateSchema = z.object({
     return true
   },
   { message: 'Numerical questions require exact answer or min/max range', path: ['correctAnswerExact'] }
+).refine(
+  // ✅ NEW: Match validation
+  (data) => {
+    if (data.questionType === 'match') {
+      return (
+        data.matchPairs !== null &&
+        data.matchPairs !== undefined &&
+        data.optionA && data.optionB && data.optionC && data.optionD &&
+        data.correctAnswer
+      )
+    }
+    return true
+  },
+  { message: 'Match questions require matchPairs, all 4 combination options, and a correct answer', path: ['matchPairs'] }
 )
 
 // GET: Fetch single question
@@ -92,18 +128,21 @@ export async function GET(
       explanation: question.explanation || '',
       isActive: question.isActive,
 
-      // ✅ EXISTING: MCQ options
+      // ✅ EXISTING: MCQ options — untouched
       optionA: question.options.find(o => o.optionKey === 'A')?.text || '',
       optionB: question.options.find(o => o.optionKey === 'B')?.text || '',
       optionC: question.options.find(o => o.optionKey === 'C')?.text || '',
       optionD: question.options.find(o => o.optionKey === 'D')?.text || '',
       correctAnswer: question.options.find(o => o.isCorrect)?.optionKey || 'A',
 
-      // ✅ NEW: NAT fields
+      // ✅ EXISTING: NAT fields — untouched
       questionType: question.type ?? 'mcq',
       correctAnswerExact: question.correctAnswerExact,
       correctAnswerMin: question.correctAnswerMin,
       correctAnswerMax: question.correctAnswerMax,
+
+      // ✅ NEW: match field
+      matchPairs: question.matchPairs ?? null,
 
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
@@ -150,6 +189,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     }
 
+    // ✅ EXISTING: Topic resolution — completely untouched
     let topicId: string
 
     if (data.topicId) {
@@ -188,6 +228,7 @@ export async function PUT(
       topicId = topic.id
     }
 
+    // ✅ EXISTING: SubTopic resolution — completely untouched
     let subTopicId: string | null = null
 
     if (data.subTopicId) {
@@ -222,6 +263,7 @@ export async function PUT(
     }
 
     const isNumerical = data.questionType === 'numerical'
+    const isMatch = data.questionType === 'match'
 
     const updatedQuestion = await prisma.$transaction(async (tx) => {
       const question = await tx.question.update({
@@ -236,12 +278,18 @@ export async function PUT(
           explanation: data.explanation || '',
           isActive: data.isActive ?? true,
           type: data.questionType ?? 'mcq',
+
+          // ✅ EXISTING: NAT fields — untouched logic
           correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
           correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
           correctAnswerMax: isNumerical ? (data.correctAnswerMax ?? null) : null,
+
+          // ✅ NEW: matchPairs — only set for match, cleared otherwise
+          matchPairs: isMatch ? (data.matchPairs ?? null) : null,
         }
       })
 
+      // ✅ Update options for both MCQ and Match (both use A/B/C/D options)
       if (!isNumerical) {
         const optionUpdates = [
           { key: 'A', text: data.optionA!, isCorrect: data.correctAnswer === 'A' },
@@ -257,15 +305,30 @@ export async function PUT(
               where: { id: existing.id },
               data: { text: opt.text, isCorrect: opt.isCorrect }
             })
+          } else {
+            // ✅ Edge case: question type changed from numerical → match/mcq, options don't exist yet
+            await tx.option.create({
+              data: {
+                questionId: params.id,
+                text: opt.text,
+                optionKey: opt.key,
+                sequence: ['A', 'B', 'C', 'D'].indexOf(opt.key) + 1,
+                isCorrect: opt.isCorrect,
+              }
+            })
           }
+        }
+      } else {
+        // ✅ Edge case: switched TO numerical — delete any existing options
+        if (existingQuestion.options.length > 0) {
+          await tx.option.deleteMany({ where: { questionId: params.id } })
         }
       }
 
       return question
     })
 
-    // Bust cache for all exams that contain this question
-    // so students get the updated question text/options immediately
+    // ✅ EXISTING: Cache busting — completely untouched
     try {
       const affectedExams = await prisma.examQuestion.findMany({
         where: { questionId: params.id },
@@ -290,7 +353,7 @@ export async function PUT(
   }
 }
 
-// PATCH: Inline status toggle
+// ✅ EXISTING: PATCH — completely untouched
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }

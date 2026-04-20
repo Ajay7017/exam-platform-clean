@@ -19,6 +19,18 @@ export interface Exam {
   topics: string[];
 }
 
+// ✅ NEW: Match pairs structure — display data only, correct answer lives in options
+export interface MatchPairs {
+  leftColumn: {
+    header: string;
+    items: string[];
+  };
+  rightColumn: {
+    header: string;
+    items: string[];
+  };
+}
+
 export interface Question {
   id: string;
   statement: string;
@@ -32,11 +44,13 @@ export interface Question {
   options: QuestionOption[];
   correctAnswer: string;
   explanation: string;
-  // ✅ NEW: NAT fields
-  type: 'mcq' | 'numerical';
+  // ✅ UPDATED: added 'match' to type union
+  type: 'mcq' | 'numerical' | 'match';
   correctAnswerExact?: number | null;
   correctAnswerMin?: number | null;
   correctAnswerMax?: number | null;
+  // ✅ NEW: only populated when type === 'match'
+  matchPairs?: MatchPairs | null;
 }
 
 export interface QuestionOption {
@@ -55,7 +69,7 @@ export type QuestionStatus =
 export interface ExamState {
   examId: string;
   currentQuestionIndex: number;
-  // ✅ UPDATED: answers now support string (MCQ) or number (NAT)
+  // ✅ EXISTING: answers support string (MCQ/Match) or number (NAT)
   answers: Record<string, string | number>;
   questionStates: Record<string, QuestionStatus>;
   markedForReview: string[];

@@ -214,6 +214,8 @@ export async function POST(request: NextRequest) {
         negativeMarks: q.negativeMarks,
         difficulty:    q.difficulty,
         type:          q.type ?? 'mcq',
+        // ✅ ADD THIS LINE ONLY:
+        matchPairs:    q.matchPairs ?? null,
         options: q.options.map((o: any) => ({
           key:      o.optionKey,
           text:     o.text,

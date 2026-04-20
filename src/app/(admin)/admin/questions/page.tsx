@@ -122,9 +122,12 @@ function stripHtml(html: string) {
     .trim()
 }
 
-function getTypeBadge(type?: 'mcq' | 'numerical') {
+function getTypeBadge(type?: 'mcq' | 'numerical' | 'match') {
   if (type === 'numerical') {
     return <Badge className="bg-blue-100 text-blue-800 text-[10px] sm:text-xs font-medium"># Numerical</Badge>
+  }
+  if (type === 'match') {
+    return <Badge className="bg-violet-100 text-violet-800 text-[10px] sm:text-xs font-medium">⇌ Match</Badge>
   }
   return <Badge className="bg-purple-100 text-purple-800 text-[10px] sm:text-xs font-medium">≡ MCQ</Badge>
 }
@@ -144,7 +147,7 @@ interface Question {
   difficulty: string
   isActive: boolean
   createdAt: string
-  questionType?: 'mcq' | 'numerical'
+  questionType?: 'mcq' | 'numerical' | 'match'
 }
 
 interface QuestionDetail extends Question {
@@ -157,10 +160,14 @@ interface QuestionDetail extends Question {
   optionD: string
   correctAnswer: string
   explanation?: string
-  questionType?: 'mcq' | 'numerical'
+  questionType?: 'mcq' | 'numerical' | 'match'
   correctAnswerExact?: number | null
   correctAnswerMin?: number | null
   correctAnswerMax?: number | null
+  matchPairs?: {
+    leftColumn: { header: string; items: string[] }
+    rightColumn: { header: string; items: string[] }
+  } | null
 }
 
 export default function AdminQuestionsPage() {
@@ -950,7 +957,7 @@ export default function AdminQuestionsPage() {
                 <Label className="text-sm text-gray-600">Question</Label>
                 <div className="mt-2 text-base leading-relaxed"><SafeHtml html={viewQuestion.statement} /></div>
               </div>
-              {(!viewQuestion.questionType || viewQuestion.questionType === 'mcq') && (
+              {(viewQuestion.questionType === 'mcq' || !viewQuestion.questionType) && (
                 <div className="space-y-3">
                   <Label className="text-sm text-gray-600">Options</Label>
                   {(['A', 'B', 'C', 'D'] as const).map((opt) => {
@@ -978,6 +985,51 @@ export default function AdminQuestionsPage() {
                       <div><p className="text-xs text-blue-600 font-medium mb-1">Accepted Range</p><p className="text-2xl font-bold text-blue-800">{viewQuestion.correctAnswerMin} &nbsp;to&nbsp; {viewQuestion.correctAnswerMax}</p></div>
                     )}
                   </div>
+                </div>
+              )}
+              {viewQuestion.questionType === 'match' && viewQuestion.matchPairs && (
+                <div className="space-y-3">
+                  <Label className="text-sm text-gray-600">Match Columns</Label>
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-muted/60 border-b">
+                          <th className="text-left px-4 py-2 font-medium w-1/2">{viewQuestion.matchPairs.leftColumn.header}</th>
+                          <th className="text-left px-4 py-2 font-medium w-1/2">{viewQuestion.matchPairs.rightColumn.header}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewQuestion.matchPairs.leftColumn.items.map((item, i) => (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="px-4 py-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold mr-2">
+                                {['A','B','C','D','E','F'][i]}
+                              </span>
+                              {item}
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground text-xs font-semibold mr-2">
+                                {['i','ii','iii','iv','v','vi'][i]}
+                              </span>
+                              {viewQuestion.matchPairs!.rightColumn.items[i]}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Label className="text-sm text-gray-600">Answer Combinations</Label>
+                  {(['A', 'B', 'C', 'D'] as const).map((opt) => {
+                    const optionText = viewQuestion[`option${opt}` as keyof QuestionDetail] as string
+                    const isCorrect = viewQuestion.correctAnswer === opt
+                    return (
+                      <div key={opt} className={`p-3 rounded-lg border-2 flex items-center gap-3 ${isCorrect ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                        <span className="font-bold text-sm shrink-0">{opt}.</span>
+                        {isCorrect && <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />}
+                        <span className="text-sm">{optionText}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               {viewQuestion.explanation && (

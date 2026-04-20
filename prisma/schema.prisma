@@ -152,10 +152,13 @@ model Question {
   updatedAt     DateTime   @updatedAt
 
   // ✅ NEW: NAT Question Fields
-  type                String  @default("mcq") // "mcq" | "numerical"
+  type                String  @default("mcq") // "mcq" | "numerical" | "match"
   correctAnswerExact  Float?
   correctAnswerMin    Float?
   correctAnswerMax    Float?
+
+  // ✅ NEW: Match Question Fields
+  matchPairs          Json?   // { leftColumn: { header: string, items: string[] }, rightColumn: { header: string, items: string[] } }
   
   options       Option[]
   examQuestions ExamQuestion[]

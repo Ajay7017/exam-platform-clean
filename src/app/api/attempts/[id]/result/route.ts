@@ -57,22 +57,13 @@ export async function GET(
       )
     }
 
-    // ✅ FIXED: rank/percentile now read directly from the Attempt record
-    // (set by processExamResults). The leaderboard entry lookup was the
-    // source of N/A — it only exists for official attempts and only for the
-    // user's best score, so it was missing for many valid attempts.
     const rank       = attempt.rank       ?? null
     const percentile = attempt.percentile ?? null
 
-    // Total official attempts for this exam (for rank display: "#3 / 120")
-
-    // ── Topper & average (official attempts only) ─────────────────────────
     const userAnswers       = (attempt.answers         as Record<string, any>)    || {}
     const timePerQuestionDB = (attempt.timePerQuestion as Record<string, number>) || {}
 
-    // ── Topper: fetch only the single best attempt ────────────────────────
-    // Sorted by score desc, time asc — same logic as rank batch job.
-    // Returns exactly 1 row regardless of how many attempts exist.
+    // ── Topper ────────────────────────────────────────────────────────────
     const topperAttempt = await prisma.attempt.findFirst({
       where: {
         examId:     attempt.examId,
@@ -87,8 +78,7 @@ export async function GET(
       orderBy: [{ score: 'desc' }, { timeSpentSec: 'asc' }],
     })
 
-    // ── Averages + count: Postgres aggregates server-side ─────────────────
-    // No rows transferred — just one aggregate result row.
+    // ── Averages ──────────────────────────────────────────────────────────
     const aggregates = await prisma.attempt.aggregate({
       where: {
         examId:     attempt.examId,
@@ -107,7 +97,6 @@ export async function GET(
       _count: { id: true },
     })
 
-    // Total official attempts = others + current attempt
     const totalOfficialAttempts = (aggregates._count.id ?? 0) + 1
 
     let comparisonStats: {
@@ -137,8 +126,7 @@ export async function GET(
       }
     }
 
-    // ── ✅ NEW: attempt history for "Progress Over Time" chart ────────────
-    // Fetch all completed attempts by this user for this exam, ordered by date.
+    // ── Attempt history ───────────────────────────────────────────────────
     const attemptHistory = await prisma.attempt.findMany({
       where: {
         userId:  session.user.id,
@@ -146,18 +134,18 @@ export async function GET(
         status:  'graded',
       },
       select: {
-        id:          true,
-        score:       true,
-        percentage:  true,
-        isOfficial:  true,
-        submittedAt: true,
+        id:             true,
+        score:          true,
+        percentage:     true,
+        isOfficial:     true,
+        submittedAt:    true,
         correctAnswers: true,
         wrongAnswers:   true,
       },
       orderBy: { submittedAt: 'asc' }
     })
 
-    // ── question results (unchanged logic, timeSpentSec added) ───────────
+    // ── Question results ──────────────────────────────────────────────────
     const questionResults = attempt.exam.questions.map((eq) => {
       const question     = eq.question
       const userResponse = userAnswers[question.id]
@@ -182,46 +170,59 @@ export async function GET(
             : `${question.correctAnswerMin} to ${question.correctAnswerMax}`
 
         return {
-          questionId: question.id, statement: question.statement,
-          imageUrl: question.imageUrl, topic: question.topic.name,
-          questionType: 'numerical', options: [],
-          yourAnswer:    userNum !== null ? String(userNum) : null,
-          correctAnswer: correctAnswerDisplay,
-          isCorrect, explanation: question.explanation,
+          questionId:      question.id,
+          statement:       question.statement,
+          imageUrl:        question.imageUrl,
+          topic:           question.topic.name,
+          questionType:    'numerical',
+          options:         [],
+          yourAnswer:      userNum !== null ? String(userNum) : null,
+          correctAnswer:   correctAnswerDisplay,
+          isCorrect,
+          explanation:     question.explanation,
           markedForReview: userResponse?.markedForReview || false,
-          marks: question.marks, negativeMarks: question.negativeMarks,
+          marks:           question.marks,
+          negativeMarks:   question.negativeMarks,
           timeSpentSec,
+          matchPairs:      null,
         }
       }
 
+      // MCQ and Match
       const correctOption = question.options.find(o => o.isCorrect)
       return {
-        questionId: question.id, statement: question.statement,
-        imageUrl: question.imageUrl, topic: question.topic.name,
-        questionType: 'mcq',
-        options: question.options.map(opt => ({
-          key: opt.optionKey, text: opt.text,
-          imageUrl: opt.imageUrl, isCorrect: opt.isCorrect,
+        questionId:      question.id,
+        statement:       question.statement,
+        imageUrl:        question.imageUrl,
+        topic:           question.topic.name,
+        questionType:    question.type ?? 'mcq',
+        options:         question.options.map(opt => ({
+          key:       opt.optionKey,
+          text:      opt.text,
+          imageUrl:  opt.imageUrl,
+          isCorrect: opt.isCorrect,
         })),
-        yourAnswer:    userResponse?.selectedOption || null,
-        correctAnswer: correctOption?.optionKey     || null,
-        isCorrect:     userResponse?.selectedOption === correctOption?.optionKey,
-        explanation:   question.explanation,
+        yourAnswer:      userResponse?.selectedOption || null,
+        correctAnswer:   correctOption?.optionKey     || null,
+        isCorrect:       userResponse?.selectedOption === correctOption?.optionKey,
+        explanation:     question.explanation,
         markedForReview: userResponse?.markedForReview || false,
-        marks: question.marks, negativeMarks: question.negativeMarks,
+        marks:           question.marks,
+        negativeMarks:   question.negativeMarks,
         timeSpentSec,
+        matchPairs:      question.matchPairs ?? null,
       }
     })
 
-    // ── time stats ────────────────────────────────────────────────────────
+    // ── Time stats ────────────────────────────────────────────────────────
     const timeStats = { correct: 0, wrong: 0, unattempted: 0 }
     for (const qr of questionResults) {
-      if (qr.yourAnswer === null)  timeStats.unattempted += qr.timeSpentSec
-      else if (qr.isCorrect)      timeStats.correct      += qr.timeSpentSec
-      else                        timeStats.wrong        += qr.timeSpentSec
+      if (qr.yourAnswer === null) timeStats.unattempted += qr.timeSpentSec
+      else if (qr.isCorrect)     timeStats.correct      += qr.timeSpentSec
+      else                       timeStats.wrong        += qr.timeSpentSec
     }
 
-    // ── topic performance (unchanged) ─────────────────────────────────────
+    // ── Topic performance ─────────────────────────────────────────────────
     const topicMap = new Map<string, { correct: number; wrong: number; total: number }>()
     questionResults.forEach((qr) => {
       const topic = qr.topic || 'Other'
@@ -240,14 +241,13 @@ export async function GET(
     }))
 
     return NextResponse.json({
-      // ── existing fields ──
-      attemptId:    attempt.id,
-      examId:       attempt.examId,
-      examTitle:    attempt.exam.title,
-      score:        attempt.score,
-      totalMarks:   attempt.exam.totalMarks,
-      passingMarks: attempt.exam.passingMarks || 40,
-      percentage:   attempt.percentage,
+      attemptId:      attempt.id,
+      examId:         attempt.examId,
+      examTitle:      attempt.exam.title,
+      score:          attempt.score,
+      totalMarks:     attempt.exam.totalMarks,
+      passingMarks:   attempt.exam.passingMarks || 40,
+      percentage:     attempt.percentage,
       correctAnswers: attempt.correctAnswers,
       wrongAnswers:   attempt.wrongAnswers,
       unattempted:    attempt.unattempted,
@@ -259,24 +259,20 @@ export async function GET(
       tabSwitchCount:  attempt.tabSwitchCount,
       timeStats,
       comparisonStats,
-
-      // ✅ FIXED: rank now from Attempt record directly (not leaderboard lookup)
-      rank:         rank,
-      percentile:   percentile,
-      totalAttempts: totalOfficialAttempts,
-
-      // ✅ NEW fields
-      isOfficial:     attempt.isOfficial,   // for Practice badge on result page
+      rank,
+      percentile,
+      totalAttempts:  totalOfficialAttempts,
+      isOfficial:     attempt.isOfficial,
       attemptHistory: attemptHistory.map((a, i) => ({
-        attemptNumber: i + 1,
-        attemptId:     a.id,
-        score:         a.score         ?? 0,
-        percentage:    a.percentage    ?? 0,
-        isOfficial:    a.isOfficial,
-        submittedAt:   a.submittedAt,
+        attemptNumber:  i + 1,
+        attemptId:      a.id,
+        score:          a.score         ?? 0,
+        percentage:     a.percentage    ?? 0,
+        isOfficial:     a.isOfficial,
+        submittedAt:    a.submittedAt,
         correctAnswers: a.correctAnswers,
         wrongAnswers:   a.wrongAnswers,
-        isCurrent:     a.id === attemptId,
+        isCurrent:      a.id === attemptId,
       })),
     })
 

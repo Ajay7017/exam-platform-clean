@@ -23,6 +23,52 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 
+// ── MatchTable — reused from QuestionDisplay, same component ─────────────
+const LEFT_LABELS  = ['A', 'B', 'C', 'D', 'E', 'F']
+const RIGHT_LABELS = ['i', 'ii', 'iii', 'iv', 'v', 'vi']
+
+function MatchTable({ matchPairs }: {
+  matchPairs: {
+    leftColumn:  { header: string; items: string[] }
+    rightColumn: { header: string; items: string[] }
+  }
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border my-2">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/60 border-b border-border">
+            <th className="text-left px-4 py-2 font-medium w-1/2">
+              {matchPairs.leftColumn.header}
+            </th>
+            <th className="text-left px-4 py-2 font-medium w-1/2">
+              {matchPairs.rightColumn.header}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {matchPairs.leftColumn.items.map((leftItem, index) => (
+            <tr key={index} className="border-b border-border last:border-0">
+              <td className="px-4 py-2 align-middle">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold mr-2">
+                  {LEFT_LABELS[index]}
+                </span>
+                {leftItem}
+              </td>
+              <td className="px-4 py-2 align-middle">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground text-xs font-semibold mr-2">
+                  {RIGHT_LABELS[index]}
+                </span>
+                {matchPairs.rightColumn.items[index]}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 const COLORS = { correct: '#10b981', wrong: '#ef4444', unattempted: '#6b7280' }
 
 const SUBJECT_GRADIENTS = [
@@ -584,6 +630,7 @@ export default function ResultPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-gray-500">Q{originalIndex + 1}</span>
                       {q.questionType === 'numerical' && <Badge variant="outline" className="text-blue-600 text-xs">NAT</Badge>}
+                      {q.questionType === 'match' && <Badge variant="outline" className="text-violet-600 text-xs">Match</Badge>}
                       {q.isCorrect ? <CheckCircle className="w-4 h-4 text-green-500" /> : q.yourAnswer ? <XCircle className="w-4 h-4 text-red-500" /> : <Circle className="w-4 h-4 text-gray-400" />}
                       {q.timeSpentSec > 0 && (
                         <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
@@ -596,40 +643,67 @@ export default function ResultPage() {
                     </div>
                     <div className="mt-2 text-sm leading-relaxed space-y-3">
                       <SafeHtml html={q.statement} />
-                      {q.imageUrl && <div className="mt-2"><OptimizedImage src={q.imageUrl} alt={`Q${originalIndex + 1}`} className="max-w-full rounded-lg border shadow-sm" /></div>}
+                      {q.imageUrl && (
+                        <div className="mt-2">
+                          <OptimizedImage src={q.imageUrl} alt={`Q${originalIndex + 1}`} className="max-w-full rounded-lg border shadow-sm" />
+                        </div>
+                      )}
+                      {/* ✅ Match table shown under statement, not in options */}
+                      {q.questionType === 'match' && q.matchPairs && (
+                        <MatchTable matchPairs={q.matchPairs} />
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 pt-0">
-                    {q.questionType === 'mcq' && (
-                      <div className="space-y-1.5">
-                        {q.options?.map((opt: any) => (
-                          <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
-                            <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
-                            <SafeHtml html={opt.text} className="flex-1" />
-                            {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
-                            {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
+                    {/* MCQ options — untouched */}
+                      {q.questionType === 'mcq' && (
+                        <div className="space-y-1.5">
+                          {q.options?.map((opt: any) => (
+                            <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                              <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
+                              <SafeHtml html={opt.text} className="flex-1" />
+                              {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
+                              {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ✅ Match options — plain text combinations, same highlight logic as MCQ */}
+                      {q.questionType === 'match' && (
+                        <div className="space-y-1.5">
+                          {q.options?.map((opt: any) => (
+                            <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                              <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
+                              <span className="flex-1">{opt.text}</span>
+                              {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
+                              {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* NAT answer — untouched */}
+                      {q.questionType === 'numerical' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className={`p-3 rounded-lg border-2 ${q.yourAnswer ? q.isCorrect ? 'border-green-400 bg-green-50' : 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+                            <p className="text-xs text-gray-500 mb-1">Your Answer</p>
+                            <p className={`text-xl font-bold ${q.yourAnswer ? q.isCorrect ? 'text-green-700' : 'text-red-700' : 'text-gray-400'}`}>{q.yourAnswer || 'Not Attempted'}</p>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                    {q.questionType === 'numerical' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className={`p-3 rounded-lg border-2 ${q.yourAnswer ? q.isCorrect ? 'border-green-400 bg-green-50' : 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
-                          <p className="text-xs text-gray-500 mb-1">Your Answer</p>
-                          <p className={`text-xl font-bold ${q.yourAnswer ? q.isCorrect ? 'text-green-700' : 'text-red-700' : 'text-gray-400'}`}>{q.yourAnswer || 'Not Attempted'}</p>
+                          <div className="p-3 rounded-lg border-2 border-green-400 bg-green-50">
+                            <p className="text-xs text-gray-500 mb-1">Correct Answer</p>
+                            <p className="text-xl font-bold text-green-700">{q.correctAnswer}</p>
+                          </div>
                         </div>
-                        <div className="p-3 rounded-lg border-2 border-green-400 bg-green-50">
-                          <p className="text-xs text-gray-500 mb-1">Correct Answer</p>
-                          <p className="text-xl font-bold text-green-700">{q.correctAnswer}</p>
+                      )}
+
+                      {/* Your/Correct answer summary — MCQ and Match both show this */}
+                      {(q.questionType === 'mcq' || q.questionType === 'match') && (
+                        <div className="flex gap-4 text-xs text-gray-500 pt-1 border-t">
+                          <span><strong>Your:</strong> {q.yourAnswer || 'Not Attempted'}</span>
+                          <span><strong>Correct:</strong> {q.correctAnswer}</span>
                         </div>
-                      </div>
-                    )}
-                    {q.questionType === 'mcq' && (
-                      <div className="flex gap-4 text-xs text-gray-500 pt-1 border-t">
-                        <span><strong>Your:</strong> {q.yourAnswer || 'Not Attempted'}</span>
-                        <span><strong>Correct:</strong> {q.correctAnswer}</span>
-                      </div>
-                    )}
+                      )}
                     {q.explanation && (
                       <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                         <p className="text-xs font-semibold text-blue-800 mb-1">Explanation</p>

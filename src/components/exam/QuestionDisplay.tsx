@@ -17,17 +17,15 @@ interface QuestionDisplayProps {
   questionNumber: number;
   totalQuestions: number;
   selectedOption: string | null;
-  // ✅ NEW: numerical answer prop
   numericalAnswer?: number | null;
   isMarkedForReview: boolean;
   onOptionSelect: (option: string) => void;
-  // ✅ NEW: numerical answer handler
   onNumericalAnswer?: (value: number) => void;
   onClearResponse: () => void;
   onMarkForReview: () => void;
 }
 
-// ✅ NEW: Calculator component for NAT questions
+// ── NumericalInput — UNTOUCHED ────────────────────────────────────────────
 function NumericalInput({
   value,
   onChange,
@@ -44,37 +42,19 @@ function NumericalInput({
   const handleButton = (key: string) => {
     setDisplay(prev => {
       let next = prev;
-
       if (key === 'backspace') {
         next = prev.slice(0, -1);
       } else if (key === '-') {
-        // Toggle negative
-        if (prev.startsWith('-')) {
-          next = prev.slice(1);
-        } else {
-          next = '-' + prev;
-        }
+        if (prev.startsWith('-')) next = prev.slice(1);
+        else next = '-' + prev;
       } else if (key === '.') {
-        // Only one decimal point allowed
-        if (!prev.includes('.')) {
-          next = prev + '.';
-        }
+        if (!prev.includes('.')) next = prev + '.';
       } else {
-        // Number key
-        // Prevent multiple leading zeros
-        if (prev === '0' && key !== '.') {
-          next = key;
-        } else {
-          next = prev + key;
-        }
+        if (prev === '0' && key !== '.') next = key;
+        else next = prev + key;
       }
-
-      // Update parent only if valid number
       const parsed = parseFloat(next);
-      if (!isNaN(parsed) && next !== '-' && next !== '.') {
-        onChange(parsed);
-      }
-
+      if (!isNaN(parsed) && next !== '-' && next !== '.') onChange(parsed);
       return next;
     });
   };
@@ -88,20 +68,14 @@ function NumericalInput({
 
   return (
     <div className="flex flex-col items-center gap-4 py-4">
-      {/* Display Screen */}
       <div className="w-full max-w-xs bg-gray-900 text-white rounded-lg p-4 flex items-center justify-between min-h-[56px]">
         <span className="text-2xl font-mono tracking-widest">
           {display || '___'}
         </span>
-        <button
-          onClick={() => handleButton('backspace')}
-          className="text-gray-400 hover:text-white transition-colors ml-2"
-        >
+        <button onClick={() => handleButton('backspace')} className="text-gray-400 hover:text-white transition-colors ml-2">
           <Delete className="w-5 h-5" />
         </button>
       </div>
-
-      {/* Number Pad */}
       <div className="grid grid-cols-3 gap-2 w-full max-w-xs">
         {buttons.map((row, i) =>
           row.map((key) => (
@@ -119,6 +93,48 @@ function NumericalInput({
   );
 }
 
+// ── ✅ NEW: MatchTable — renders the two-column display ───────────────────
+const LEFT_LABELS  = ['A', 'B', 'C', 'D', 'E', 'F'];
+const RIGHT_LABELS = ['i', 'ii', 'iii', 'iv', 'v', 'vi'];
+
+function MatchTable({ matchPairs }: { matchPairs: NonNullable<Question['matchPairs']> }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/60 border-b border-border">
+            <th className="text-left px-4 py-2.5 font-medium w-1/2">
+              {matchPairs.leftColumn.header}
+            </th>
+            <th className="text-left px-4 py-2.5 font-medium w-1/2">
+              {matchPairs.rightColumn.header}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {matchPairs.leftColumn.items.map((leftItem, index) => (
+            <tr key={index} className="border-b border-border last:border-0">
+              <td className="px-4 py-2.5 align-middle">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold mr-2 shrink-0">
+                  {LEFT_LABELS[index]}
+                </span>
+                {leftItem}
+              </td>
+              <td className="px-4 py-2.5 align-middle">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold mr-2 shrink-0">
+                  {RIGHT_LABELS[index]}
+                </span>
+                {matchPairs.rightColumn.items[index]}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────
 export function QuestionDisplay({
   question,
   questionNumber,
@@ -133,6 +149,8 @@ export function QuestionDisplay({
 }: QuestionDisplayProps) {
 
   const isNumerical = question.type === 'numerical';
+  // ✅ NEW: match flag — used only to show the table and badge
+  const isMatch = question.type === 'match';
 
   return (
     <Card className="h-full border-none shadow-none">
@@ -142,7 +160,13 @@ export function QuestionDisplay({
             Question {questionNumber} of {totalQuestions}
           </CardTitle>
           <div className="flex items-center gap-2">
-            {/* ✅ NEW: Show question type badge */}
+            {/* ✅ NEW: Match badge */}
+            {isMatch && (
+              <Badge variant="outline" className="text-violet-600">
+                Match
+              </Badge>
+            )}
+            {/* UNTOUCHED: existing Numerical badge */}
             {isNumerical && (
               <Badge variant="outline" className="text-blue-600">
                 Numerical
@@ -163,16 +187,27 @@ export function QuestionDisplay({
       </CardHeader>
 
       <CardContent className="p-6 space-y-6">
-        {/* Question Statement - same for both types */}
+        {/* Question Statement — UNTOUCHED */}
         <div className="text-base leading-relaxed">
           <SafeHtml html={question.statement} />
         </div>
 
-        {/* ✅ EXISTING: MCQ Options - completely untouched */}
+        {/* ✅ NEW: Match table — only shown for match type */}
+        {isMatch && question.matchPairs && (
+          <div className="space-y-2">
+            <h4 className="font-medium text-sm text-muted-foreground">
+              Match the columns:
+            </h4>
+            <MatchTable matchPairs={question.matchPairs} />
+          </div>
+        )}
+
+        {/* UNTOUCHED: MCQ options — the !isNumerical condition now correctly
+            covers both 'mcq' and 'match' since both use A/B/C/D option picking */}
         {!isNumerical && (
           <div className="space-y-3">
             <h4 className="font-medium text-sm text-muted-foreground">
-              Select your answer:
+              {isMatch ? 'Select the correct combination:' : 'Select your answer:'}
             </h4>
             <RadioGroup value={selectedOption || ''} onValueChange={onOptionSelect}>
               {question.options.map((option) => (
@@ -196,7 +231,7 @@ export function QuestionDisplay({
           </div>
         )}
 
-        {/* ✅ NEW: NAT Calculator Input */}
+        {/* UNTOUCHED: NAT calculator */}
         {isNumerical && (
           <div className="space-y-3">
             <h4 className="font-medium text-sm text-muted-foreground">
@@ -209,7 +244,7 @@ export function QuestionDisplay({
           </div>
         )}
 
-        {/* Action Buttons - same for both types */}
+        {/* UNTOUCHED: Action buttons */}
         <div className="flex items-center gap-3 pt-4 border-t">
           <Button
             variant={isMarkedForReview ? 'default' : 'outline'}
