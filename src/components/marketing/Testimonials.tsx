@@ -32,69 +32,82 @@ interface Testimonial {
 const testimonials: Testimonial[] = [
   {
     id: 1,
-    name: 'Priya Sharma',
-    role: 'GATE Topper',
-    exam: 'GATE CS 2024',
-    rank: 'AIR 47',
-    image: 'PS',
+    name: 'Aryan Bansal',
+    role: 'JEE Mains 2026',
+    exam: 'JEE Mains',
+    rank: '97.4 percentile',
+    image: 'AB',
     rating: 5,
-    text: 'ExamPro\'s AI-powered analytics helped me identify my weak areas instantly. The mock tests were exactly like the real GATE exam. I improved my score by 60 marks in just 3 months!',
-    achievement: '60+ marks improvement',
+    text: 'The mock tests here are really close to the actual JEE pattern. I used to give full-length tests every weekend and review my mistakes using the solution tab. The topic-wise breakdown helped me fix my weak chapters in Physics.',
+    achievement: 'Qualified for JEE Advanced',
     color: 'from-blue-500 to-cyan-500',
     gradient: 'from-blue-600 to-cyan-600'
   },
   {
     id: 2,
-    name: 'Rahul Verma',
-    role: 'SSC Selection',
-    exam: 'SSC CGL 2024',
-    rank: 'Selected',
-    image: 'RV',
+    name: 'Sneha Mittal',
+    role: 'NEET UG 2026',
+    exam: 'NEET UG',
+    rank: '640 / 720',
+    image: 'SM',
     rating: 5,
-    text: 'The topic-wise practice questions and detailed explanations were game-changers. I especially loved the leaderboard feature that kept me motivated throughout my preparation journey.',
-    achievement: 'Selected in first attempt',
-    color: 'from-purple-500 to-pink-500',
-    gradient: 'from-purple-600 to-pink-600'
-  },
-  {
-    id: 3,
-    name: 'Anjali Patel',
-    role: 'JEE Advanced Qualifier',
-    exam: 'JEE Advanced 2024',
-    rank: 'AIR 234',
-    image: 'AP',
-    rating: 5,
-    text: 'Best exam prep platform hands down! The anti-cheat system during mock tests prepared me for the real exam environment. Detailed performance analytics showed exactly where I needed to focus.',
-    achievement: 'Top 500 rank',
+    text: 'Biology questions on this platform are very well organised by chapter and difficulty. I could target NCERT-based questions separately and then move to higher difficulty. My Biology score went from 280 to 340 in about two months.',
+    achievement: 'Secured government college seat',
     color: 'from-green-500 to-emerald-500',
     gradient: 'from-green-600 to-emerald-600'
   },
   {
-    id: 4,
-    name: 'Vikram Singh',
-    role: 'Banking Success',
-    exam: 'IBPS PO 2024',
-    rank: 'Selected',
-    image: 'VS',
+    id: 3,
+    name: 'Rohan Malik',
+    role: 'JEE Advanced 2026',
+    exam: 'JEE Advanced',
+    rank: 'Qualified',
+    image: 'RM',
     rating: 5,
-    text: 'The comprehensive question bank and regular updates with current affairs made all the difference. ExamPro\'s platform is intuitive and the customer support is exceptional. Highly recommended!',
-    achievement: 'Selected in 2 banks',
-    color: 'from-orange-500 to-red-500',
-    gradient: 'from-orange-600 to-red-600'
+    text: 'What I liked most is the timer and the question palette — it feels exactly like the real exam interface. Practicing under time pressure made a big difference. The numerical answer type questions are also available here which most platforms skip.',
+    achievement: 'IIT admission confirmed',
+    color: 'from-purple-500 to-pink-500',
+    gradient: 'from-purple-600 to-pink-600'
+  },
+  {
+    id: 4,
+    name: 'Divya Agarwal',
+    role: 'NEET UG 2026',
+    exam: 'NEET UG',
+    rank: '595 / 720',
+    image: 'DA',
+    rating: 5,
+    text: 'I gave NEET twice and failed to clear it the first time. This year I used this platform consistently for 4 months. The leaderboard kept me competitive and the detailed explanations after each test helped me understand where I was going wrong.',
+    achievement: 'Cleared NEET in second attempt',
+    color: 'from-orange-500 to-amber-500',
+    gradient: 'from-orange-600 to-amber-600'
   },
   {
     id: 5,
-    name: 'Neha Gupta',
-    role: 'NEET Qualifier',
-    exam: 'NEET UG 2024',
-    rank: 'AIR 1,245',
-    image: 'NG',
+    name: 'Kabir Khurana',
+    role: 'JEE Mains 2026',
+    exam: 'JEE Mains',
+    rank: '94.1 percentile',
+    image: 'KK',
+    rating: 4,
+    text: 'Good quality questions and the interface is clean. I especially liked that I could filter questions by topic and difficulty. Gave around 15 full mocks here before the actual exam. Chemistry organic section coverage is very thorough.',
+    achievement: 'NIT admission secured',
+    color: 'from-indigo-500 to-blue-500',
+    gradient: 'from-indigo-600 to-blue-600'
+  },
+  {
+    id: 6,
+    name: 'Prachi Sharma',
+    role: 'NEET UG 2026',
+    exam: 'NEET UG',
+    rank: '610 / 720',
+    image: 'PS',
     rating: 5,
-    text: 'ExamPro\'s medical entrance preparation is unmatched. The explanation videos for each question saved me hours of coaching. I could practice anytime, anywhere. Worth every penny!',
-    achievement: 'Government Medical College',
-    color: 'from-indigo-500 to-purple-500',
-    gradient: 'from-indigo-600 to-purple-600'
-  }
+    text: 'The results page after each test is genuinely useful — it shows time spent per question, topic-wise accuracy, and compares you with others. I could see my progress over multiple attempts which kept me motivated during the last few weeks.',
+    achievement: 'Private medical college admission',
+    color: 'from-teal-500 to-cyan-500',
+    gradient: 'from-teal-600 to-cyan-600'
+  },
 ]
 
 // Star rating component
@@ -198,36 +211,25 @@ export function Testimonials() {
   const [isVisible, setIsVisible] = useState(false)
   const sectionRef = useRef<HTMLDivElement>(null)
 
-  // Auto-play carousel
   useEffect(() => {
     if (!isAutoPlaying) return
-
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % testimonials.length)
     }, 5000)
-
     return () => clearInterval(interval)
   }, [isAutoPlaying])
 
-  // Intersection Observer
   useEffect(() => {
     if (typeof window === 'undefined') return
-
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && !isVisible) {
-            setIsVisible(true)
-          }
+          if (entry.isIntersecting && !isVisible) setIsVisible(true)
         })
       },
       { threshold: 0.2 }
     )
-
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
+    if (sectionRef.current) observer.observe(sectionRef.current)
     return () => observer.disconnect()
   }, [isVisible])
 
@@ -255,8 +257,6 @@ export function Testimonials() {
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -right-48 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 -left-48 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse animation-delay-2000" />
-        
-        {/* Pattern overlay */}
         <div 
           className="absolute inset-0 opacity-[0.02] dark:opacity-[0.05]"
           style={{
@@ -270,47 +270,38 @@ export function Testimonials() {
         
         {/* Section header */}
         <div className="text-center space-y-6 mb-16 md:mb-8">
-          
-          {/* Badge */}
           <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-800 shadow-lg">
             <Award className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             <span className="text-sm font-semibold text-purple-900 dark:text-purple-300">
-              Success Stories
+              Student Reviews
             </span>
           </div>
 
-          {/* Main heading */}
           <div className="space-y-4">
             <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-gray-900 dark:text-white leading-tight">
-              Trusted by{' '}
+              What Students{' '}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 animate-gradient-x">
-                Toppers
+                Say About Us
               </span>
             </h2>
-            
             <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto leading-relaxed">
-              Join thousands of students who achieved their dreams with ExamPro
+              Real feedback from JEE and NEET aspirants who prepared with us
             </p>
           </div>
 
-          {/* Stats */}
           <div className="flex flex-wrap justify-center gap-8 pt-4">
             {[
-              { icon: <Trophy className="w-5 h-5" />, value: '10,000+', label: 'Success Stories' },
-              { icon: <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />, value: '4.9/5', label: 'Average Rating' },
-              { icon: <TrendingUp className="w-5 h-5" />, value: '95%', label: 'Success Rate' }
+              { icon: <Trophy className="w-5 h-5" />, value: '5,000+', label: 'Students Enrolled' },
+              { icon: <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />, value: '4.8/5', label: 'Average Rating' },
+              { icon: <TrendingUp className="w-5 h-5" />, value: '1,200+', label: 'Mock Tests Taken' }
             ].map((stat, idx) => (
               <div key={idx} className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white">
                   {stat.icon}
                 </div>
                 <div className="text-left">
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {stat.value}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    {stat.label}
-                  </div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">{stat.label}</div>
                 </div>
               </div>
             ))}
@@ -319,26 +310,14 @@ export function Testimonials() {
 
         {/* Carousel */}
         <div className="relative">
-          
-          {/* Main carousel container */}
           <div className="relative overflow-hidden rounded-3xl">
-            
-            {/* Cards container with slide animation */}
             <div 
               className="flex transition-transform duration-700 ease-out"
-              style={{
-                transform: `translateX(-${currentIndex * 100}%)`
-              }}
+              style={{ transform: `translateX(-${currentIndex * 100}%)` }}
             >
               {testimonials.map((testimonial, index) => (
-                <div 
-                  key={testimonial.id}
-                  className="w-full flex-shrink-0 px-2"
-                >
-                  <TestimonialCard 
-                    testimonial={testimonial}
-                    isActive={index === currentIndex}
-                  />
+                <div key={testimonial.id} className="w-full flex-shrink-0 px-2">
+                  <TestimonialCard testimonial={testimonial} isActive={index === currentIndex} />
                 </div>
               ))}
             </div>
@@ -353,7 +332,6 @@ export function Testimonials() {
             >
               <ChevronLeft className="w-6 h-6 group-hover:scale-110 transition-transform" />
             </button>
-            
             <button
               onClick={handleNext}
               className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-14 h-14 rounded-full bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-400 hover:text-white hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 hover:border-transparent transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-110 group"
@@ -379,7 +357,7 @@ export function Testimonials() {
             ))}
           </div>
 
-          {/* Mobile navigation buttons */}
+          {/* Mobile navigation */}
           <div className="flex md:hidden justify-center gap-4 mt-8">
             <button
               onClick={handlePrevious}
@@ -388,7 +366,6 @@ export function Testimonials() {
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            
             <button
               onClick={handleNext}
               className="w-12 h-12 rounded-full bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-400 hover:text-white hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 hover:border-transparent transition-all duration-300 shadow-lg"
@@ -402,36 +379,31 @@ export function Testimonials() {
         {/* Bottom CTA */}
         <div className="mt-8 text-center">
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Ready to write your own success story?
+            Start your preparation today with free mock tests
           </p>
-          <button className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold shadow-2xl hover:shadow-purple-500/50 transition-all duration-300 hover:scale-105 overflow-hidden">
+          {/* <button className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold shadow-2xl hover:shadow-purple-500/50 transition-all duration-300 hover:scale-105 overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-purple-700 to-pink-700 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <span className="relative">Join 50,000+ Students</span>
+            <span className="relative">Get Started Free</span>
             <Sparkles className="relative w-5 h-5 group-hover:rotate-12 transition-transform" />
-          </button>
+          </button> */}
         </div>
       </div>
 
-      {/* Custom animations */}
       <style jsx>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
         }
-
         .animate-gradient-x {
           background-size: 200% 200%;
           animation: gradient-x 3s ease infinite;
         }
-
         .animation-delay-2000 {
           animation-delay: 2s;
         }
-
         .testimonial-card {
           transition: all 0.5s ease;
         }
-
         .testimonial-card.active {
           transform: scale(1);
         }

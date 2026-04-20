@@ -16,7 +16,7 @@ export default function HomePage() {
       {/* <Features /> */}
       <HowItWorks />
       <PopularExams />
-      {/* <Testimonials /> */}
+      <Testimonials />
       {/* <Pricing /> */}
       {/* <FinalCTA /> */}
     </main>
