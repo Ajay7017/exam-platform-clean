@@ -1,7 +1,7 @@
 // src/app/(admin)/admin/questions/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { SafeHtml } from '@/lib/utils/safe-html'
 import { Button } from '@/components/ui/button'
@@ -26,11 +26,144 @@ import { QuestionForm } from '@/components/admin/QuestionForm'
 import { toast } from 'sonner'
 import {
   Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2,
-  ToggleLeft, ToggleRight, X, LayoutList, Rows3, ClipboardList, Tag
+  ToggleLeft, ToggleRight, X, LayoutList, Rows3, ClipboardList, Tag, ChevronDown,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
-// TAG INPUT COMPONENT (From Exam Builder)
+// SEARCHABLE SELECT COMPONENT
+// ─────────────────────────────────────────────
+interface SearchableSelectOption {
+  value: string
+  label: string
+}
+
+function SearchableSelect({
+  options,
+  value,
+  onValueChange,
+  placeholder = 'Select...',
+  disabled = false,
+  allLabel = 'All',
+  allValue = 'all',
+}: {
+  options: SearchableSelectOption[]
+  value: string
+  onValueChange: (val: string) => void
+  placeholder?: string
+  disabled?: boolean
+  allLabel?: string
+  allValue?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const filtered = options.filter(o =>
+    o.label.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const selectedLabel = value === allValue
+    ? allLabel
+    : options.find(o => o.value === value)?.label ?? placeholder
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Focus input when opened
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+  }, [open])
+
+  const handleSelect = (val: string) => {
+    onValueChange(val)
+    setOpen(false)
+    setSearch('')
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className={value === allValue ? 'text-muted-foreground' : 'text-foreground'}>
+          {selectedLabel}
+        </span>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full min-w-[200px] rounded-md border border-gray-200 bg-white shadow-lg">
+          {/* Search box */}
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search..."
+                className="w-full pl-8 pr-3 py-1.5 text-sm rounded border border-gray-200 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+              />
+            </div>
+          </div>
+
+          {/* Options list */}
+          <div className="max-h-48 overflow-y-auto py-1">
+            {/* "All" option always on top */}
+            <button
+              type="button"
+              onClick={() => handleSelect(allValue)}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${
+                value === allValue ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'
+              }`}
+            >
+              {value === allValue && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+              <span className={value === allValue ? '' : 'pl-5'}>{allLabel}</span>
+            </button>
+
+            {filtered.length === 0 ? (
+              <p className="px-3 py-4 text-sm text-center text-gray-400">No results found</p>
+            ) : (
+              filtered.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleSelect(opt.value)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${
+                    value === opt.value ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'
+                  }`}
+                >
+                  {value === opt.value
+                    ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    : <span className="w-3.5 shrink-0" />
+                  }
+                  {opt.label}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// TAG INPUT COMPONENT (unchanged)
 // ─────────────────────────────────────────────
 function TagInput({
   tags,
@@ -132,6 +265,10 @@ function getTypeBadge(type?: 'mcq' | 'numerical' | 'match') {
   return <Badge className="bg-purple-100 text-purple-800 text-[10px] sm:text-xs font-medium">≡ MCQ</Badge>
 }
 
+// ── sort helper ───────────────────────────────────────────────────────────
+const sortByName = <T extends { name: string }>(arr: T[]): T[] =>
+  [...arr].sort((a, b) => a.name.localeCompare(b.name))
+
 interface Subject { id: string; name: string }
 interface Topic { id: string; name: string; subjectId: string }
 interface SubTopic { id: string; name: string; topicId: string }
@@ -172,7 +309,7 @@ interface QuestionDetail extends Question {
 
 export default function AdminQuestionsPage() {
   const router = useRouter()
-  
+
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -192,14 +329,11 @@ export default function AdminQuestionsPage() {
   const [filteredSubTopics, setFilteredSubTopics] = useState<SubTopic[]>([])
 
   const [existingTags, setExistingTags] = useState<string[]>([])
-
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
-
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkActionLoading, setBulkActionLoading] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
 
-  // ADVANCED QUICK EXAM CREATION STATE
   const [quickExamDialogOpen, setQuickExamDialogOpen] = useState(false)
   const [quickExamData, setQuickExamData] = useState({
     title: '',
@@ -212,7 +346,6 @@ export default function AdminQuestionsPage() {
     tags: [] as string[]
   })
   const [quickExamLoading, setQuickExamLoading] = useState(false)
-
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
@@ -237,7 +370,7 @@ export default function AdminQuestionsPage() {
 
   useEffect(() => {
     if (subjectId === 'all') {
-      setFilteredTopics(topics)
+      setFilteredTopics(topics) // already sorted
     } else {
       setFilteredTopics(topics.filter(t => t.subjectId === subjectId))
     }
@@ -247,27 +380,24 @@ export default function AdminQuestionsPage() {
 
   useEffect(() => {
     if (topicId === 'all') {
-      setFilteredSubTopics(subTopics)
+      setFilteredSubTopics(subTopics) // already sorted
     } else {
       setFilteredSubTopics(subTopics.filter(st => st.topicId === topicId))
     }
     setSubTopicId('all')
   }, [topicId, subTopics])
 
-  useEffect(() => {
-    fetchQuestions()
-  }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
+  useEffect(() => { fetchQuestions() }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
+  useEffect(() => { setSelectedIds(new Set()) }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
 
-  useEffect(() => {
-    setSelectedIds(new Set())
-  }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
+  // ── fetch helpers — sort alphabetically after fetch ───────────────────
 
   const fetchSubjects = async () => {
     try {
       const res = await fetch('/api/admin/subjects')
       if (!res.ok) return
       const data = await res.json()
-      setSubjects(data.subjects || data || [])
+      setSubjects(sortByName(data.subjects || data || []))
     } catch (e) { console.error('Failed to fetch subjects', e) }
   }
 
@@ -276,7 +406,7 @@ export default function AdminQuestionsPage() {
       const res = await fetch('/api/admin/topics')
       if (!res.ok) return
       const data = await res.json()
-      const list = data.topics || data || []
+      const list = sortByName(data.topics || data || [])
       setTopics(list)
       setFilteredTopics(list)
     } catch (e) { console.error('Failed to fetch topics', e) }
@@ -287,8 +417,9 @@ export default function AdminQuestionsPage() {
       const res = await fetch('/api/admin/subtopics')
       if (!res.ok) return
       const data = await res.json()
-      setSubTopics(data || [])
-      setFilteredSubTopics(data || [])
+      const list = sortByName(data || [])
+      setSubTopics(list)
+      setFilteredSubTopics(list)
     } catch (e) { console.error('Failed to fetch subtopics', e) }
   }
 
@@ -344,11 +475,8 @@ export default function AdminQuestionsPage() {
   const someSelected = selectedIds.size > 0
 
   const handleSelectAll = () => {
-    if (allSelected) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(allCurrentIds))
-    }
+    if (allSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(allCurrentIds))
   }
 
   const handleSelectOne = (id: string) => {
@@ -419,21 +547,17 @@ export default function AdminQuestionsPage() {
     }
   }
 
-  // ADVANCED QUICK EXAM CREATION LOGIC
   const handleQuickCreateExam = async () => {
     if (!quickExamData.title.trim() || !quickExamData.durationMin) {
-      toast.error("Please provide a title and duration");
-      return;
+      toast.error("Please provide a title and duration")
+      return
     }
-    
     setQuickExamLoading(true)
-    
     try {
       const slug = quickExamData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      
       const payload = {
         title: quickExamData.title,
-        slug: slug,
+        slug,
         isMultiSubject: true,
         durationMin: parseInt(quickExamData.durationMin) || 60,
         questionIds: Array.from(selectedIds),
@@ -443,24 +567,19 @@ export default function AdminQuestionsPage() {
         allowReview: quickExamData.allowReview,
         randomizeOrder: quickExamData.randomizeOrder,
         tags: quickExamData.tags,
-        isPublished: false
+        isPublished: false,
       }
-
       const res = await fetch('/api/admin/exams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create exam')
-      
       toast.success('Exam created successfully!')
       setQuickExamDialogOpen(false)
       setSelectedIds(new Set())
-      
       router.push(`/admin/exams/${data.exam.id}/edit`)
-      
     } catch (error: any) {
       toast.error(error.message || 'Failed to create exam')
     } finally {
@@ -529,9 +648,14 @@ export default function AdminQuestionsPage() {
     }
   }
 
+  // ── Derived option arrays for SearchableSelect ────────────────────────
+  const subjectOptions = subjects.map(s => ({ value: s.id, label: s.name }))
+  const topicOptions = filteredTopics.map(t => ({ value: t.id, label: t.name }))
+  const subTopicOptions = filteredSubTopics.map(st => ({ value: st.id, label: st.name }))
+
   return (
     <div className="space-y-6">
-      {/* Header with View Toggle */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Question Bank</h1>
@@ -539,22 +663,21 @@ export default function AdminQuestionsPage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-white border border-gray-200 rounded-lg p-1 mr-2 shadow-sm">
-            <button 
-              onClick={() => setViewMode('table')} 
+            <button
+              onClick={() => setViewMode('table')}
               className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               title="Compact Table View"
             >
               <LayoutList className="w-4 h-4" />
             </button>
-            <button 
-              onClick={() => setViewMode('card')} 
+            <button
+              onClick={() => setViewMode('card')}
               className={`p-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               title="Expanded Card View"
             >
               <Rows3 className="w-4 h-4" />
             </button>
           </div>
-
           <Button variant="outline" onClick={() => window.location.href = '/admin/questions/import'}>
             <Upload className="w-4 h-4 mr-2" />Import
           </Button>
@@ -564,10 +687,11 @@ export default function AdminQuestionsPage() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* ── Filters ── */}
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-7">
+            {/* Search */}
             <div className="lg:col-span-2 flex gap-2">
               <Input
                 placeholder="Search questions..."
@@ -579,35 +703,48 @@ export default function AdminQuestionsPage() {
                 <Search className="w-4 h-4" />
               </Button>
             </div>
+
+            {/* Question Type — short list, plain Select is fine */}
             <Select value={questionType} onValueChange={val => { setQuestionType(val); setPage(1) }}>
               <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="mcq">MCQ</SelectItem>
                 <SelectItem value="numerical">Numerical</SelectItem>
+                <SelectItem value="match">Match</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={subjectId} onValueChange={val => { setSubjectId(val); setPage(1) }}>
-              <SelectTrigger><SelectValue placeholder="All Subjects" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Subjects</SelectItem>
-                {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={topicId} onValueChange={val => { setTopicId(val); setPage(1) }} disabled={filteredTopics.length === 0}>
-              <SelectTrigger><SelectValue placeholder="All Topics" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Topics</SelectItem>
-                {filteredTopics.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={subTopicId} onValueChange={val => { setSubTopicId(val); setPage(1) }} disabled={filteredSubTopics.length === 0}>
-              <SelectTrigger><SelectValue placeholder="All SubTopics" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All SubTopics</SelectItem>
-                {filteredSubTopics.map(st => <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+
+            {/* Subject — searchable */}
+            <SearchableSelect
+              options={subjectOptions}
+              value={subjectId}
+              onValueChange={val => { setSubjectId(val); setPage(1) }}
+              allLabel="All Subjects"
+              allValue="all"
+            />
+
+            {/* Topic — searchable */}
+            <SearchableSelect
+              options={topicOptions}
+              value={topicId}
+              onValueChange={val => { setTopicId(val); setPage(1) }}
+              allLabel="All Topics"
+              allValue="all"
+              disabled={filteredTopics.length === 0}
+            />
+
+            {/* SubTopic — searchable */}
+            <SearchableSelect
+              options={subTopicOptions}
+              value={subTopicId}
+              onValueChange={val => { setSubTopicId(val); setPage(1) }}
+              allLabel="All SubTopics"
+              allValue="all"
+              disabled={filteredSubTopics.length === 0}
+            />
+
+            {/* Difficulty — short list, plain Select */}
             <Select value={difficulty} onValueChange={val => { setDifficulty(val); setPage(1) }}>
               <SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger>
               <SelectContent>
@@ -623,7 +760,11 @@ export default function AdminQuestionsPage() {
             <div className="flex items-center gap-2 mt-3 pt-3 border-t flex-wrap">
               <span className="text-xs text-muted-foreground">Active filters:</span>
               {search && <Badge variant="secondary" className="text-xs">Search: "{search}"</Badge>}
-              {questionType !== 'all' && <Badge variant="secondary" className="text-xs">Type: {questionType === 'mcq' ? 'MCQ' : 'Numerical'}</Badge>}
+              {questionType !== 'all' && (
+                <Badge variant="secondary" className="text-xs">
+                  Type: {questionType === 'mcq' ? 'MCQ' : questionType === 'numerical' ? 'Numerical' : 'Match'}
+                </Badge>
+              )}
               {subjectId !== 'all' && <Badge variant="secondary" className="text-xs">Subject: {subjects.find(s => s.id === subjectId)?.name}</Badge>}
               {topicId !== 'all' && <Badge variant="secondary" className="text-xs">Topic: {filteredTopics.find(t => t.id === topicId)?.name}</Badge>}
               {subTopicId !== 'all' && <Badge variant="secondary" className="text-xs">SubTopic: {filteredSubTopics.find(st => st.id === subTopicId)?.name}</Badge>}
@@ -634,65 +775,30 @@ export default function AdminQuestionsPage() {
         </CardContent>
       </Card>
 
-      {/* Sticky Bulk Action Bar */}
+      {/* Sticky Bulk Action Bar — unchanged */}
       {someSelected && (
         <div className="sticky top-4 z-20 flex flex-wrap items-center gap-3 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3">
-          <span className="text-sm font-medium text-gray-700">
-            {selectedIds.size} selected
-          </span>
+          <span className="text-sm font-medium text-gray-700">{selectedIds.size} selected</span>
           <div className="h-4 w-px bg-gray-300 hidden sm:block" />
-          
-          <Button
-            size="sm"
-            onClick={() => setQuickExamDialogOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-          >
-            <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-            Create Exam
+          <Button size="sm" onClick={() => setQuickExamDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+            <ClipboardList className="w-3.5 h-3.5 mr-1.5" />Create Exam
           </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={bulkActionLoading}
-            onClick={() => handleBulkToggle(true)}
-            className="text-green-700 border-green-300 hover:bg-green-50"
-          >
-            {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleRight className="w-3 h-3 mr-1" />}
-            Mark Active
+          <Button size="sm" variant="outline" disabled={bulkActionLoading} onClick={() => handleBulkToggle(true)} className="text-green-700 border-green-300 hover:bg-green-50">
+            {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleRight className="w-3 h-3 mr-1" />}Mark Active
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={bulkActionLoading}
-            onClick={() => handleBulkToggle(false)}
-            className="text-gray-600 border-gray-300 hover:bg-gray-50"
-          >
-            {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleLeft className="w-3 h-3 mr-1" />}
-            Mark Inactive
+          <Button size="sm" variant="outline" disabled={bulkActionLoading} onClick={() => handleBulkToggle(false)} className="text-gray-600 border-gray-300 hover:bg-gray-50">
+            {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleLeft className="w-3 h-3 mr-1" />}Mark Inactive
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={bulkActionLoading}
-            onClick={() => setBulkDeleteDialogOpen(true)}
-            className="text-red-600 border-red-300 hover:bg-red-50"
-          >
-            <Trash2 className="w-3 h-3 mr-1" />
-            Delete
+          <Button size="sm" variant="outline" disabled={bulkActionLoading} onClick={() => setBulkDeleteDialogOpen(true)} className="text-red-600 border-red-300 hover:bg-red-50">
+            <Trash2 className="w-3 h-3 mr-1" />Delete
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto text-gray-400 hover:text-gray-600"
-            onClick={() => setSelectedIds(new Set())}
-          >
+          <Button size="sm" variant="ghost" className="ml-auto text-gray-400 hover:text-gray-600" onClick={() => setSelectedIds(new Set())}>
             <X className="w-4 h-4" />
           </Button>
         </div>
       )}
 
-      {/* Question Listing */}
+      {/* Question Listing — unchanged */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -786,7 +892,6 @@ export default function AdminQuestionsPage() {
               <span className="text-sm font-medium text-gray-700">Select All ({questions.length})</span>
             </label>
           </div>
-
           {questions.map(q => (
             <div key={q.id} className={`relative flex gap-4 p-4 rounded-xl border bg-white shadow-sm transition-all ${selectedIds.has(q.id) ? 'border-blue-400 ring-1 ring-blue-400 bg-blue-50/30' : 'border-gray-200 hover:border-gray-300'}`}>
               <div className="pt-1">
@@ -808,14 +913,14 @@ export default function AdminQuestionsPage() {
                   <span>Created: {new Date(q.createdAt).toLocaleDateString()}</span>
                   <div className="w-px h-3 bg-gray-300"></div>
                   <button onClick={() => handleInlineToggle(q)} disabled={togglingId === q.id} className="hover:opacity-80 transition-opacity">
-                    {togglingId === q.id ? <span className="flex items-center gap-1 text-gray-500"><Loader2 className="w-3 h-3 animate-spin"/> Updating...</span> : q.isActive ? <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 className="w-3 h-3"/> Active</span> : <span className="flex items-center gap-1 text-gray-500 font-medium"><X className="w-3 h-3"/> Inactive</span>}
+                    {togglingId === q.id ? <span className="flex items-center gap-1 text-gray-500"><Loader2 className="w-3 h-3 animate-spin" /> Updating...</span> : q.isActive ? <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 className="w-3 h-3" /> Active</span> : <span className="flex items-center gap-1 text-gray-500 font-medium"><X className="w-3 h-3" /> Inactive</span>}
                   </button>
                 </div>
               </div>
               <div className="flex flex-col gap-1 shrink-0 border-l border-gray-100 pl-3">
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleView(q.id)} title="View Details"><Eye className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900" onClick={() => handleEdit(q.id)} title="Edit Question"><Edit className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:text-red-600 hover:bg-red-50 mt-auto" onClick={() => handleDeleteClick(q.id, q.statement)} title="Delete Question"><Trash2 className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleView(q.id)}><Eye className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900" onClick={() => handleEdit(q.id)}><Edit className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:text-red-600 hover:bg-red-50 mt-auto" onClick={() => handleDeleteClick(q.id, q.statement)}><Trash2 className="h-4 w-4" /></Button>
               </div>
             </div>
           ))}
@@ -830,51 +935,28 @@ export default function AdminQuestionsPage() {
         </div>
       )}
 
-      {/* ✅ NEW: ADVANCED QUICK EXAM CREATION DIALOG */}
+      {/* Quick Exam Dialog — unchanged */}
       <Dialog open={quickExamDialogOpen} onOpenChange={setQuickExamDialogOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Exam from Selected ({selectedIds.size} Questions)</DialogTitle>
-            <DialogDescription>
-              Instantly compile these questions into a new exam.
-            </DialogDescription>
+            <DialogDescription>Instantly compile these questions into a new exam.</DialogDescription>
           </DialogHeader>
           <div className="space-y-5 py-4">
             <div>
               <Label className="text-sm font-medium">Exam Title *</Label>
-              <Input 
-                value={quickExamData.title} 
-                onChange={(e) => setQuickExamData(p => ({ ...p, title: e.target.value }))} 
-                placeholder="e.g. Physics Chapter Test 1" 
-                className="mt-1"
-              />
+              <Input value={quickExamData.title} onChange={(e) => setQuickExamData(p => ({ ...p, title: e.target.value }))} placeholder="e.g. Physics Chapter Test 1" className="mt-1" />
             </div>
-            
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium">Duration (min) *</Label>
-                <Input 
-                  type="number" 
-                  value={quickExamData.durationMin} 
-                  onChange={(e) => setQuickExamData(p => ({ ...p, durationMin: e.target.value }))} 
-                  className="mt-1"
-                />
+                <Input type="number" value={quickExamData.durationMin} onChange={(e) => setQuickExamData(p => ({ ...p, durationMin: e.target.value }))} className="mt-1" />
               </div>
               <div>
                 <Label className="text-sm font-medium">Price (₹)</Label>
-                <Input 
-                  type="number" 
-                  value={quickExamData.price / 100} 
-                  onChange={(e) => {
-                    const price = parseFloat(e.target.value) * 100
-                    setQuickExamData(p => ({ ...p, price, isFree: price === 0 }))
-                  }} 
-                  className="mt-1"
-                  placeholder="0 for free"
-                />
+                <Input type="number" value={quickExamData.price / 100} onChange={(e) => { const price = parseFloat(e.target.value) * 100; setQuickExamData(p => ({ ...p, price, isFree: price === 0 })) }} className="mt-1" placeholder="0 for free" />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium">Difficulty</Label>
@@ -890,40 +972,23 @@ export default function AdminQuestionsPage() {
               <div>
                 <Label className="text-sm font-medium">Categories (Tags)</Label>
                 <div className="mt-1">
-                  <TagInput
-                    tags={quickExamData.tags}
-                    onChange={tags => setQuickExamData(p => ({ ...p, tags }))}
-                    existingTags={existingTags}
-                  />
+                  <TagInput tags={quickExamData.tags} onChange={tags => setQuickExamData(p => ({ ...p, tags }))} existingTags={existingTags} />
                 </div>
               </div>
             </div>
-
             <div className="space-y-2 pt-2">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={quickExamData.randomizeOrder} 
-                  onChange={e => setQuickExamData(p => ({ ...p, randomizeOrder: e.target.checked }))} 
-                  className="rounded border-gray-300 w-4 h-4 text-blue-600" 
-                />
+                <input type="checkbox" checked={quickExamData.randomizeOrder} onChange={e => setQuickExamData(p => ({ ...p, randomizeOrder: e.target.checked }))} className="rounded border-gray-300 w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-700">Randomize question order</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={quickExamData.allowReview} 
-                  onChange={e => setQuickExamData(p => ({ ...p, allowReview: e.target.checked }))} 
-                  className="rounded border-gray-300 w-4 h-4 text-blue-600" 
-                />
+                <input type="checkbox" checked={quickExamData.allowReview} onChange={e => setQuickExamData(p => ({ ...p, allowReview: e.target.checked }))} className="rounded border-gray-300 w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-700">Allow review before submit</span>
               </label>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setQuickExamDialogOpen(false)} disabled={quickExamLoading}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setQuickExamDialogOpen(false)} disabled={quickExamLoading}>Cancel</Button>
             <Button onClick={handleQuickCreateExam} disabled={quickExamLoading} className="bg-blue-600 hover:bg-blue-700">
               {quickExamLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ClipboardList className="w-4 h-4 mr-2" />}
               Create Exam
@@ -932,7 +997,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* VIEW DIALOG — untouched */}
+      {/* View Dialog — unchanged */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -940,9 +1005,7 @@ export default function AdminQuestionsPage() {
             <DialogDescription>Complete information about this question</DialogDescription>
           </DialogHeader>
           {loadingView ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
+            <div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
           ) : viewQuestion ? (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
@@ -1001,22 +1064,22 @@ export default function AdminQuestionsPage() {
                       <tbody>
                         {viewQuestion.matchPairs.leftColumn.items.map((item, i) => (
                           <tr key={i} className="border-b last:border-0">
-                              <td className="px-4 py-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold shrink-0">
-                                    {['A','B','C','D','E','F'][i]}
-                                  </span>
-                                  <SafeHtml html={item} />
-                                </div>
-                              </td>
-                              <td className="px-4 py-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground text-xs font-semibold shrink-0">
-                                    {['i','ii','iii','iv','v','vi'][i]}
-                                  </span>
-                                  <SafeHtml html={viewQuestion.matchPairs!.rightColumn.items[i]} />
-                                </div>
-                              </td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold shrink-0">
+                                  {['A','B','C','D','E','F'][i]}
+                                </span>
+                                <SafeHtml html={item} />
+                              </div>
+                            </td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground text-xs font-semibold shrink-0">
+                                  {['i','ii','iii','iv','v','vi'][i]}
+                                </span>
+                                <SafeHtml html={viewQuestion.matchPairs!.rightColumn.items[i]} />
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1051,7 +1114,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* EDIT DIALOG — untouched */}
+      {/* Edit Dialog — unchanged */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1070,7 +1133,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* SINGLE DELETE DIALOG — untouched */}
+      {/* Single Delete Dialog — unchanged */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1092,7 +1155,7 @@ export default function AdminQuestionsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* BULK DELETE DIALOG — untouched */}
+      {/* Bulk Delete Dialog — unchanged */}
       <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1107,11 +1170,7 @@ export default function AdminQuestionsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={bulkActionLoading}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleBulkDeleteConfirm}
-              disabled={bulkActionLoading}
-              className="bg-red-600 hover:bg-red-700"
-            >
+            <AlertDialogAction onClick={handleBulkDeleteConfirm} disabled={bulkActionLoading} className="bg-red-600 hover:bg-red-700">
               {bulkActionLoading
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting...</>
                 : <><Trash2 className="w-4 h-4 mr-2" />Delete {selectedIds.size} Question{selectedIds.size > 1 ? 's' : ''}</>

@@ -59,12 +59,12 @@ const navGroups = [
       { label: 'Feedback & Reports', href: '/admin/feedback', icon: MessageSquare, color: 'text-rose-400' },
     ],
   },
-  {
-    title: 'System',
-    items: [
-      { label: 'Settings', href: '/admin/settings', icon: Settings, color: 'text-gray-400' },
-    ],
-  },
+  // {
+  //   title: 'System',
+  //   items: [
+  //     { label: 'Settings', href: '/admin/settings', icon: Settings, color: 'text-gray-400' },
+  //   ],
+  // },
 ];
 
 // ── Shared nav content ────────────────────────────────────────────────────
