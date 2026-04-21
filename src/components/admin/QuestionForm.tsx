@@ -179,7 +179,17 @@ export function QuestionForm({
   );
 
   // ✅ NEW: match pairs state — managed separately from react-hook-form
-  const [matchPairs, setMatchPairs] = useState<MatchPairs>(defaultMatchPairs());
+  const [matchPairs, setMatchPairs] = useState<MatchPairs>(() => {
+  const existing = (initialData as any)?.matchPairs;
+  if (
+    existing &&
+    Array.isArray(existing.leftColumn?.items) &&
+    Array.isArray(existing.rightColumn?.items)
+  ) {
+    return existing as MatchPairs;
+  }
+  return defaultMatchPairs();
+});
   const [matchPairsError, setMatchPairsError] = useState<string>('');
 
   const isEditMode = !!questionId;
@@ -399,8 +409,8 @@ export function QuestionForm({
   };
 
   const validateMatchPairs = (): boolean => {
-    const leftEmpty = matchPairs.leftColumn.items.some(i => !i.trim());
-    const rightEmpty = matchPairs.rightColumn.items.some(i => !i.trim());
+    const leftEmpty = matchPairs.leftColumn.items.some(i => !hasContent(i));
+    const rightEmpty = matchPairs.rightColumn.items.some(i => !hasContent(i));
     if (leftEmpty || rightEmpty) {
       setMatchPairsError('All match items must be filled in');
       return false;
@@ -809,38 +819,45 @@ export function QuestionForm({
 
                   {/* Rows */}
                   {matchPairs.leftColumn.items.map((leftItem, index) => (
-                    <div key={index} className="grid grid-cols-[32px_1fr_32px_1fr_40px] gap-2 items-center">
-                      {/* Left label */}
-                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-violet-200 text-violet-700 text-xs font-bold shrink-0">
-                        {LEFT_LABELS[index]}
+                    <div key={index} className="rounded-lg border border-violet-100 bg-white p-3 space-y-2">
+                      {/* Row header: labels + delete */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-violet-200 text-violet-700 text-xs font-bold shrink-0">
+                            {LEFT_LABELS[index]}
+                          </div>
+                          <span className="text-xs text-violet-600 font-medium">Column I</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeMatchRow(index)}
+                          className="flex items-center justify-center w-7 h-7 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          title="Remove row"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      {/* Left item */}
-                      <Input
+                      {/* Left editor */}
+                      <RichTextEditor
                         value={leftItem}
-                        onChange={(e) => updateMatchItem('left', index, e.target.value)}
-                        placeholder={`e.g. Axile`}
-                        className="bg-white border-violet-200 focus:border-violet-400 text-sm"
+                        onChange={(val) => updateMatchItem('left', index, val)}
+                        placeholder="e.g. Axile — supports math, images, chemistry"
+                        minHeight="50px"
                       />
                       {/* Right label */}
-                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-xs font-bold shrink-0">
-                        {RIGHT_LABELS[index]}
+                      <div className="flex items-center gap-2 pt-1">
+                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 text-slate-600 text-xs font-bold shrink-0">
+                          {RIGHT_LABELS[index]}
+                        </div>
+                        <span className="text-xs text-slate-500 font-medium">Column II</span>
                       </div>
-                      {/* Right item */}
-                      <Input
+                      {/* Right editor */}
+                      <RichTextEditor
                         value={matchPairs.rightColumn.items[index]}
-                        onChange={(e) => updateMatchItem('right', index, e.target.value)}
-                        placeholder={`e.g. Sunflower`}
-                        className="bg-white border-violet-200 focus:border-violet-400 text-sm"
+                        onChange={(val) => updateMatchItem('right', index, val)}
+                        placeholder="e.g. Sunflower — supports math, images, chemistry"
+                        minHeight="50px"
                       />
-                      {/* Remove row */}
-                      <button
-                        type="button"
-                        onClick={() => removeMatchRow(index)}
-                        className="flex items-center justify-center w-8 h-8 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        title="Remove row"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   ))}
 

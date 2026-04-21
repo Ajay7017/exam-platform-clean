@@ -1001,18 +1001,22 @@ export default function AdminQuestionsPage() {
                       <tbody>
                         {viewQuestion.matchPairs.leftColumn.items.map((item, i) => (
                           <tr key={i} className="border-b last:border-0">
-                            <td className="px-4 py-2">
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold mr-2">
-                                {['A','B','C','D','E','F'][i]}
-                              </span>
-                              {item}
-                            </td>
-                            <td className="px-4 py-2">
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground text-xs font-semibold mr-2">
-                                {['i','ii','iii','iv','v','vi'][i]}
-                              </span>
-                              {viewQuestion.matchPairs!.rightColumn.items[i]}
-                            </td>
+                              <td className="px-4 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold shrink-0">
+                                    {['A','B','C','D','E','F'][i]}
+                                  </span>
+                                  <SafeHtml html={item} />
+                                </div>
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-muted-foreground text-xs font-semibold shrink-0">
+                                    {['i','ii','iii','iv','v','vi'][i]}
+                                  </span>
+                                  <SafeHtml html={viewQuestion.matchPairs!.rightColumn.items[i]} />
+                                </div>
+                              </td>
                           </tr>
                         ))}
                       </tbody>

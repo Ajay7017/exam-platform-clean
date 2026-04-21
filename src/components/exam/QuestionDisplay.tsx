@@ -115,16 +115,16 @@ function MatchTable({ matchPairs }: { matchPairs: NonNullable<Question['matchPai
           {matchPairs.leftColumn.items.map((leftItem, index) => (
             <tr key={index} className="border-b border-border last:border-0">
               <td className="px-4 py-2.5 align-middle">
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold mr-2 shrink-0">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold mr-2 shrink-0 align-middle">
                   {LEFT_LABELS[index]}
                 </span>
-                {leftItem}
+                <SafeHtml html={leftItem} className="inline align-middle" />
               </td>
               <td className="px-4 py-2.5 align-middle">
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold mr-2 shrink-0">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold mr-2 shrink-0 align-middle">
                   {RIGHT_LABELS[index]}
                 </span>
-                {matchPairs.rightColumn.items[index]}
+                <SafeHtml html={matchPairs.rightColumn.items[index]} className="inline align-middle" />
               </td>
             </tr>
           ))}
