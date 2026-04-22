@@ -24,7 +24,8 @@ export async function GET(
             question: {
               include: {
                 topic: {
-                  select: { id: true, name: true, slug: true }
+                  // ✅ added subjectId so edit page can derive selectedSubjects
+                  select: { id: true, name: true, slug: true, subjectId: true }
                 },
                 options: {
                   orderBy: { sequence: 'asc' }
@@ -54,6 +55,9 @@ export async function GET(
       id: eq.question.id,
       statement: eq.question.statement,
       imageUrl: eq.question.imageUrl,
+      // ✅ expose subjectId — the edit page uses this to derive
+      // which subjects are selected in a multi-subject exam
+      subjectId: eq.question.topic.subjectId,
       topic: {
         id: eq.question.topic.id,
         name: eq.question.topic.name,
@@ -77,6 +81,7 @@ export async function GET(
       title: exam.title,
       slug: exam.slug,
       subject: exam.subject,
+      isMultiSubject: exam.isMultiSubject,
       duration: exam.durationMin,
       totalMarks: exam.totalMarks,
       price: exam.price,
@@ -89,6 +94,7 @@ export async function GET(
       isPublished: exam.isPublished,
       totalAttempts: exam._count.attempts,
       totalPurchases: exam._count.purchases,
+      tags: exam.tags ?? [],
       questions,
       createdAt: exam.createdAt.toISOString(),
       updatedAt: exam.updatedAt.toISOString()
@@ -166,6 +172,7 @@ export async function PUT(
     if (validated.allowReview !== undefined) updateData.allowReview = validated.allowReview
     if (validated.difficulty) updateData.difficulty = validated.difficulty
     if (validated.thumbnail !== undefined) updateData.thumbnail = validated.thumbnail
+    if (validated.tags !== undefined) updateData.tags = validated.tags
     
     updateData.totalMarks = totalMarks
     
@@ -195,7 +202,6 @@ export async function PUT(
       }
     })
 
-    // Bust the cache so students get fresh exam data
     try {
       await cache.del(`exam:start-payload:${params.id}`)
     } catch (e) {
@@ -217,6 +223,7 @@ export async function PUT(
         price: exam.price,
         isFree: exam.isFree,
         isPublished: exam.isPublished,
+        tags: exam.tags,
         updatedAt: exam.updatedAt.toISOString()
       }
     })
@@ -260,7 +267,6 @@ export async function DELETE(
       where: { id: params.id }
     })
 
-    // Bust the cache so deleted exam is no longer served
     try {
       await cache.del(`exam:start-payload:${params.id}`)
     } catch (e) {

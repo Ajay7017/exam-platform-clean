@@ -18,7 +18,14 @@ import {
   ArrowLeft, Loader2, Save, X, Filter, BookOpen, Layers, Tag,
   ChevronRight, Search, CheckSquare, Square, ChevronLeft,
   GripVertical, Trash2, Check, Image as ImageIcon, Plus,
+  Eye, Edit3, CheckCircle2, Clock, FileText, Award, AlertCircle,
+  BarChart3, Edit, Trash,
 } from 'lucide-react'
+
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
+import { QuestionForm } from '@/components/admin/QuestionForm'
 
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -44,6 +51,19 @@ interface Question {
   difficulty: string; marks: number; negativeMarks: number; questionType?: string
 }
 
+interface QuestionDetail {
+  id: string; statement: string; imageUrl?: string | null
+  topicId: string; subTopicId?: string; subjectId: string
+  difficulty: string; marks: number; negativeMarks: number
+  optionA: string; optionB: string; optionC: string; optionD: string
+  correctAnswer: 'A' | 'B' | 'C' | 'D'; explanation?: string
+  topicName?: string; subTopicName?: string; subjectName?: string
+  questionType?: string
+  correctAnswerExact?: number | null
+  correctAnswerMin?: number | null
+  correctAnswerMax?: number | null
+}
+
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
@@ -57,6 +77,7 @@ const difficultyColor: Record<string, string> = {
 const STEPS = [
   { n: 1, label: 'Exam Details' },
   { n: 2, label: 'Select Questions' },
+  { n: 3, label: 'Preview & Save' },
 ]
 
 // ─────────────────────────────────────────────
@@ -114,13 +135,11 @@ function SortableQuestionRow({ question, index, onRemove }: { question: Question
 }
 
 // ─────────────────────────────────────────────
-// TAG INPUT COMPONENT  ← ADDED
+// TAG INPUT COMPONENT
 // ─────────────────────────────────────────────
 
 function TagInput({
-  tags,
-  onChange,
-  existingTags,
+  tags, onChange, existingTags,
 }: {
   tags: string[]
   onChange: (tags: string[]) => void
@@ -141,18 +160,11 @@ function TagInput({
     setShowSuggestions(false)
   }
 
-  const removeTag = (tag: string) => {
-    onChange(tags.filter(t => t !== tag))
-  }
+  const removeTag = (tag: string) => onChange(tags.filter(t => t !== tag))
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault()
-      addTag(inputValue)
-    }
-    if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
-      removeTag(tags[tags.length - 1])
-    }
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(inputValue) }
+    if (e.key === 'Backspace' && !inputValue && tags.length > 0) removeTag(tags[tags.length - 1])
   }
 
   return (
@@ -162,16 +174,9 @@ function TagInput({
         onClick={() => document.getElementById('edit-tag-input')?.focus()}
       >
         {tags.map(tag => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium"
-          >
+          <span key={tag} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
             {tag}
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); removeTag(tag) }}
-              className="hover:text-red-500 transition-colors ml-0.5"
-            >
+            <button type="button" onClick={e => { e.stopPropagation(); removeTag(tag) }} className="hover:text-red-500 transition-colors ml-0.5">
               <X className="h-2.5 w-2.5" />
             </button>
           </span>
@@ -192,29 +197,365 @@ function TagInput({
       {showSuggestions && (inputValue || suggestions.length > 0) && (
         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
           {suggestions.map(tag => (
-            <button
-              key={tag}
-              type="button"
-              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
-              onMouseDown={() => addTag(tag)}
-            >
-              <Tag className="h-3 w-3 text-gray-400" />
-              {tag}
+            <button key={tag} type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2" onMouseDown={() => addTag(tag)}>
+              <Tag className="h-3 w-3 text-gray-400" />{tag}
               <span className="ml-auto text-xs text-gray-400">existing</span>
             </button>
           ))}
           {inputValue.trim() && !tags.includes(inputValue.trim()) && !existingTags.includes(inputValue.trim()) && (
-            <button
-              type="button"
-              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700 flex items-center gap-2 border-t border-gray-100"
-              onMouseDown={() => addTag(inputValue)}
-            >
-              <Plus className="h-3 w-3" />
-              Create &quot;{inputValue.trim()}&quot;
+            <button type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-700 flex items-center gap-2 border-t border-gray-100" onMouseDown={() => addTag(inputValue)}>
+              <Plus className="h-3 w-3" />Create &quot;{inputValue.trim()}&quot;
             </button>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// QUESTION CARD (Preview)
+// ─────────────────────────────────────────────
+
+function QuestionCard({
+  question, index, showAnswer, onEdit, onRemove, loadingEdit,
+}: {
+  question: QuestionDetail
+  index: number
+  showAnswer: boolean
+  onEdit: () => void
+  onRemove: () => void
+  loadingEdit: boolean
+}) {
+  const isNumerical = question.questionType === 'numerical'
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 pt-4 pb-3">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 w-8 h-8 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs font-bold mt-0.5">
+            {index + 1}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 flex-wrap mb-2">
+              {question.subjectName && (
+                <><span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded font-medium">{question.subjectName}</span><ChevronRight className="h-3 w-3 text-gray-300" /></>
+              )}
+              {question.topicName && (
+                <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex items-center gap-1"><Layers className="h-2.5 w-2.5" />{question.topicName}</span>
+              )}
+              {question.subTopicName && (
+                <><ChevronRight className="h-3 w-3 text-gray-300" /><span className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 flex items-center gap-1"><Tag className="h-2.5 w-2.5" />{question.subTopicName}</span></>
+              )}
+              <span className={`ml-auto text-xs px-2 py-0.5 rounded-full border font-medium capitalize ${difficultyColor[question.difficulty] || ''}`}>{question.difficulty}</span>
+            </div>
+            <p className="text-sm text-gray-900 leading-relaxed font-medium [&_p]:inline [&_*]:inline" dangerouslySetInnerHTML={{ __html: question.statement }} />
+          </div>
+        </div>
+      </div>
+
+      {!isNumerical && (
+        <div className="px-5 pb-4 space-y-2">
+          {(['A', 'B', 'C', 'D'] as const).map(key => {
+            const text = question[`option${key}` as keyof QuestionDetail] as string
+            const isCorrect = key === question.correctAnswer
+            const highlight = showAnswer && isCorrect
+            return (
+              <div key={key} className={`flex items-start gap-2.5 p-2.5 rounded-lg border transition-colors ${highlight ? 'bg-emerald-50 border-emerald-300' : 'bg-gray-50 border-gray-100'}`}>
+                <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${highlight ? 'bg-emerald-500 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>{key}</div>
+                <p className={`text-sm flex-1 [&_p]:inline [&_*]:inline ${highlight ? 'text-emerald-800 font-medium' : 'text-gray-700'}`} dangerouslySetInnerHTML={{ __html: text }} />
+                {highlight && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {isNumerical && (
+        <div className="px-5 pb-4">
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            {question.correctAnswerExact !== null && question.correctAnswerExact !== undefined ? (
+              <div><p className="text-xs text-blue-600 font-medium mb-1">Exact Value</p><p className="text-2xl font-bold text-blue-800">{question.correctAnswerExact}</p></div>
+            ) : (
+              <div><p className="text-xs text-blue-600 font-medium mb-1">Accepted Range</p><p className="text-2xl font-bold text-blue-800">{question.correctAnswerMin} to {question.correctAnswerMax}</p></div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-gray-100 px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-emerald-600 font-semibold">+{question.marks} marks</span>
+          {question.negativeMarks > 0 && (
+            <span className="text-red-500 font-semibold">-{question.negativeMarks} negative</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={loadingEdit}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+          >
+            {loadingEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : <Edit className="h-3 w-3" />}
+            Edit Question
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <Trash className="h-3 w-3" />
+            Remove
+          </button>
+        </div>
+
+        {question.explanation && showAnswer && (
+          <div className="w-full mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+            <p className="text-xs font-semibold text-blue-700 mb-1 flex items-center gap-1">
+              <BookOpen className="h-3 w-3" />Explanation
+            </p>
+            <p
+              className="text-xs text-blue-800 leading-relaxed [&_p]:inline [&_*]:inline"
+              dangerouslySetInnerHTML={{ __html: question.explanation }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// EXAM PREVIEW COMPONENT
+// ─────────────────────────────────────────────
+
+function ExamPreview({
+  formData, questions, totalMarks, onEdit, onSubmit, submitting,
+  onQuestionUpdated, onQuestionRemoved,
+}: {
+  formData: any
+  questions: QuestionDetail[]
+  totalMarks: number
+  onEdit: () => void
+  onSubmit: () => void
+  submitting: boolean
+  onQuestionUpdated: (questionId: string) => void
+  onQuestionRemoved: (questionId: string) => void
+}) {
+  const [showAnswers, setShowAnswers] = useState(false)
+  const [editQuestionId, setEditQuestionId] = useState<string | null>(null)
+  const [editQuestionData, setEditQuestionData] = useState<any>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [loadingEdit, setLoadingEdit] = useState(false)
+
+  const handleEditClick = async (questionId: string) => {
+    setLoadingEdit(true)
+    try {
+      const res = await fetch(`/api/admin/questions/${questionId}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setEditQuestionId(questionId)
+      setEditQuestionData(data.question)
+      setEditDialogOpen(true)
+    } catch {
+      toast.error('Failed to load question for editing')
+    } finally {
+      setLoadingEdit(false)
+    }
+  }
+
+  const handleEditSuccess = () => {
+    setEditDialogOpen(false)
+    onQuestionUpdated(editQuestionId!)
+    toast.success('Question updated! Preview refreshed.')
+  }
+
+  const diffStats = useMemo(() => ({
+    easy: questions.filter(q => q.difficulty === 'easy').length,
+    medium: questions.filter(q => q.difficulty === 'medium').length,
+    hard: questions.filter(q => q.difficulty === 'hard').length,
+  }), [questions])
+
+  const negativeMarksTotal = useMemo(() =>
+    questions.reduce((sum, q) => sum + (q.negativeMarks || 0), 0)
+  , [questions])
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* ── Sticky top bar ── */}
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-1.5 bg-blue-100 rounded-lg">
+              <FileText className="h-4 w-4 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-semibold text-gray-900 truncate">
+                {formData.title || 'Untitled Exam'}
+              </h1>
+              <p className="text-xs text-gray-400">Preview — Check before saving</p>
+            </div>
+          </div>
+          <div className="hidden sm:flex items-center gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" />{questions.length} questions</span>
+            <span className="flex items-center gap-1"><Award className="h-3.5 w-3.5" />{totalMarks} marks</span>
+            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{formData.durationMin} min</span>
+          </div>
+          {/* Show/Hide answers toggle */}
+          <label className="hidden md:flex items-center gap-2 cursor-pointer shrink-0">
+            <div
+              className={`relative w-9 h-5 rounded-full transition-colors ${showAnswers ? 'bg-green-500' : 'bg-gray-300'}`}
+              onClick={() => setShowAnswers(v => !v)}
+            >
+              <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${showAnswers ? 'translate-x-4' : ''}`} />
+            </div>
+            <span className="text-xs text-gray-600 font-medium">Show answers</span>
+          </label>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button type="button" variant="outline" size="sm" onClick={onEdit} disabled={submitting} className="text-xs">
+              <Edit3 className="h-3.5 w-3.5 mr-1.5" />Edit Selection
+            </Button>
+            {/* ✅ KEY DIFFERENCE: "Save Changes" instead of "Create Exam" */}
+            <Button type="button" size="sm" onClick={onSubmit} disabled={submitting} className="text-xs">
+              {submitting
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Saving...</>
+                : <><Save className="h-3.5 w-3.5 mr-1.5" />Save Changes</>
+              }
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-6 pt-6 pb-4">
+        {/* ── Exam metadata summary card ── */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <h2 className="text-xl font-bold text-gray-900">{formData.title || 'Untitled Exam'}</h2>
+                <Badge variant="outline" className={`capitalize text-xs ${difficultyColor[formData.difficulty]}`}>{formData.difficulty}</Badge>
+                {formData.isFree
+                  ? <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">Free</Badge>
+                  : <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">₹{(formData.price / 100).toFixed(0)}</Badge>
+                }
+              </div>
+              {/* Tags */}
+              {formData.tags && formData.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {formData.tags.map((tag: string) => (
+                    <span key={tag} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
+                      <Tag className="h-2.5 w-2.5" />{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {formData.instructions && (
+                <p className="text-sm text-gray-500 mt-1 leading-relaxed">{formData.instructions}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-gray-100">
+            {[
+              { label: 'Questions', value: questions.length, icon: FileText, color: 'text-blue-600 bg-blue-50' },
+              { label: 'Total Marks', value: totalMarks, icon: Award, color: 'text-purple-600 bg-purple-50' },
+              { label: 'Duration', value: `${formData.durationMin} min`, icon: Clock, color: 'text-amber-600 bg-amber-50' },
+              { label: 'Neg. Marks', value: `-${negativeMarksTotal}`, icon: AlertCircle, color: 'text-red-500 bg-red-50' },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-gray-50">
+                <div className={`p-1.5 rounded-md ${color.split(' ')[1]}`}>
+                  <Icon className={`h-3.5 w-3.5 ${color.split(' ')[0]}`} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">{label}</p>
+                  <p className="text-sm font-semibold text-gray-800">{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Difficulty distribution */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center gap-2 mb-2">
+              <BarChart3 className="h-3.5 w-3.5 text-gray-400" />
+              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Difficulty Distribution</span>
+            </div>
+            <div className="flex gap-3 flex-wrap">
+              {diffStats.easy > 0 && <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">{diffStats.easy} Easy</span>}
+              {diffStats.medium > 0 && <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">{diffStats.medium} Medium</span>}
+              {diffStats.hard > 0 && <span className="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 font-medium">{diffStats.hard} Hard</span>}
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div className="mt-4 pt-4 border-t border-gray-100 flex gap-4 flex-wrap text-xs text-gray-500">
+            <span className={formData.randomizeOrder ? 'text-blue-600' : ''}>{formData.randomizeOrder ? '✓' : '✗'} Randomized order</span>
+            <span className={formData.allowReview ? 'text-blue-600' : ''}>{formData.allowReview ? '✓' : '✗'} Review before submit</span>
+          </div>
+        </div>
+
+        {/* ── Question cards ── */}
+        <div className="space-y-4">
+          {questions.map((question, index) => (
+            <QuestionCard
+              key={question.id}
+              question={question}
+              index={index}
+              showAnswer={showAnswers}
+              onEdit={() => handleEditClick(question.id)}
+              onRemove={() => onQuestionRemoved(question.id)}
+              loadingEdit={loadingEdit && editQuestionId === question.id}
+            />
+          ))}
+        </div>
+
+        {/* ── Sticky bottom bar ── */}
+        <div className="sticky bottom-0 mt-6 -mx-6 px-6 py-4 bg-white border-t border-gray-200 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+            <p className="text-sm text-gray-500">
+              <span className="font-semibold text-gray-900">{questions.length} questions</span>{' · '}
+              <span className="font-semibold text-gray-900">{totalMarks} marks</span>{' · '}
+              <span className="font-semibold text-gray-900">{formData.durationMin} min</span>
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={onEdit} disabled={submitting}>
+                <Edit3 className="h-4 w-4 mr-2" />Edit Selection
+              </Button>
+              {/* ✅ KEY DIFFERENCE: "Save Changes" instead of "Create Exam" */}
+              <Button onClick={onSubmit} disabled={submitting}>
+                {submitting
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                  : <><Save className="h-4 w-4 mr-2" />Save Changes</>
+                }
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Edit Question Dialog ── */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Question</DialogTitle>
+            <DialogDescription>
+              Changes apply globally across all exams using this question.
+            </DialogDescription>
+          </DialogHeader>
+          {editQuestionId && editQuestionData && (
+            <QuestionForm
+              questionId={editQuestionId}
+              initialData={editQuestionData}
+              mode="dialog"
+              onSuccess={handleEditSuccess}
+              onCancel={() => setEditDialogOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -228,7 +569,11 @@ export default function EditExamPage() {
   const params = useParams()
   const examId = params.id as string
 
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(2)
+
+  // ── Preview state ──
+  const [previewQuestions, setPreviewQuestions] = useState<QuestionDetail[]>([])
+  const [loadingPreview, setLoadingPreview] = useState(false)
 
   // ── Data ──
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -236,7 +581,7 @@ export default function EditExamPage() {
   const [allSubTopics, setAllSubTopics] = useState<SubTopic[]>([])
   const [allQuestions, setAllQuestions] = useState<Question[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [existingTags, setExistingTags] = useState<string[]>([])   // ← ADDED
+  const [existingTags, setExistingTags] = useState<string[]>([])
 
   // ── Loading ──
   const [loadingInitial, setLoadingInitial] = useState(true)
@@ -248,14 +593,14 @@ export default function EditExamPage() {
   // ── Thumbnail ──
   const [thumbnailUploading, setThumbnailUploading] = useState(false)
 
-  // ── Form ── (tags added)
+  // ── Form ──
   const [formData, setFormData] = useState({
     title: '', slug: '', isMultiSubject: false, subjectId: '',
     selectedSubjects: [] as string[], durationMin: 60, price: 0,
     isFree: true, instructions: '', randomizeOrder: false,
     allowReview: true, difficulty: 'medium' as 'easy' | 'medium' | 'hard',
     thumbnail: '',
-    tags: [] as string[],   // ← ADDED
+    tags: [] as string[],
   })
 
   // ── Filters ──
@@ -273,7 +618,7 @@ export default function EditExamPage() {
   )
 
   // ─────────────────────────────────────────────
-  // THUMBNAIL UPLOAD HANDLER
+  // THUMBNAIL UPLOAD
   // ─────────────────────────────────────────────
 
   const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -316,13 +661,23 @@ export default function EditExamPage() {
 
         setSubjects(subjectsData)
 
-        const isMulti = !examData.subject
+        const isMulti = examData.isMultiSubject
+
+        const derivedSubjectIds: string[] = []
+        if (isMulti && examData.questions?.length > 0) {
+          for (const q of examData.questions) {
+            if (q.subjectId && !derivedSubjectIds.includes(q.subjectId)) {
+              derivedSubjectIds.push(q.subjectId)
+            }
+          }
+        }
+
         setFormData({
           title: examData.title,
           slug: examData.slug,
           isMultiSubject: isMulti,
           subjectId: examData.subject?.id || '',
-          selectedSubjects: [],
+          selectedSubjects: derivedSubjectIds,
           durationMin: examData.duration,
           price: examData.price,
           isFree: examData.isFree,
@@ -331,7 +686,7 @@ export default function EditExamPage() {
           allowReview: examData.allowReview,
           difficulty: examData.difficulty,
           thumbnail: examData.thumbnail || '',
-          tags: examData.tags || [],   // ← ADDED: pre-fill existing tags
+          tags: examData.tags || [],
         })
 
         setSelectedIds(examData.questions.map((q: any) => q.id))
@@ -345,7 +700,6 @@ export default function EditExamPage() {
     init()
   }, [examId])
 
-  // ← ADDED: Fetch existing tags for autocomplete suggestions
   useEffect(() => {
     const fetchTags = async () => {
       try {
@@ -533,7 +887,80 @@ export default function EditExamPage() {
   }
 
   // ─────────────────────────────────────────────
-  // SUBMIT  ← tags added to PUT body
+  // OPEN PREVIEW
+  // ─────────────────────────────────────────────
+
+  const openPreview = useCallback(async () => {
+    if (!canSave) { toast.error('Select at least 2 questions'); return }
+    setLoadingPreview(true)
+    try {
+      const results = await Promise.all(
+        selectedIds.map(id => fetch(`/api/admin/questions/${id}`).then(r => r.json()))
+      )
+      const details: QuestionDetail[] = results.map((res, i) => {
+        const q = res.question
+        const meta = allQuestions.find(aq => aq.id === selectedIds[i])
+        return {
+          ...q,
+          topicName: meta?.topicName || '',
+          subTopicName: meta?.subTopicName || '',
+          subjectName: meta?.subjectName || '',
+        }
+      })
+      setPreviewQuestions(details)
+      setStep(3)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {
+      toast.error('Failed to load preview')
+    } finally {
+      setLoadingPreview(false)
+    }
+  }, [selectedIds, allQuestions, canSave])
+
+  // ─────────────────────────────────────────────
+  // PREVIEW: Question updated (refresh single card)
+  // ─────────────────────────────────────────────
+
+  const handlePreviewQuestionUpdated = useCallback(async (questionId: string) => {
+    try {
+      const res = await fetch(`/api/admin/questions/${questionId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const q = data.question
+      const meta = allQuestions.find(aq => aq.id === questionId)
+      const updated: QuestionDetail = {
+        ...q,
+        topicName: meta?.topicName || '',
+        subTopicName: meta?.subTopicName || '',
+        subjectName: meta?.subjectName || '',
+      }
+      setPreviewQuestions(prev =>
+        prev.map(pq => pq.id === questionId ? updated : pq)
+      )
+    } catch {
+      toast.error('Failed to refresh question preview')
+    }
+  }, [allQuestions])
+
+  // ─────────────────────────────────────────────
+  // PREVIEW: Question removed
+  // ─────────────────────────────────────────────
+
+  const handlePreviewQuestionRemoved = useCallback((questionId: string) => {
+    const remaining = previewQuestions.filter(q => q.id !== questionId)
+    setPreviewQuestions(remaining)
+    setSelectedIds(prev => prev.filter(id => id !== questionId))
+    if (remaining.length < 2) {
+      toast.warning(
+        remaining.length === 0
+          ? 'No questions left. Add questions before saving.'
+          : 'You need at least 2 questions to save the exam.'
+      )
+    }
+  }, [previewQuestions])
+
+  // ─────────────────────────────────────────────
+  // SUBMIT
   // ─────────────────────────────────────────────
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -560,7 +987,7 @@ export default function EditExamPage() {
           allowReview: formData.allowReview,
           difficulty: formData.difficulty,
           thumbnail: formData.thumbnail || null,
-          tags: formData.tags,   // ← ADDED
+          tags: formData.tags,
         }),
       })
       const text = await res.text()
@@ -590,7 +1017,29 @@ export default function EditExamPage() {
   }
 
   // ─────────────────────────────────────────────
-  // RENDER
+  // STEP 3: PREVIEW
+  // ─────────────────────────────────────────────
+
+  if (step === 3) {
+    return (
+      <>
+        <WizardBar step={step} />
+        <ExamPreview
+          formData={formData}
+          questions={previewQuestions}
+          totalMarks={totalSelectedMarks}
+          onEdit={() => { setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          onSubmit={handleSubmit}
+          submitting={submitting}
+          onQuestionUpdated={handlePreviewQuestionUpdated}
+          onQuestionRemoved={handlePreviewQuestionRemoved}
+        />
+      </>
+    )
+  }
+
+  // ─────────────────────────────────────────────
+  // RENDER (Steps 1 & 2)
   // ─────────────────────────────────────────────
 
   return (
@@ -691,7 +1140,6 @@ export default function EditExamPage() {
                 <p className="text-xs text-gray-400 mt-1">Set to 0 for free exam</p>
               </div>
 
-              {/* ── CATEGORIES / TAGS  ← ADDED ── */}
               <div>
                 <Label className="text-sm font-medium">
                   Categories
@@ -700,11 +1148,7 @@ export default function EditExamPage() {
                 <p className="text-xs text-gray-400 mt-0.5 mb-2">
                   Tag this exam with categories like NEET, JEE, Class 11, School etc. Students can filter by these.
                 </p>
-                <TagInput
-                  tags={formData.tags}
-                  onChange={tags => setFormData(p => ({ ...p, tags }))}
-                  existingTags={existingTags}
-                />
+                <TagInput tags={formData.tags} onChange={tags => setFormData(p => ({ ...p, tags }))} existingTags={existingTags} />
               </div>
 
               <div>
@@ -712,46 +1156,23 @@ export default function EditExamPage() {
                 <Textarea id="instructions" value={formData.instructions} onChange={e => setFormData(p => ({ ...p, instructions: e.target.value }))} placeholder="Enter exam instructions..." rows={3} className="mt-1" />
               </div>
 
-              {/* ── Thumbnail ── */}
               <div>
                 <Label className="text-sm font-medium">Exam Thumbnail</Label>
-                <p className="text-xs text-gray-400 mt-0.5 mb-2">
-                  Optional — shown on exam cards. If not set, a colored placeholder is used.
-                </p>
-
+                <p className="text-xs text-gray-400 mt-0.5 mb-2">Optional — shown on exam cards.</p>
                 {formData.thumbnail ? (
                   <div className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-200 group">
                     <img src={formData.thumbnail} alt="Thumbnail preview" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setFormData(p => ({ ...p, thumbnail: '' }))}
-                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
+                    <button type="button" onClick={() => setFormData(p => ({ ...p, thumbnail: '' }))} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 ) : (
-                  <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                    thumbnailUploading ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                  }`}>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      className="hidden"
-                      disabled={thumbnailUploading}
-                      onChange={handleThumbnailUpload}
-                    />
+                  <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${thumbnailUploading ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" className="hidden" disabled={thumbnailUploading} onChange={handleThumbnailUpload} />
                     {thumbnailUploading ? (
-                      <div className="flex flex-col items-center gap-2 text-blue-500">
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                        <span className="text-xs">Uploading...</span>
-                      </div>
+                      <div className="flex flex-col items-center gap-2 text-blue-500"><Loader2 className="h-6 w-6 animate-spin" /><span className="text-xs">Uploading...</span></div>
                     ) : (
-                      <div className="flex flex-col items-center gap-1.5 text-gray-400">
-                        <ImageIcon className="h-7 w-7" />
-                        <span className="text-sm font-medium">Click to upload thumbnail</span>
-                        <span className="text-xs">JPG, PNG, WEBP — max 10MB</span>
-                      </div>
+                      <div className="flex flex-col items-center gap-1.5 text-gray-400"><ImageIcon className="h-7 w-7" /><span className="text-sm font-medium">Click to upload thumbnail</span><span className="text-xs">JPG, PNG, WEBP — max 10MB</span></div>
                     )}
                   </label>
                 )}
@@ -793,6 +1214,7 @@ export default function EditExamPage() {
               <CardContent className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <BookOpen className="h-12 w-12 mb-3 opacity-30" />
                 <p className="text-sm font-medium">No subject selected</p>
+                <p className="text-xs mt-1 opacity-70">Go back to Exam Details and select a subject</p>
                 <Button variant="outline" className="mt-4" onClick={() => setStep(1)}>
                   <ChevronLeft className="h-4 w-4 mr-1" />Back to Details
                 </Button>
@@ -989,15 +1411,12 @@ export default function EditExamPage() {
                       <span className="text-xs text-gray-500 font-medium">{totalSelectedMarks} marks</span>
                     </div>
 
-                    {/* ── Per-subject breakdown ── */}
                     {selectedIds.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {availableSubjectsInQuestions.map(s => {
                           const count = selectedQuestions.filter(q => q.subjectId === s.id).length
                           if (count === 0) return null
-                          const subjectMarks = selectedQuestions
-                            .filter(q => q.subjectId === s.id)
-                            .reduce((sum, q) => sum + q.marks, 0)
+                          const subjectMarks = selectedQuestions.filter(q => q.subjectId === s.id).reduce((sum, q) => sum + q.marks, 0)
                           return (
                             <div key={s.id} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded-md border border-gray-100">
                               <span className="text-xs font-medium text-gray-700 truncate">{s.name}</span>
@@ -1009,7 +1428,6 @@ export default function EditExamPage() {
                             </div>
                           )
                         })}
-                        {/* show total only for multi-subject */}
                         {availableSubjectsInQuestions.length > 1 && (
                           <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded-md border border-blue-100 mt-1">
                             <span className="text-xs font-semibold text-blue-700">Total</span>
@@ -1023,12 +1441,8 @@ export default function EditExamPage() {
                       </div>
                     )}
 
-                    {selectedIds.length > 0 && !formData.randomizeOrder && (
-                      <p className="text-xs text-gray-400 mt-1">Drag to reorder</p>
-                    )}
-                    {selectedIds.length > 0 && formData.randomizeOrder && (
-                      <p className="text-xs text-amber-500 mt-1">Order randomized for students</p>
-                    )}
+                    {selectedIds.length > 0 && !formData.randomizeOrder && <p className="text-xs text-gray-400 mt-1">Drag to reorder</p>}
+                    {selectedIds.length > 0 && formData.randomizeOrder && <p className="text-xs text-amber-500 mt-1">Order randomized for students</p>}
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
                     {selectedIds.length === 0 ? (
@@ -1082,11 +1496,11 @@ export default function EditExamPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => router.push('/admin/exams')} disabled={submitting}>Cancel</Button>
+            <Button variant="outline" onClick={() => router.push('/admin/exams')} disabled={submitting || loadingPreview}>Cancel</Button>
 
             {step === 2 && (
               <Button variant="outline" onClick={() => setStep(1)}>
-                <ChevronLeft className="h-4 w-4 mr-1" />Back
+                <ChevronLeft className="h-4 w-4 mr-1" />Edit Details
               </Button>
             )}
 
@@ -1097,9 +1511,26 @@ export default function EditExamPage() {
             )}
 
             {step === 2 && (
-              <Button onClick={handleSubmit} disabled={!canSave || submitting}>
-                {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : <><Save className="mr-2 h-4 w-4" />Save Changes</>}
-              </Button>
+              <>
+                {/* ✅ NEW: Preview button — mirrors new exam flow exactly */}
+                <Button
+                  variant="outline"
+                  onClick={openPreview}
+                  disabled={!canSave || loadingPreview}
+                  className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                >
+                  {loadingPreview
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading...</>
+                    : <><Eye className="mr-2 h-4 w-4" />Preview</>
+                  }
+                </Button>
+                <Button onClick={handleSubmit} disabled={!canSave || submitting}>
+                  {submitting
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+                    : <><Save className="mr-2 h-4 w-4" />Save Changes</>
+                  }
+                </Button>
+              </>
             )}
           </div>
         </div>

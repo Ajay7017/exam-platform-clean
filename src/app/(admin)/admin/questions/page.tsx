@@ -27,6 +27,7 @@ import { toast } from 'sonner'
 import {
   Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2,
   ToggleLeft, ToggleRight, X, LayoutList, Rows3, ClipboardList, Tag, ChevronDown,
+  FileDown,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
@@ -347,6 +348,9 @@ export default function AdminQuestionsPage() {
   })
   const [quickExamLoading, setQuickExamLoading] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportStatus, setExportStatus] = useState('')
+  const [limit, setLimit] = useState(20)   // ← ADD THIS
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [viewQuestion, setViewQuestion] = useState<QuestionDetail | null>(null)
@@ -387,7 +391,7 @@ export default function AdminQuestionsPage() {
     setSubTopicId('all')
   }, [topicId, subTopics])
 
-  useEffect(() => { fetchQuestions() }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
+  useEffect(() => { fetchQuestions() }, [page, difficulty, subjectId, topicId, subTopicId, questionType, limit])
   useEffect(() => { setSelectedIds(new Set()) }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
 
   // ── fetch helpers — sort alphabetically after fetch ───────────────────
@@ -435,7 +439,7 @@ export default function AdminQuestionsPage() {
   const fetchQuestions = async () => {
     try {
       setLoading(true)
-      const params = new URLSearchParams({ page: page.toString(), limit: '20' })
+      const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() })
       if (difficulty !== 'all') params.append('difficulty', difficulty)
       if (search) params.append('search', search)
       if (subjectId !== 'all') params.append('subjectId', subjectId)
@@ -544,6 +548,24 @@ export default function AdminQuestionsPage() {
       toast.error(e.message || 'Failed to delete questions')
     } finally {
       setBulkActionLoading(false)
+    }
+  }
+
+  const handleExportPdf = async () => {
+    setExportLoading(true)
+    setExportStatus('Preparing export…')
+    try {
+      const { exportQuestionsToPdf } = await import('@/lib/utils/pdf-export')
+      await exportQuestionsToPdf(
+        Array.from(selectedIds),
+        (status) => setExportStatus(status)
+      )
+      toast.success(`PDF exported — ${selectedIds.size} question${selectedIds.size !== 1 ? 's' : ''}`)
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to export PDF')
+    } finally {
+      setExportLoading(false)
+      setExportStatus('')
     }
   }
 
@@ -662,7 +684,23 @@ export default function AdminQuestionsPage() {
           <p className="text-gray-600 mt-1">{total} questions available</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white border border-gray-200 rounded-lg p-1 mr-2 shadow-sm">
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2 py-1 shadow-sm">
+            <Select
+              value={limit.toString()}
+              onValueChange={val => { setLimit(Number(val)); setPage(1) }}
+            >
+              <SelectTrigger className="h-7 w-16 border-0 shadow-none text-xs font-medium focus:ring-0 px-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-gray-400 pr-1">per page</span>
+            <div className="w-px h-4 bg-gray-200" />
             <button
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
@@ -782,6 +820,19 @@ export default function AdminQuestionsPage() {
           <div className="h-4 w-px bg-gray-300 hidden sm:block" />
           <Button size="sm" onClick={() => setQuickExamDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
             <ClipboardList className="w-3.5 h-3.5 mr-1.5" />Create Exam
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportPdf}
+            disabled={exportLoading}
+            className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
+            title="Export selected questions as PDF"
+          >
+            {exportLoading
+              ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />{exportStatus || 'Exporting…'}</>
+              : <><FileDown className="w-3 h-3 mr-1" />Export PDF</>
+            }
           </Button>
           <Button size="sm" variant="outline" disabled={bulkActionLoading} onClick={() => handleBulkToggle(true)} className="text-green-700 border-green-300 hover:bg-green-50">
             {bulkActionLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ToggleRight className="w-3 h-3 mr-1" />}Mark Active
