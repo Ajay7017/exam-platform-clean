@@ -80,6 +80,11 @@ const STEPS = [
   { n: 3, label: 'Preview & Save' },
 ]
 
+function getOptimizedThumbnail(url: string): string {
+  if (!url || !url.includes('cloudinary.com')) return url
+  return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/')
+}
+
 // ─────────────────────────────────────────────
 // WIZARD PROGRESS BAR
 // ─────────────────────────────────────────────
@@ -1160,8 +1165,8 @@ export default function EditExamPage() {
                 <Label className="text-sm font-medium">Exam Thumbnail</Label>
                 <p className="text-xs text-gray-400 mt-0.5 mb-2">Optional — shown on exam cards.</p>
                 {formData.thumbnail ? (
-                  <div className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-200 group">
-                    <img src={formData.thumbnail} alt="Thumbnail preview" className="w-full h-full object-cover" />
+                  <div className="relative w-full rounded-lg overflow-hidden border border-gray-200 group" style={{ aspectRatio: '16/9' }}>
+                    <img src={getOptimizedThumbnail(formData.thumbnail)} alt="Thumbnail preview" className="w-full h-full object-cover" />
                     <button type="button" onClick={() => setFormData(p => ({ ...p, thumbnail: '' }))} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -1172,7 +1177,7 @@ export default function EditExamPage() {
                     {thumbnailUploading ? (
                       <div className="flex flex-col items-center gap-2 text-blue-500"><Loader2 className="h-6 w-6 animate-spin" /><span className="text-xs">Uploading...</span></div>
                     ) : (
-                      <div className="flex flex-col items-center gap-1.5 text-gray-400"><ImageIcon className="h-7 w-7" /><span className="text-sm font-medium">Click to upload thumbnail</span><span className="text-xs">JPG, PNG, WEBP — max 10MB</span></div>
+                      <div className="flex flex-col items-center gap-1.5 text-gray-400"><ImageIcon className="h-7 w-7" /><span className="text-sm font-medium">Click to upload thumbnail</span><span className="text-xs">JPG, PNG, WEBP — 16:9 recommended — max 10MB</span></div>
                     )}
                   </label>
                 )}

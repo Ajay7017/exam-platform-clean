@@ -100,6 +100,11 @@ function WizardBar({ step }: { step: number }) {
   )
 }
 
+function getOptimizedThumbnail(url: string): string {
+  if (!url || !url.includes('cloudinary.com')) return url
+  return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/')
+}
+
 function SortableQuestionRow({
   question, index, onRemove,
 }: {
@@ -1063,12 +1068,8 @@ export default function CreateExamPage() {
                 </p>
 
                 {formData.thumbnail ? (
-                  <div className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-200 group">
-                    <img
-                      src={formData.thumbnail}
-                      alt="Thumbnail preview"
-                      className="w-full h-full object-cover"
-                    />
+                  <div className="relative w-full rounded-lg overflow-hidden border border-gray-200 group" style={{ aspectRatio: '16/9' }}>
+                    <img src={getOptimizedThumbnail(formData.thumbnail)} alt="Thumbnail preview" className="w-full h-full object-cover" />
                     <button
                       type="button"
                       onClick={() => setFormData(p => ({ ...p, thumbnail: '' }))}
@@ -1099,7 +1100,7 @@ export default function CreateExamPage() {
                       <div className="flex flex-col items-center gap-1.5 text-gray-400">
                         <ImageIcon className="h-7 w-7" />
                         <span className="text-sm font-medium">Click to upload thumbnail</span>
-                        <span className="text-xs">JPG, PNG, WEBP — max 10MB</span>
+                        <span className="text-xs">JPG, PNG, WEBP — 16:9 recommended — max 10MB</span>
                       </div>
                     )}
                   </label>

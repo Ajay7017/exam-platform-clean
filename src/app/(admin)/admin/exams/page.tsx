@@ -80,6 +80,10 @@ function getDifficultyColor(d: string) {
     default: return 'bg-gray-100 text-gray-700'
   }
 }
+function getOptimizedThumbnail(url: string): string {
+  if (!url || !url.includes('cloudinary.com')) return url
+  return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/')
+}
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -205,8 +209,9 @@ export default function AdminExamsPage() {
 
     if (exam.thumbnail) {
       return (
-        <div className="relative h-36 rounded-t-lg overflow-hidden">
-          <img src={exam.thumbnail} alt={exam.title} className="w-full h-full object-cover" />
+        // AFTER
+        <div className="relative w-full rounded-t-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+          <img src={getOptimizedThumbnail(exam.thumbnail)} alt={exam.title} className="w-full h-full object-cover" />
           <div className="absolute top-3 left-3">
             <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
           </div>
@@ -220,7 +225,7 @@ export default function AdminExamsPage() {
     }
 
     return (
-      <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
+      <div className={`relative w-full bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`} style={{ aspectRatio: '16/9' }}>
         <div
           className="absolute inset-0 opacity-10"
           style={{

@@ -92,35 +92,66 @@ function getSubjectInitial(subject: string) {
 
 function getDifficultyColor(d: string) {
   switch (d) {
-    case 'easy':   return 'bg-green-100 text-green-700';
+    case 'easy': return 'bg-green-100 text-green-700';
     case 'medium': return 'bg-yellow-100 text-yellow-700';
-    case 'hard':   return 'bg-red-100 text-red-700';
-    default:       return 'bg-gray-100 text-gray-700';
+    case 'hard': return 'bg-red-100 text-red-700';
+    default: return 'bg-gray-100 text-gray-700';
   }
+}
+
+function getOptimizedThumbnail(url: string | null | undefined): string {
+  if (!url || !url.includes('cloudinary.com')) return url ?? '';
+  return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/');
 }
 
 // ── Exam Card Header ─────────────────────────────────────────────────────────
 
 function ExamCardHeader({ exam }: { exam: Exam }) {
+  const [imgError, setImgError] = useState(false);
   const gradient = getSubjectGradient(exam.subject);
-  const initial  = getSubjectInitial(exam.subject);
+  const initial = getSubjectInitial(exam.subject);
+
+  // Consider it valid if it's not empty, not a "null" string, and hasn't failed to load
+  const isValidThumbnail = Boolean(
+    exam.thumbnail && 
+    exam.thumbnail !== 'null' && 
+    exam.thumbnail !== 'undefined' && 
+    !imgError
+  );
+
+  if (isValidThumbnail) {
+    return (
+      <div className="relative w-full rounded-t-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+        <img
+          src={getOptimizedThumbnail(exam.thumbnail)}
+          alt={exam.title}
+          className="w-full h-full object-cover"
+          onError={() => setImgError(true)} // Fallback to gradient if image fails to load
+        />
+        <div className="absolute top-3 left-3">
+          <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
+        </div>
+        <div className="absolute top-3 right-3">
+          {exam.isFree ? (
+            <Badge className="bg-green-100 text-green-800">Free</Badge>
+          ) : (
+            <Badge className="bg-white/20 text-white border border-white/30">
+              ₹{(exam.price / 100).toFixed(0)}
+            </Badge>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`relative h-36 bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`}>
-      <div
-        className="absolute inset-0 opacity-10"
-        style={{
-          backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
-          backgroundSize: '18px 18px',
-        }}
-      />
+    <div className={`relative w-full bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`} style={{ aspectRatio: '16/9' }}>
+      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
         <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
           <span className="text-2xl font-bold text-white">{initial}</span>
         </div>
-        <span className="text-white/80 text-xs font-medium tracking-wide uppercase">
-          {exam.subject}
-        </span>
+        <span className="text-white/80 text-xs font-medium tracking-wide uppercase">{exam.subject}</span>
       </div>
       <div className="absolute top-3 left-3">
         <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
@@ -214,7 +245,7 @@ function ExamGridCard({ exam }: { exam: Exam }) {
 
 function ExamListRow({ exam }: { exam: Exam }) {
   const gradient = getSubjectGradient(exam.subject);
-  const initial  = getSubjectInitial(exam.subject);
+  const initial = getSubjectInitial(exam.subject);
 
   return (
     <div className="flex items-center gap-4 p-4 border-b last:border-0 hover:bg-gray-50 transition-colors">
@@ -278,30 +309,43 @@ function ExamListRow({ exam }: { exam: Exam }) {
 
 // ── Bundle Card ──────────────────────────────────────────────────────────────
 
-// PATCH for BundleCard component inside src/app/(student)/exams/page.tsx
-// Replace the existing BundleCard function with this one.
-// Only the description rendering changes — line-clamp-2 → per-line rendering.
-
 function BundleCard({ bundle }: { bundle: Bundle }) {
+  const [imgError, setImgError] = useState(false);
+
+  const isValidThumbnail = Boolean(
+    bundle.thumbnail && 
+    bundle.thumbnail !== 'null' && 
+    bundle.thumbnail !== 'undefined' && 
+    !imgError
+  );
+
   return (
     <Card className="hover:shadow-lg transition-shadow overflow-hidden group">
       <CardContent className="p-0">
         {/* Header */}
-        <div className={`relative h-36 rounded-t-lg overflow-hidden ${!bundle.thumbnail ? 'bg-gradient-to-br from-indigo-600 to-purple-700' : ''}`}>
-            {bundle.thumbnail ? (
-              <img src={bundle.thumbnail} alt={bundle.name} className="w-full h-full object-cover" />
-            ) : (
-              <>
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                  <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-                    <Package className="h-7 w-7 text-white" />
-                  </div>
-                  <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Test Bundle</span>
+        <div
+          className={`relative w-full rounded-t-lg overflow-hidden ${!isValidThumbnail ? 'bg-gradient-to-br from-indigo-600 to-purple-700' : ''}`}
+          style={{ aspectRatio: '16/9' }}
+        >
+          {isValidThumbnail ? (
+            <img 
+              src={getOptimizedThumbnail(bundle.thumbnail)} 
+              alt={bundle.name} 
+              className="w-full h-full object-cover" 
+              onError={() => setImgError(true)} // Fallback to gradient if image fails to load
+            />
+          ) : (
+            <>
+              <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+                  <Package className="h-7 w-7 text-white" />
                 </div>
-              </>
-            )}
-            {bundle.discount > 0 && (
+                <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Test Bundle</span>
+              </div>
+            </>
+          )}
+          {bundle.discount > 0 && (
             <div className="absolute top-3 left-3">
               <Badge className="bg-orange-100 text-orange-700">{bundle.discount}% OFF</Badge>
             </div>
@@ -312,7 +356,6 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
             </Badge>
           </div>
         </div>
-
         {/* Body */}
         <div className="p-4">
           <h3 className="font-semibold text-gray-900 truncate mb-1" title={bundle.name}>
@@ -376,7 +419,7 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 // ── Bundle Skeleton ───────────────────────────────────────────────────────────
@@ -403,15 +446,15 @@ export default function ExamsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('exams');
 
   // ── Exam state (unchanged) ──────────────────────────────────────────────
-  const [isLoadingExams, setIsLoadingExams]   = useState(true);
-  const [exams, setExams]                     = useState<Exam[]>([]);
-  const [allTags, setAllTags]                 = useState<string[]>([]);
-  const [searchQuery, setSearchQuery]         = useState('');
-  const [subjectFilter, setSubjectFilter]     = useState('all');
-  const [diffFilter, setDiffFilter]           = useState('all');
-  const [priceFilter, setPriceFilter]         = useState('all');
-  const [tagFilter, setTagFilter]             = useState('all');
-  const [viewMode, setViewMode]               = useState<'grid' | 'list'>(() => {
+  const [isLoadingExams, setIsLoadingExams] = useState(true);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [diffFilter, setDiffFilter] = useState('all');
+  const [priceFilter, setPriceFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('studentExamViewMode') as 'grid' | 'list') || 'grid';
     }
@@ -423,8 +466,8 @@ export default function ExamsPage() {
 
   // ── Bundle state ────────────────────────────────────────────────────────
   const [isLoadingBundles, setIsLoadingBundles] = useState(false);
-  const [bundles, setBundles]                   = useState<Bundle[]>([]);
-  const [bundleSearch, setBundleSearch]         = useState('');
+  const [bundles, setBundles] = useState<Bundle[]>([]);
+  const [bundleSearch, setBundleSearch] = useState('');
   const [bundlePagination, setBundlePagination] = useState({
     page: 1, limit: 20, total: 0, totalPages: 0,
   });
@@ -454,9 +497,9 @@ export default function ExamsPage() {
         page: examPagination.page.toString(),
         limit: examPagination.limit.toString(),
       });
-      if (searchQuery)          params.append('search', searchQuery);
+      if (searchQuery) params.append('search', searchQuery);
       if (diffFilter !== 'all') params.append('difficulty', diffFilter);
-      if (tagFilter !== 'all')  params.append('tag', tagFilter);
+      if (tagFilter !== 'all') params.append('tag', tagFilter);
 
       const res = await fetch(`/api/exams?${params}`);
       if (!res.ok) throw new Error('Failed to fetch exams');
@@ -543,17 +586,16 @@ export default function ExamsPage() {
       {/* ── Tab switcher ── */}
       <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
         {([
-          { key: 'exams',   label: 'Single Exams', icon: BookOpen },
-          { key: 'bundles', label: 'Test Bundles',  icon: Package  },
+          { key: 'exams', label: 'Single Exams', icon: BookOpen },
+          { key: 'bundles', label: 'Test Bundles', icon: Package },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === key
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === key
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
           >
             <Icon className="h-4 w-4" />
             {label}

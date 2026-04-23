@@ -72,6 +72,11 @@ function getBundleGradient(name: string) {
 function getBundleInitial(name: string) {
   return name?.trim()?.[0]?.toUpperCase() || 'B'
 }
+// ADD this helper near formatPrice
+function getOptimizedThumbnail(url: string): string {
+  if (!url || !url.includes('cloudinary.com')) return url
+  return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/')
+}
 
 function formatPrice(paise: number) {
   return `₹${(paise / 100).toFixed(0)}`
@@ -183,9 +188,10 @@ export default function AdminBundlesPage() {
   function BundleCardHeader({ bundle }: { bundle: Bundle }) {
     const gradient = getBundleGradient(bundle.name)
     return (
-      <div className={`relative h-36 rounded-t-lg overflow-hidden ${!bundle.thumbnail ? `bg-gradient-to-br ${gradient}` : ''}`}>
-        {bundle.thumbnail ? (
-          <img src={bundle.thumbnail} alt={bundle.name} className="w-full h-full object-cover" />
+      <div className={`relative w-full rounded-t-lg overflow-hidden ${!bundle.thumbnail ? `bg-gradient-to-br ${gradient}` : ''}`}
+        style={{ aspectRatio: '16/9' }}>
+      {bundle.thumbnail ? (
+        <img src={getOptimizedThumbnail(bundle.thumbnail)} alt={bundle.name} className="w-full h-full object-cover" />
         ) : (
           <>
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
