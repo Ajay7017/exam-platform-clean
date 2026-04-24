@@ -402,10 +402,11 @@ model LeaderboardEntry {
   attempt     Attempt  @relation(fields: [attemptId], references: [id])
   score       Float
   percentage  Float
+  percentile  Float    @default(0)
   rank        Int
   timeTaken   Int
   submittedAt DateTime
-  
+
   @@unique([examId, userId])
   @@index([examId, rank])
   @@index([userId])

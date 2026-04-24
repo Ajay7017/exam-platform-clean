@@ -1,93 +1,80 @@
 // src/app/api/leaderboard/global/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { handleApiError } from '@/lib/api-error'
+//
+// Global leaderboard is deferred intentionally.
+//
+// Reason: A meaningful global rank requires a normalized scoring
+// formula that accounts for:
+// - Different exams having different total marks
+// - Number of exams attempted (unfair to compare 1 vs 10 exams)
+// - Subject difficulty variance
+//
+// This will be designed and implemented as a separate feature
+// once per-exam leaderboard is stable and battle-tested.
+
+import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+import { handleApiError } from '@/lib/api-error'
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await getServerSession(authOptions)
-    const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '25')
 
-    // 1. Aggregate best scores per user across ALL exams
-    const userBestScores = await prisma.leaderboardEntry.groupBy({
-      by: ['userId'],
-      _sum: {
-        score: true
-      },
-      _avg: {
-        percentage: true
-      },
-      _count: {
-        id: true
-      }
-    })
+    // Current user's exam-level stats
+    // So the "Coming Soon" page can still show
+    // something meaningful to the student
+    let userStats = null
 
-    // 2. Sort by total score (sum of all exams)
-    const sortedUsers = userBestScores
-      .sort((a, b) => (b._sum.score || 0) - (a._sum.score || 0))
-      .slice(0, limit)
-
-    // 3. Get user details
-    const userIds = sortedUsers.map(u => u.userId)
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: {
-        id: true,
-        name: true,
-        image: true
-      }
-    })
-
-    const userMap = new Map(users.map(u => [u.id, u]))
-
-    // 4. Format entries with ranks
-    const entries = sortedUsers.map((entry, index) => ({
-      rank: index + 1,
-      userId: entry.userId,
-      userName: userMap.get(entry.userId)?.name || 'Anonymous',
-      userImage: userMap.get(entry.userId)?.image,
-      score: entry._sum.score || 0,
-      percentage: parseFloat((entry._avg.percentage || 0).toFixed(2)),
-      timeTaken: 0, // Not applicable for global
-      submittedAt: new Date().toISOString(),
-      examsAttempted: entry._count.id,
-      isCurrentUser: session?.user?.id === entry.userId
-    }))
-
-    // 5. Get current user's position (if not in top N)
-    let currentUserEntry = null
     if (session?.user?.id) {
-      const userIndex = userBestScores.findIndex(u => u.userId === session.user.id)
-      if (userIndex >= limit) {
-        const userStats = userBestScores[userIndex]
-        currentUserEntry = {
-          rank: userIndex + 1,
-          userId: session.user.id,
-          userName: session.user.name || 'Anonymous',
-          userImage: session.user.image,
-          score: userStats._sum.score || 0,
-          percentage: parseFloat((userStats._avg.percentage || 0).toFixed(2)),
-          timeTaken: 0,
-          submittedAt: new Date().toISOString(),
-          examsAttempted: userStats._count.id,
-          isCurrentUser: true
+      const [entries, totalExams] = await Promise.all([
+        prisma.leaderboardEntry.findMany({
+          where:   { userId: session.user.id },
+          select:  {
+            rank:       true,
+            percentile: true,
+            score:      true,
+            examId:     true,
+            exam: {
+              select: {
+                title: true,
+                slug:  true,
+              }
+            }
+          },
+          orderBy: { rank: 'asc' },
+          take:    5, // Top 5 best performing exams
+        }),
+        prisma.leaderboardEntry.count({
+          where: { userId: session.user.id }
+        })
+      ])
+
+      if (entries.length > 0) {
+        const avgPercentile = entries.reduce(
+          (sum, e) => sum + e.percentile, 0
+        ) / entries.length
+
+        userStats = {
+          totalExamsOnLeaderboard: totalExams,
+          avgPercentile:           parseFloat(avgPercentile.toFixed(2)),
+          bestPerformances:        entries.map(e => ({
+            examId:     e.examId,
+            examTitle:  e.exam.title,
+            examSlug:   e.exam.slug,
+            rank:       e.rank,
+            percentile: e.percentile,
+            score:      e.score,
+          }))
         }
       }
     }
 
-    // 6. Total participants
-    const totalParticipants = userBestScores.length
-
     return NextResponse.json({
-      entries,
-      currentUserEntry,
-      totalParticipants,
-      examTitle: 'All Exams',
-      subjectName: 'All Subjects',
-      lastUpdated: new Date().toISOString()
+      comingSoon:  true,
+      message:     'Global leaderboard is coming soon. Per-exam leaderboards are live!',
+      userStats,
+      lastUpdated: new Date().toISOString(),
     })
 
   } catch (error) {

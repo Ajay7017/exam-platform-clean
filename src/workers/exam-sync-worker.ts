@@ -89,22 +89,47 @@ async function calculatePendingRanks() {
     console.log(`[RankBatch] Found ${examsNeedingRanks.length} exam(s) needing ranks`)
 
     for (const { examId } of examsNeedingRanks) {
+      // Fetch ALL graded official attempts for this exam
+      // not just the ones with rank=null
+      // because a new submission shifts everyone's rank
       const attempts = await prisma.attempt.findMany({
-        where: { examId, status: 'graded', isOfficial: true },
-        select: { id: true, userId: true, score: true, timeSpentSec: true, percentage: true, submittedAt: true },
-        orderBy: [{ score: 'desc' }, { timeSpentSec: 'asc' }],
+        where: {
+          examId,
+          status: 'graded',
+          isOfficial: true
+        },
+        select: {
+          id: true,
+          userId: true,
+          score: true,
+          timeSpentSec: true,
+          percentage: true,
+          submittedAt: true
+        },
+        orderBy: [
+          { score: 'desc' },
+          { timeSpentSec: 'asc' }
+        ],
       })
 
       if (attempts.length === 0) continue
 
       const total = attempts.length
+
       const updates = attempts.map((attempt, index) => {
         const rank = index + 1
-        const percentile = total > 1 ? ((total - rank) / (total - 1)) * 100 : 100
+        // Standard competitive exam percentile formula
+        // "percentage of students you scored better than"
+        // Rank 1 of 100 → 99% (better than 99 out of 100)
+        // Rank 1 of 1  → 0%  (no one else to compare against)
+        const percentile = total > 1
+          ? parseFloat((((total - rank) / total) * 100).toFixed(2))
+          : 0
         return { ...attempt, rank, percentile }
       })
 
       await prisma.$transaction(async (tx) => {
+        // Step A — Bulk update Attempt ranks + percentiles
         const values = updates
           .map(u => `('${u.id}'::text, ${u.rank}::int, ${u.percentile}::float8)`)
           .join(', ')
@@ -116,28 +141,42 @@ async function calculatePendingRanks() {
           WHERE a.id = v.id
         `)
 
+        // Step B — Upsert LeaderboardEntry for every attempt
+        // CRITICAL FIX: was "if (!existing) create" before
+        // meaning rank never updated after initial creation
+        // Now we always upsert so rank + percentile stay current
         for (const u of updates) {
-          const existing = await tx.leaderboardEntry.findUnique({
-            where: { examId_userId: { examId, userId: u.userId } },
-          })
-          if (!existing) {
-            await tx.leaderboardEntry.create({
-              data: {
+          await tx.leaderboardEntry.upsert({
+            where: {
+              examId_userId: {
                 examId,
-                userId: u.userId,
-                attemptId: u.id,
-                score: u.score ?? 0,
-                percentage: u.percentage ?? 0,
-                rank: u.rank,
-                timeTaken: u.timeSpentSec ?? 0,
-                submittedAt: u.submittedAt ?? new Date(),
-              },
-            })
-          }
+                userId: u.userId
+              }
+            },
+            create: {
+              examId,
+              userId:      u.userId,
+              attemptId:   u.id,
+              score:       u.score       ?? 0,
+              percentage:  u.percentage  ?? 0,
+              percentile:  u.percentile,
+              rank:        u.rank,
+              timeTaken:   u.timeSpentSec ?? 0,
+              submittedAt: u.submittedAt  ?? new Date(),
+            },
+            update: {
+              score:       u.score       ?? 0,
+              percentage:  u.percentage  ?? 0,
+              percentile:  u.percentile,
+              rank:        u.rank,
+              timeTaken:   u.timeSpentSec ?? 0,
+              submittedAt: u.submittedAt  ?? new Date(),
+            }
+          })
         }
       })
 
-      console.log(`[RankBatch] Exam ${examId} — ranked ${total} attempts`)
+      console.log(`[RankBatch] Exam ${examId} — ranked ${total} attempts, percentiles updated`)
     }
   } catch (error) {
     console.error('[RankBatch] Error:', error)

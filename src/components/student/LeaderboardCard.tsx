@@ -5,9 +5,9 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Medal, Award, TrendingUp, Clock } from 'lucide-react';
+import { Trophy, Medal, Award, Clock } from 'lucide-react';
 import { LeaderboardEntry } from '@/types/exam';
-import { formatDistanceToNow } from 'date-fns';
+// FIX Issue 5: Removed unused `formatDistanceToNow` import from date-fns.
 
 interface LeaderboardCardProps {
   type: 'exam' | 'global' | 'subject';
@@ -17,16 +17,21 @@ interface LeaderboardCardProps {
   showTitle?: boolean;
 }
 
-export function LeaderboardCard({ 
-  type, 
-  examId, 
-  subjectId, 
+// Typed shape for global/subject entries that have examsAttempted
+interface ExtendedLeaderboardEntry extends LeaderboardEntry {
+  examsAttempted?: number;
+}
+
+export function LeaderboardCard({
+  type,
+  examId,
+  subjectId,
   limit = 25,
-  showTitle = true 
+  showTitle = true,
 }: LeaderboardCardProps) {
   const [data, setData] = useState<{
-    entries: LeaderboardEntry[];
-    currentUserEntry?: LeaderboardEntry;
+    entries: ExtendedLeaderboardEntry[];
+    currentUserEntry?: ExtendedLeaderboardEntry;
     totalParticipants: number;
     examTitle?: string;
     subjectName?: string;
@@ -42,7 +47,7 @@ export function LeaderboardCard({
     try {
       setIsLoading(true);
       let url = '';
-      
+
       if (type === 'exam' && examId) {
         url = `/api/leaderboard/exam/${examId}?limit=${limit}`;
       } else if (type === 'subject' && subjectId) {
@@ -53,7 +58,7 @@ export function LeaderboardCard({
 
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch leaderboard');
-      
+
       const result = await response.json();
       setData(result);
     } catch (err) {
@@ -84,6 +89,25 @@ export function LeaderboardCard({
     return `${minutes}m`;
   };
 
+  // FIX Issue 8: Guard against the "Top 100%" edge case when user is
+  // the only participant (percentile=0, totalParticipants=1).
+  const renderPercentile = (
+    entry: ExtendedLeaderboardEntry,
+    totalParticipants: number
+  ) => {
+    if (entry.percentile == null) return null;
+    if (totalParticipants <= 1) {
+      return (
+        <p className="text-xs text-emerald-600 font-medium mt-0.5">First attempt!</p>
+      );
+    }
+    return (
+      <p className="text-xs text-emerald-600 font-medium mt-0.5">
+        Top {(100 - entry.percentile).toFixed(1)}%
+      </p>
+    );
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -95,7 +119,6 @@ export function LeaderboardCard({
             </CardTitle>
           </CardHeader>
         )}
-        {/* Fix: Add pt-6 if title is hidden */}
         <CardContent className={!showTitle ? 'pt-6' : ''}>
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -125,7 +148,6 @@ export function LeaderboardCard({
             </CardTitle>
           </CardHeader>
         )}
-        {/* Fix: Add pt-6 if title is hidden */}
         <CardContent className={!showTitle ? 'pt-6' : ''}>
           <div className="text-center py-8 text-gray-500">
             <Trophy className="h-12 w-12 mx-auto mb-2 text-gray-300" />
@@ -147,7 +169,6 @@ export function LeaderboardCard({
             </CardTitle>
           </CardHeader>
         )}
-        {/* Fix: Add pt-6 if title is hidden */}
         <CardContent className={!showTitle ? 'pt-6' : ''}>
           <div className="text-center py-8 text-gray-500">
             <Trophy className="h-12 w-12 mx-auto mb-2 text-gray-300" />
@@ -166,44 +187,40 @@ export function LeaderboardCard({
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Trophy className="h-5 w-5" />
-              {type === 'global' ? 'Global Leaderboard' : 
-               type === 'subject' ? `${data.subjectName} Leaderboard` : 
-               'Exam Leaderboard'}
+              {type === 'global'
+                ? 'Global Leaderboard'
+                : type === 'subject'
+                ? `${data.subjectName} Leaderboard`
+                : 'Exam Leaderboard'}
             </CardTitle>
             <Badge variant="outline" className="text-xs">
               {data.totalParticipants} participants
             </Badge>
           </div>
           {type !== 'global' && data.examTitle && (
-            <p className="text-sm text-muted-foreground mt-1">
-              {data.examTitle}
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">{data.examTitle}</p>
           )}
         </CardHeader>
       )}
-      
-      {/* MAJOR FIX HERE: added conditional padding pt-6 when title is hidden */}
+
       <CardContent className={`space-y-2 ${!showTitle ? 'pt-6' : ''}`}>
-        {/* Top Entries */}
-        {data.entries.map((entry, index) => (
+        {data.entries.map((entry) => (
           <div
             key={entry.userId}
             className={`flex items-center gap-3 p-3 rounded-lg transition-all hover:shadow-md ${
-              entry.isCurrentUser 
-                ? 'bg-primary-50 border-2 border-primary-200' 
+              entry.isCurrentUser
+                ? 'bg-primary-50 border-2 border-primary-200'
                 : 'bg-gray-50 hover:bg-gray-100'
             }`}
           >
             {/* Rank */}
             <div className="flex items-center justify-center w-10">
               {getRankIcon(entry.rank) || (
-                <span className="text-lg font-bold text-gray-600">
-                  {entry.rank}
-                </span>
+                <span className="text-lg font-bold text-gray-600">{entry.rank}</span>
               )}
             </div>
 
-            {/* User Info */}
+            {/* Avatar */}
             <Avatar className="h-10 w-10">
               <AvatarImage src={entry.userImage || ''} alt={entry.userName} />
               <AvatarFallback className="bg-gradient-to-br from-primary-400 to-primary-600 text-white">
@@ -215,7 +232,9 @@ export function LeaderboardCard({
               <p className="font-semibold text-gray-900 truncate flex items-center gap-2">
                 {entry.userName}
                 {entry.isCurrentUser && (
-                  <Badge variant="secondary" className="text-xs">You</Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    You
+                  </Badge>
                 )}
               </p>
               <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -225,15 +244,14 @@ export function LeaderboardCard({
                     {formatTime(entry.timeTaken)}
                   </span>
                 )}
-                {type !== 'exam' && (entry as any).examsAttempted && (
-                  <span>
-                    {(entry as any).examsAttempted} exams
-                  </span>
+                {/* No more (entry as any) casts — examsAttempted is typed */}
+                {type !== 'exam' && entry.examsAttempted != null && (
+                  <span>{entry.examsAttempted} exams</span>
                 )}
               </div>
             </div>
 
-            {/* Score */}
+            {/* Score + percentile */}
             <div className="text-right">
               <Badge className={getRankBadge(entry.rank)}>
                 {entry.score.toFixed(1)}
@@ -241,11 +259,12 @@ export function LeaderboardCard({
               <p className="text-xs text-gray-500 mt-1">
                 {entry.percentage.toFixed(1)}%
               </p>
+              {renderPercentile(entry, data.totalParticipants)}
             </div>
           </div>
         ))}
 
-        {/* Separator if user is not in top entries */}
+        {/* Separator + current user entry when not in top list */}
         {data.currentUserEntry && (
           <>
             <div className="flex items-center gap-2 py-2">
@@ -254,7 +273,6 @@ export function LeaderboardCard({
               <div className="flex-1 h-px bg-gray-200" />
             </div>
 
-            {/* Current User Entry */}
             <div className="flex items-center gap-3 p-3 rounded-lg bg-primary-50 border-2 border-primary-200">
               <div className="flex items-center justify-center w-10">
                 <span className="text-lg font-bold text-primary-600">
@@ -263,9 +281,9 @@ export function LeaderboardCard({
               </div>
 
               <Avatar className="h-10 w-10">
-                <AvatarImage 
-                  src={data.currentUserEntry.userImage || ''} 
-                  alt={data.currentUserEntry.userName} 
+                <AvatarImage
+                  src={data.currentUserEntry.userImage || ''}
+                  alt={data.currentUserEntry.userName}
                 />
                 <AvatarFallback className="bg-gradient-to-br from-primary-400 to-primary-600 text-white">
                   {data.currentUserEntry.userName.charAt(0).toUpperCase()}
@@ -275,7 +293,9 @@ export function LeaderboardCard({
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 truncate flex items-center gap-2">
                   {data.currentUserEntry.userName}
-                  <Badge variant="secondary" className="text-xs">You</Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    You
+                  </Badge>
                 </p>
                 <div className="flex items-center gap-2 text-xs text-gray-500">
                   {type === 'exam' && data.currentUserEntry.timeTaken > 0 && (
@@ -284,10 +304,8 @@ export function LeaderboardCard({
                       {formatTime(data.currentUserEntry.timeTaken)}
                     </span>
                   )}
-                  {type !== 'exam' && (data.currentUserEntry as any).examsAttempted && (
-                    <span>
-                      {(data.currentUserEntry as any).examsAttempted} exams
-                    </span>
+                  {type !== 'exam' && data.currentUserEntry.examsAttempted != null && (
+                    <span>{data.currentUserEntry.examsAttempted} exams</span>
                   )}
                 </div>
               </div>
@@ -299,6 +317,7 @@ export function LeaderboardCard({
                 <p className="text-xs text-gray-500 mt-1">
                   {data.currentUserEntry.percentage.toFixed(1)}%
                 </p>
+                {renderPercentile(data.currentUserEntry, data.totalParticipants)}
               </div>
             </div>
           </>

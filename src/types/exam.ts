@@ -107,6 +107,7 @@ export interface LeaderboardEntry {
   timeTaken: number;
   submittedAt: string;
   isCurrentUser?: boolean;
+  percentile?: number; // ← ADD THIS
 }
 
 export interface LeaderboardResponse {
