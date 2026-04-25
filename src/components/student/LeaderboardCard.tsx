@@ -5,9 +5,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Medal, Award, Clock } from 'lucide-react';
+import { Trophy, Medal, Award, Clock, Sparkles } from 'lucide-react';
 import { LeaderboardEntry } from '@/types/exam';
-// FIX Issue 5: Removed unused `formatDistanceToNow` import from date-fns.
 
 interface LeaderboardCardProps {
   type: 'exam' | 'global' | 'subject';
@@ -38,6 +37,8 @@ export function LeaderboardCard({
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Guard for when the API intentionally returns { comingSoon: true }
+  const [comingSoon, setComingSoon] = useState(false);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -46,8 +47,10 @@ export function LeaderboardCard({
   const fetchLeaderboard = async () => {
     try {
       setIsLoading(true);
-      let url = '';
+      setComingSoon(false);
+      setError(null);
 
+      let url = '';
       if (type === 'exam' && examId) {
         url = `/api/leaderboard/exam/${examId}?limit=${limit}`;
       } else if (type === 'subject' && subjectId) {
@@ -60,6 +63,17 @@ export function LeaderboardCard({
       if (!response.ok) throw new Error('Failed to fetch leaderboard');
 
       const result = await response.json();
+
+      // ── KEY FIX ──────────────────────────────────────────────────────────
+      // The global leaderboard API intentionally returns { comingSoon: true }
+      // while the full ranking system is being designed. Guard here so the
+      // component never tries to render undefined `entries`.
+      if (result.comingSoon) {
+        setComingSoon(true);
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load leaderboard');
@@ -89,8 +103,6 @@ export function LeaderboardCard({
     return `${minutes}m`;
   };
 
-  // FIX Issue 8: Guard against the "Top 100%" edge case when user is
-  // the only participant (percentile=0, totalParticipants=1).
   const renderPercentile = (
     entry: ExtendedLeaderboardEntry,
     totalParticipants: number
@@ -108,6 +120,7 @@ export function LeaderboardCard({
     );
   };
 
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <Card>
@@ -137,6 +150,35 @@ export function LeaderboardCard({
     );
   }
 
+  // ── Coming Soon ──────────────────────────────────────────────────────────
+  // Shown when the API intentionally defers this leaderboard type
+  if (comingSoon) {
+    return (
+      <Card>
+        {showTitle && (
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5" />
+              Global Leaderboard
+            </CardTitle>
+          </CardHeader>
+        )}
+        <CardContent className={!showTitle ? 'pt-6' : ''}>
+          <div className="text-center py-10">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mb-4">
+              <Sparkles className="h-7 w-7 text-violet-500" />
+            </div>
+            <p className="font-semibold text-gray-800 text-sm">Coming Soon</p>
+            <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+              Global rankings are being designed. Check per-subject leaderboards in the meantime!
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────────
   if (error) {
     return (
       <Card>
@@ -158,6 +200,7 @@ export function LeaderboardCard({
     );
   }
 
+  // ── Empty ────────────────────────────────────────────────────────────────
   if (!data || data.entries.length === 0) {
     return (
       <Card>
@@ -180,6 +223,7 @@ export function LeaderboardCard({
     );
   }
 
+  // ── Full leaderboard ─────────────────────────────────────────────────────
   return (
     <Card>
       {showTitle && (
@@ -244,7 +288,6 @@ export function LeaderboardCard({
                     {formatTime(entry.timeTaken)}
                   </span>
                 )}
-                {/* No more (entry as any) casts — examsAttempted is typed */}
                 {type !== 'exam' && entry.examsAttempted != null && (
                   <span>{entry.examsAttempted} exams</span>
                 )}
