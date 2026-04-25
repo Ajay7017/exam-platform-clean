@@ -309,15 +309,38 @@ function ExamListRow({ exam }: { exam: Exam }) {
 
 // ── Bundle Card ──────────────────────────────────────────────────────────────
 
+// Replace the BundleCard function in src/app/(student)/exams/page.tsx
+// Only this function changes — everything else stays identical.
+
+// ── helper: strip markdown to plain text for card previews ────────────────
+function stripMarkdown(md: string): string {
+  return md
+    .replace(/#{1,6}\s+/g, '')          // headings
+    .replace(/\*\*(.+?)\*\*/g, '$1')    // bold
+    .replace(/\*(.+?)\*/g, '$1')        // italic
+    .replace(/`(.+?)`/g, '$1')          // inline code
+    .replace(/\[(.+?)\]\(.+?\)/g, '$1') // links
+    .replace(/^\s*[-*+]\s+/gm, '')      // bullet points
+    .replace(/^\s*\d+\.\s+/gm, '')      // numbered lists
+    .replace(/---+/g, '')               // horizontal rules
+    .replace(/\n{2,}/g, ' ')            // collapse newlines
+    .trim()
+}
+
 function BundleCard({ bundle }: { bundle: Bundle }) {
   const [imgError, setImgError] = useState(false);
 
   const isValidThumbnail = Boolean(
-    bundle.thumbnail && 
-    bundle.thumbnail !== 'null' && 
-    bundle.thumbnail !== 'undefined' && 
+    bundle.thumbnail &&
+    bundle.thumbnail !== 'null' &&
+    bundle.thumbnail !== 'undefined' &&
     !imgError
   );
+
+  // Plain-text preview: first 120 chars of the stripped description
+  const descriptionPreview = bundle.description
+    ? stripMarkdown(bundle.description).slice(0, 120) + (stripMarkdown(bundle.description).length > 120 ? '…' : '')
+    : null
 
   return (
     <Card className="hover:shadow-lg transition-shadow overflow-hidden group">
@@ -328,11 +351,11 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
           style={{ aspectRatio: '16/9' }}
         >
           {isValidThumbnail ? (
-            <img 
-              src={getOptimizedThumbnail(bundle.thumbnail)} 
-              alt={bundle.name} 
-              className="w-full h-full object-cover" 
-              onError={() => setImgError(true)} // Fallback to gradient if image fails to load
+            <img
+              src={getOptimizedThumbnail(bundle.thumbnail)}
+              alt={bundle.name}
+              className="w-full h-full object-cover"
+              onError={() => setImgError(true)}
             />
           ) : (
             <>
@@ -356,21 +379,18 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
             </Badge>
           </div>
         </div>
+
         {/* Body */}
         <div className="p-4">
           <h3 className="font-semibold text-gray-900 truncate mb-1" title={bundle.name}>
             {bundle.name}
           </h3>
 
-          {/* Description — each line rendered separately */}
-          {bundle.description && (
-            <div className="mb-3 space-y-0.5">
-              {bundle.description.split('\n').filter(Boolean).map((line, i) => (
-                <p key={i} className="text-xs text-gray-500 leading-relaxed">
-                  {line}
-                </p>
-              ))}
-            </div>
+          {/* Clean plain-text preview — no markdown symbols */}
+          {descriptionPreview && (
+            <p className="text-xs text-gray-500 leading-relaxed mb-3 line-clamp-2">
+              {descriptionPreview}
+            </p>
           )}
 
           {/* Stats row */}
