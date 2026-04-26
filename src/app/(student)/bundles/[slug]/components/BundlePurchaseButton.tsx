@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Lock, CheckCircle2, Package } from 'lucide-react'
+import { Loader2, Lock, CheckCircle2, Package, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 declare global {
@@ -15,11 +15,14 @@ declare global {
 interface BundlePurchaseButtonProps {
   bundleId: string
   bundleName: string
-  price: number          // final price in paise
-  originalPrice: number  // before discount in paise
-  discount: number       // percentage
+  price: number
+  originalPrice: number
+  discount: number
   isPurchased: boolean
 }
+
+// How long to wait for verify before showing "check purchases" fallback
+const VERIFY_TIMEOUT_MS = 20_000
 
 export default function BundlePurchaseButton({
   bundleId,
@@ -31,11 +34,21 @@ export default function BundlePurchaseButton({
 }: BundlePurchaseButtonProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // True when payment went through but verify timed out / failed —
+  // we show a softer "check your purchases" message instead of an error.
+  const [paymentPossiblyComplete, setPaymentPossiblyComplete] = useState(false)
+
+  const resetState = () => {
+    setLoading(false)
+    setVerifying(false)
+  }
 
   const handlePurchase = async () => {
     setLoading(true)
     setError(null)
+    setPaymentPossiblyComplete(false)
 
     try {
       const orderResponse = await fetch('/api/payments/create-order', {
@@ -53,6 +66,7 @@ export default function BundlePurchaseButton({
       if (orderData.alreadyOwned) {
         toast.success('You already own this bundle!')
         router.refresh()
+        resetState()
         return
       }
 
@@ -67,9 +81,24 @@ export default function BundlePurchaseButton({
         name: 'Mockzy',
         description: orderData.bundleName,
         order_id: orderData.orderId,
+
         handler: async function (response: any) {
+          // Payment confirmed by Razorpay — now verify on our backend
+          setVerifying(true)
+          setLoading(false)
+
+          // Safety timeout: if verify takes too long, don't leave user stranded
+          const verifyTimeout = setTimeout(() => {
+            console.warn('[BUNDLE] Verify timed out — payment may still be processing')
+            setVerifying(false)
+            setPaymentPossiblyComplete(true)
+            toast.info('Payment received. Verifying access...', {
+              description: 'Please check My Purchases in a moment.',
+              duration: 8000,
+            })
+          }, VERIFY_TIMEOUT_MS)
+
           try {
-            setLoading(true)
             const verifyResponse = await fetch('/api/payments/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -81,6 +110,7 @@ export default function BundlePurchaseButton({
               }),
             })
 
+            clearTimeout(verifyTimeout)
             const verifyData = await verifyResponse.json()
 
             if (verifyResponse.ok && verifyData.success) {
@@ -89,33 +119,54 @@ export default function BundlePurchaseButton({
               })
               router.refresh()
             } else {
-              throw new Error(verifyData.error || 'Payment verification failed')
+              // Verify returned an error — but Razorpay already confirmed payment.
+              // Don't show a hard error; instead prompt them to check purchases.
+              console.error('[BUNDLE] Verify failed after payment:', verifyData)
+              setPaymentPossiblyComplete(true)
+              toast.warning('Payment received but access setup delayed.', {
+                description: 'Please check My Purchases or contact support.',
+                duration: 10000,
+              })
             }
           } catch (err: any) {
-            setError('Payment verification failed. Please contact support.')
-            toast.error('Payment verification failed')
+            clearTimeout(verifyTimeout)
+            console.error('[BUNDLE] Verify network error:', err)
+            // Network error after Razorpay confirmed — treat as possibly complete
+            setPaymentPossiblyComplete(true)
+            toast.warning('Payment received. Please check My Purchases.', {
+              duration: 10000,
+            })
           } finally {
-            setLoading(false)
+            setVerifying(false)
           }
         },
+
         prefill: { name: '', email: '', contact: '' },
         theme: { color: '#3B82F6' },
         modal: {
-          ondismiss: () => setLoading(false),
+          // Modal dismissed without paying — reset loading
+          ondismiss: () => {
+            resetState()
+          },
         },
       }
 
       const razorpay = new window.Razorpay(options)
+
       razorpay.on('payment.failed', (response: any) => {
-        setError(response.error.description || 'Payment failed')
-        toast.error('Payment failed')
-        setLoading(false)
+        const msg = response.error?.description || 'Payment failed'
+        setError(msg)
+        toast.error('Payment failed', { description: msg })
+        resetState()
       })
+
       razorpay.open()
+      // NOTE: Do NOT setLoading(false) here — loading stays true until
+      // ondismiss, payment.failed, or handler fires.
     } catch (err: any) {
       setError(err.message || 'Failed to initiate payment. Please try again.')
       toast.error(err.message || 'Failed to initiate payment')
-      setLoading(false)
+      resetState()
     }
   }
 
@@ -129,6 +180,36 @@ export default function BundlePurchaseButton({
         <p className="text-sm text-center text-gray-500">
           All exams in this bundle are unlocked for you.
         </p>
+      </div>
+    )
+  }
+
+  // Payment went through but access isn't confirmed yet
+  if (paymentPossiblyComplete) {
+    return (
+      <div className="space-y-3">
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold">Payment received!</p>
+            <p className="mt-0.5">
+              Your access is being activated. Please check{' '}
+              <button
+                onClick={() => router.push('/purchases')}
+                className="underline font-medium"
+              >
+                My Purchases
+              </button>{' '}
+              in a moment, or refresh this page.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => router.refresh()}
+          className="w-full bg-blue-50 text-blue-700 border border-blue-200 px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+        >
+          Refresh Page
+        </button>
       </div>
     )
   }
@@ -154,10 +235,15 @@ export default function BundlePurchaseButton({
 
       <button
         onClick={handlePurchase}
-        disabled={loading}
+        disabled={loading || verifying}
         className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
       >
-        {loading ? (
+        {verifying ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Confirming access...
+          </>
+        ) : loading ? (
           <>
             <Loader2 className="h-5 w-5 animate-spin" />
             Processing...

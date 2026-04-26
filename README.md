@@ -39,3 +39,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 this is my mini context of my project and these are code directories 
 
 RULES: ALWAYS ASK DOUBT IF ANY,DONT RUSH TO GIVE CODE, ALWAYS ASK CODE FILES FIRST TO UNDERSTAND THE CODE FUNCTIONALITY THEN ADD THE NEW FEATURES WITHOUT AFFECTING THE EXISTING FETAURES ( tHIS IS MOST IMPORTANT OKAY). And do think like a CTO just dont blindly follow my instructions and scalability,so shall i proceed with my problem statement?
+
+npx tsc --noEmit   
+// for code error finding

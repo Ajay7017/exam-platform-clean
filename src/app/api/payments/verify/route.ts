@@ -9,12 +9,18 @@ import { cache } from '@/lib/redis'
 
 export async function POST(request: Request) {
   try {
-    // 1. Authenticate
     const session = await requireAuth()
     const userId = session.user.id
 
-    // 2. Parse and validate
     const body = await request.json()
+    console.log('[VERIFY] Request received:', {
+      userId,
+      purchaseId: body.purchaseId,
+      razorpayOrderId: body.razorpayOrderId,
+      razorpayPaymentId: body.razorpayPaymentId,
+      timestamp: new Date().toISOString(),
+    })
+
     const {
       razorpayOrderId,
       razorpayPaymentId,
@@ -22,50 +28,32 @@ export async function POST(request: Request) {
       purchaseId,
     } = verifyPaymentSchema.parse(body)
 
-    // 3. Fetch purchase — include both exam and bundle relations
+    // Fetch purchase with singular payment relation (matches schema: payment Payment?)
     const purchase = await prisma.purchase.findUnique({
       where: { id: purchaseId },
       include: {
-        exam: {
-          select: { id: true, title: true },
-        },
-        bundle: {
-          select: { id: true, name: true },
-        },
+        exam: { select: { id: true, title: true } },
+        bundle: { select: { id: true, name: true } },
         payment: true,
-        user: {
-          select: { id: true, email: true, name: true },
-        },
+        user: { select: { id: true, email: true, name: true } },
       },
     })
 
-    // 4. Validate purchase exists
     if (!purchase) {
-      console.error('Purchase not found:', purchaseId)
-      return NextResponse.json(
-        { error: 'Purchase record not found' },
-        { status: 404 }
-      )
+      console.error('[VERIFY] Purchase not found:', purchaseId)
+      return NextResponse.json({ error: 'Purchase record not found' }, { status: 404 })
     }
 
-    // 5. Authorization
     if (purchase.userId !== userId) {
-      console.error('Unauthorized purchase access:', { purchaseId, userId })
-      return NextResponse.json(
-        { error: 'Unauthorized access to purchase' },
-        { status: 403 }
-      )
+      console.error('[VERIFY] Unauthorized:', { purchaseId, userId })
+      return NextResponse.json({ error: 'Unauthorized access to purchase' }, { status: 403 })
     }
 
-    // 6. Determine purchase type
     const isBundle = purchase.type === 'bundle'
-    const displayName = isBundle
-      ? (purchase.bundle?.name ?? 'Bundle')
-      : (purchase.exam?.title ?? 'Exam')
 
-    // 7. Already verified
+    // Already verified — idempotent
     if (purchase.status === 'active') {
-      console.log('Payment already verified:', purchaseId)
+      console.log('[VERIFY] Already verified (idempotent):', purchaseId)
       return NextResponse.json({
         success: true,
         message: 'Payment already verified',
@@ -76,25 +64,45 @@ export async function POST(request: Request) {
       })
     }
 
-    // 8. Validate payment record
     if (!purchase.payment) {
-      console.error('Payment record missing for purchase:', purchaseId)
+      console.error('[VERIFY] Payment record missing:', purchaseId)
       return NextResponse.json(
-        { error: 'Payment record not found' },
+        { error: 'Payment record not found. Please contact support.' },
         { status: 404 }
       )
     }
 
-    // 9. Verify order ID matches
-    if (purchase.payment.razorpayOrderId !== razorpayOrderId) {
-      console.error('Order ID mismatch:', {
-        expected: purchase.payment.razorpayOrderId,
+    // CRITICAL FIX: If order ID doesn't match (edge case from duplicate
+    // create-order calls before our fix), look up by razorpayOrderId directly.
+    // After deploying create-order fix, this fallback will rarely be needed.
+    let paymentRecord = purchase.payment
+
+    if (paymentRecord.razorpayOrderId !== razorpayOrderId) {
+      console.warn('[VERIFY] Order ID mismatch on primary record, trying direct lookup:', {
+        expected: paymentRecord.razorpayOrderId,
         received: razorpayOrderId,
+        purchaseId,
       })
-      return NextResponse.json({ error: 'Order ID mismatch' }, { status: 400 })
+
+      const directPayment = await prisma.payment.findUnique({
+        where: { razorpayOrderId },
+      })
+
+      if (!directPayment || directPayment.purchaseId !== purchaseId) {
+        console.error('[VERIFY] No matching payment found for order:', {
+          razorpayOrderId,
+          purchaseId,
+        })
+        return NextResponse.json(
+          { error: 'Order ID mismatch. Please contact support.' },
+          { status: 400 }
+        )
+      }
+
+      paymentRecord = directPayment
     }
 
-    // 10. Verify Razorpay signature
+    // Verify Razorpay signature
     const isValidSignature = verifyRazorpaySignature(
       razorpayOrderId,
       razorpayPaymentId,
@@ -102,7 +110,7 @@ export async function POST(request: Request) {
     )
 
     if (!isValidSignature) {
-      console.error('⚠️ PAYMENT VERIFICATION FAILED - Invalid signature:', {
+      console.error('[VERIFY] ⚠️ Invalid signature:', {
         purchaseId,
         userId,
         razorpayOrderId,
@@ -111,7 +119,7 @@ export async function POST(request: Request) {
       })
 
       await prisma.payment.update({
-        where: { id: purchase.payment.id },
+        where: { id: paymentRecord.id },
         data: { status: 'failed', razorpayPaymentId },
       })
 
@@ -121,10 +129,10 @@ export async function POST(request: Request) {
       )
     }
 
-    // 11. Atomic update
+    // Atomic update
     const result = await prisma.$transaction(async (tx) => {
       const updatedPayment = await tx.payment.update({
-        where: { id: purchase.payment!.id },
+        where: { id: paymentRecord.id },
         data: {
           razorpayPaymentId,
           razorpaySignature,
@@ -134,9 +142,6 @@ export async function POST(request: Request) {
       })
 
       const validFrom = new Date()
-
-      // Bundles: lifetime (validUntil = null)
-      // Single exams: 1 year
       const validUntil = isBundle
         ? null
         : (() => {
@@ -153,27 +158,28 @@ export async function POST(request: Request) {
       return { updatedPayment, updatedPurchase, validUntil }
     })
 
-    // 12. Clear relevant cache
-    if (isBundle && purchase.bundleId) {
-      await cache.del(`bundle:${userId}:${purchase.bundleId}`)
-    } else if (purchase.examId) {
-      await cache.del(`purchase:${userId}:${purchase.examId}`)
-      await cache.delPattern(`exam:${purchase.examId}:*`)
+    // Cache invalidation — isolated so Redis failures never break verify
+    try {
+      if (isBundle && purchase.bundleId) {
+        await cache.del(`bundle:${userId}:${purchase.bundleId}`)
+      } else if (purchase.examId) {
+        await cache.del(`purchase:${userId}:${purchase.examId}`)
+        await cache.delPattern(`exam:${purchase.examId}:*`)
+      }
+    } catch (cacheError) {
+      console.error('[VERIFY] Cache invalidation failed (non-fatal):', cacheError)
     }
 
-    // 13. Log success
-    console.log('✅ Payment verified successfully:', {
+    console.log('[VERIFY] ✅ Payment verified successfully:', {
       purchaseId,
       userId,
       type: purchase.type,
-      displayName,
       amount: purchase.price,
       razorpayPaymentId,
       userEmail: purchase.user.email,
       timestamp: new Date().toISOString(),
     })
 
-    // 14. Return success — shape differs by type
     return NextResponse.json({
       success: true,
       message: 'Payment verified successfully',
@@ -181,18 +187,18 @@ export async function POST(request: Request) {
       amount: purchase.price,
       ...(isBundle
         ? {
-            bundleId:   purchase.bundle?.id,
+            bundleId: purchase.bundle?.id,
             bundleName: purchase.bundle?.name,
             validUntil: null,
           }
         : {
-            examId:    purchase.exam?.id,
+            examId: purchase.exam?.id,
             examTitle: purchase.exam?.title,
             validUntil: result.validUntil?.toISOString(),
           }),
     })
   } catch (error) {
-    console.error('Payment verification error:', error)
+    console.error('[VERIFY] Payment verification error:', error)
     return handleApiError(error)
   }
 }

@@ -36,7 +36,7 @@ export async function POST(
 
     await prisma.importJob.update({
       where: { id: jobId },
-      data: { status: 'processing', successCount: 0, failedCount: 0 }
+      data: { status: 'processing', successCount: 0, failedCount: 0, skippedCount: 0 }
     })
 
     processImportInBackground(jobId, subTopicId).catch(err => {
@@ -62,13 +62,29 @@ async function processImportInBackground(jobId: string, subTopicId: string | nul
     const questions = job.previewData as any[]
     let successCount = 0
     let failedCount = 0
+    let skippedCount = 0  // ✅ NEW
     const errors: string[] = []
 
     for (let i = 0; i < questions.length; i++) {
       try {
         const q = questions[i]
 
-        // ✅ Determine question type — default to 'mcq' for backward compatibility
+        // ✅ SKIP DUPLICATES — isDuplicate flag was set during preview generation
+        // in import/route.ts. No re-check needed — hash was already verified.
+        if (q.isDuplicate === true) {
+          skippedCount++
+          console.log(`[${jobId}] Question ${i + 1} skipped (duplicate)`)
+
+          // Update progress every 5 questions
+          if (i % 5 === 0 || i === questions.length - 1) {
+            await prisma.importJob.update({
+              where: { id: jobId },
+              data: { successCount, failedCount, skippedCount }
+            })
+          }
+          continue
+        }
+
         const isNumerical = q.questionType === 'numerical'
 
         await prisma.question.create({
@@ -84,15 +100,15 @@ async function processImportInBackground(jobId: string, subTopicId: string | nul
             isActive: true,
             version: 1,
 
-            // ✅ NEW: set type field
             type: isNumerical ? 'numerical' : 'mcq',
 
-            // ✅ NEW: NAT answer fields — only set for numerical, null for MCQ
+            // ✅ Store the hash so future imports can detect this as a duplicate
+            contentHash: q.contentHash || null,
+
             correctAnswerExact: isNumerical ? (q.correctAnswerExact ?? null) : null,
             correctAnswerMin: isNumerical ? (q.correctAnswerMin ?? null) : null,
             correctAnswerMax: isNumerical ? (q.correctAnswerMax ?? null) : null,
 
-            // ✅ Options — only created for MCQ, skipped for NAT
             ...(!isNumerical && {
               options: {
                 create: q.options.map((opt: any, idx: number) => ({
@@ -113,7 +129,7 @@ async function processImportInBackground(jobId: string, subTopicId: string | nul
         if (i % 5 === 0 || i === questions.length - 1) {
           await prisma.importJob.update({
             where: { id: jobId },
-            data: { successCount, failedCount }
+            data: { successCount, failedCount, skippedCount }
           })
         }
 
@@ -130,12 +146,13 @@ async function processImportInBackground(jobId: string, subTopicId: string | nul
         status: 'completed',
         successCount,
         failedCount,
-        errors: errors.length > 0 ? errors : null,
+        skippedCount,  // ✅ NEW
+        errors: errors.length > 0 ? errors : ([] as any),
         completedAt: new Date(),
       }
     })
 
-    console.log(`[${jobId}] Done: ${successCount} success, ${failedCount} failed`)
+    console.log(`[${jobId}] Done: ${successCount} imported, ${skippedCount} skipped (duplicates), ${failedCount} failed`)
 
   } catch (error) {
     console.error(`[${jobId}] Fatal error:`, error)
@@ -143,7 +160,7 @@ async function processImportInBackground(jobId: string, subTopicId: string | nul
       where: { id: jobId },
       data: {
         status: 'failed',
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
+        errors: [error instanceof Error ? error.message : 'Unknown error'] as any,
         completedAt: new Date(),
       }
     }).catch(() => {})

@@ -1,15 +1,16 @@
 import mammoth from 'mammoth'
+import { createHash } from 'crypto' // ✅ Node built-in — zero new dependency
 
 export interface ParsedQuestion {
   statement: string
-  questionType: 'mcq' | 'numerical' // ✅ NEW
+  questionType: 'mcq' | 'numerical'
   // MCQ fields
   options: {
     key: 'A' | 'B' | 'C' | 'D'
     text: string
   }[]
   correctAnswer?: 'A' | 'B' | 'C' | 'D'
-  // NAT fields ✅ NEW
+  // NAT fields
   correctAnswerExact?: number
   correctAnswerMin?: number
   correctAnswerMax?: number
@@ -18,7 +19,152 @@ export interface ParsedQuestion {
   negativeMarks: number
   difficulty: 'easy' | 'medium' | 'hard'
   explanation?: string
+  // ✅ NEW: hash computed at parse time, stored alongside question
+  contentHash: string | null
 }
+
+// ============================================================
+// ✅ NEW: HASH UTILITY — used by parser, API routes, and form
+// ============================================================
+
+/**
+ * Strips HTML tags, lowercases, and collapses whitespace.
+ * Used to normalize text before hashing so minor formatting
+ * differences don't produce different hashes.
+ */
+export function normalizeText(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, '')   // strip HTML tags
+    .toLowerCase()
+    .replace(/\s+/g, ' ')      // collapse all whitespace
+    .trim()
+}
+
+/**
+ * Returns true if the text is image-only content (no meaningful text).
+ * When true, we skip the duplicate check entirely — we cannot
+ * hash images reliably at form-entry time.
+ */
+export function isImageOnlyContent(html: string): boolean {
+  if (!html) return false
+  const hasImage = /<img\s/i.test(html)
+  if (!hasImage) return false
+  const textOnly = html.replace(/<[^>]*>/g, '').trim()
+  return textOnly.length === 0
+}
+
+/**
+ * Computes a SHA256 hash for a question based on its type.
+ *
+ * Hash inputs by type:
+ * - MCQ:     statement + optionA + optionB + optionC + optionD
+ * - NAT exact:  statement + exactAnswer
+ * - NAT range:  statement + min + max
+ * - Match:   statement + optionA + optionB + optionC + optionD + matchPairs JSON
+ *
+ * Returns null when:
+ * - Any required field is missing
+ * - Options are image-only (cannot hash images)
+ *
+ * Returning null means "skip duplicate check" — the question
+ * will be inserted without a hash, and won't block on duplicate detection.
+ */
+export function computeQuestionHash(params: {
+  questionType: 'mcq' | 'numerical' | 'match'
+  statement: string
+  // MCQ / Match options (HTML strings from rich text editor)
+  optionA?: string | null
+  optionB?: string | null
+  optionC?: string | null
+  optionD?: string | null
+  // NAT fields
+  correctAnswerExact?: number | null
+  correctAnswerMin?: number | null
+  correctAnswerMax?: number | null
+  // Match
+  matchPairs?: any | null
+}): string | null {
+  const { questionType, statement } = params
+
+  const normalizedStatement = normalizeText(statement)
+  if (!normalizedStatement) return null
+
+  if (questionType === 'mcq') {
+    const { optionA, optionB, optionC, optionD } = params
+
+    // If any option is image-only, skip hash — can't compare images
+    if (
+      isImageOnlyContent(optionA || '') ||
+      isImageOnlyContent(optionB || '') ||
+      isImageOnlyContent(optionC || '') ||
+      isImageOnlyContent(optionD || '')
+    ) return null
+
+    const nA = normalizeText(optionA || '')
+    const nB = normalizeText(optionB || '')
+    const nC = normalizeText(optionC || '')
+    const nD = normalizeText(optionD || '')
+
+    // All 4 options must have content to hash meaningfully
+    if (!nA || !nB || !nC || !nD) return null
+
+    const input = `mcq|${normalizedStatement}|${nA}|${nB}|${nC}|${nD}`
+    return createHash('sha256').update(input).digest('hex')
+  }
+
+  if (questionType === 'numerical') {
+    const { correctAnswerExact, correctAnswerMin, correctAnswerMax } = params
+
+    const hasExact = correctAnswerExact !== null && correctAnswerExact !== undefined
+    const hasRange = correctAnswerMin !== null && correctAnswerMin !== undefined
+                  && correctAnswerMax !== null && correctAnswerMax !== undefined
+
+    if (hasExact) {
+      const input = `nat|${normalizedStatement}|exact|${correctAnswerExact}`
+      return createHash('sha256').update(input).digest('hex')
+    }
+
+    if (hasRange) {
+      const input = `nat|${normalizedStatement}|range|${correctAnswerMin}|${correctAnswerMax}`
+      return createHash('sha256').update(input).digest('hex')
+    }
+
+    return null // NAT with no answer — skip hash
+  }
+
+  if (questionType === 'match') {
+    const { optionA, optionB, optionC, optionD, matchPairs } = params
+
+    if (
+      isImageOnlyContent(optionA || '') ||
+      isImageOnlyContent(optionB || '') ||
+      isImageOnlyContent(optionC || '') ||
+      isImageOnlyContent(optionD || '')
+    ) return null
+
+    const nA = normalizeText(optionA || '')
+    const nB = normalizeText(optionB || '')
+    const nC = normalizeText(optionC || '')
+    const nD = normalizeText(optionD || '')
+
+    if (!nA || !nB || !nC || !nD) return null
+
+    // Normalize matchPairs: stringify for stable hashing
+    const pairsString = matchPairs
+      ? normalizeText(JSON.stringify(matchPairs))
+      : ''
+
+    const input = `match|${normalizedStatement}|${nA}|${nB}|${nC}|${nD}|${pairsString}`
+    return createHash('sha256').update(input).digest('hex')
+  }
+
+  return null
+}
+
+// ============================================================
+// EXISTING PARSER CODE — unchanged except ParsedQuestion now
+// includes contentHash field computed at parse time
+// ============================================================
 
 export async function parseWordDocument(
   fileBuffer: Buffer
@@ -54,18 +200,15 @@ function parseQuestionSection(section: string): ParsedQuestion {
   const lines = section.split('\n').map(l => l.trim()).filter(Boolean)
   if (lines.length === 0) throw new Error('Empty question section')
 
-  // ✅ Detect question type early by scanning all lines for TYPE: NAT
   const typeLine = lines.find(l => l.match(/^TYPE:/i))
   const isNumerical = typeLine
     ? typeLine.replace(/^TYPE:/i, '').trim().toUpperCase() === 'NAT'
     : false
 
-  // Extract statement — everything before options (MCQ) or before metadata (NAT)
   let statement = ''
   let i = 0
 
   if (isNumerical) {
-    // For NAT: statement is everything before TYPE:, ANSWER:, MARKS:, NEGATIVE:, DIFFICULTY:, EXPLANATION:
     while (i < lines.length && !lines[i].match(/^(TYPE|ANSWER|MARKS|NEGATIVE|DIFFICULTY|EXPLANATION):/i)) {
       const line = lines[i]
       if (!line.match(/^\[IMAGE:/i)) {
@@ -74,7 +217,6 @@ function parseQuestionSection(section: string): ParsedQuestion {
       i++
     }
   } else {
-    // For MCQ: statement is everything before A) B) C) D)
     while (i < lines.length && !lines[i].match(/^[A-D]\)/)) {
       const line = lines[i]
       if (!line.match(/^\[IMAGE:/i)) {
@@ -87,7 +229,6 @@ function parseQuestionSection(section: string): ParsedQuestion {
   statement = statement.trim()
   if (!statement) throw new Error('Question statement is empty')
 
-  // ✅ Parse MCQ options (only for MCQ)
   const options: ParsedQuestion['options'] = []
 
   if (!isNumerical) {
@@ -107,7 +248,6 @@ function parseQuestionSection(section: string): ParsedQuestion {
     }
   }
 
-  // Parse metadata
   let correctAnswer: 'A' | 'B' | 'C' | 'D' | undefined
   let correctAnswerExact: number | undefined
   let correctAnswerMin: number | undefined
@@ -121,12 +261,11 @@ function parseQuestionSection(section: string): ParsedQuestion {
     const line = lines[i]
 
     if (line.match(/^TYPE:/i)) {
-      // already handled above, skip
+      // already handled above
     } else if (line.match(/^ANSWER:/i)) {
       const rawAnswer = line.replace(/^ANSWER:/i, '').trim()
 
       if (isNumerical) {
-        // ✅ NAT: check if range (e.g. "40-44") or exact (e.g. "42")
         const rangeMatch = rawAnswer.match(/^(-?\d+\.?\d*)\s*-\s*(-?\d+\.?\d*)$/)
         if (rangeMatch) {
           correctAnswerMin = parseFloat(rangeMatch[1])
@@ -140,7 +279,6 @@ function parseQuestionSection(section: string): ParsedQuestion {
           correctAnswerExact = exact
         }
       } else {
-        // MCQ: must be A/B/C/D
         const answer = rawAnswer.toUpperCase()
         if (!['A', 'B', 'C', 'D'].includes(answer)) throw new Error(`Invalid answer: ${answer}`)
         correctAnswer = answer as 'A' | 'B' | 'C' | 'D'
@@ -166,7 +304,31 @@ function parseQuestionSection(section: string): ParsedQuestion {
     i++
   }
 
-  // ✅ Validate based on type
+  // ✅ Compute hash at parse time for MCQ
+  // For imported questions, options are plain text (not HTML), so we
+  // pass them directly — normalizeText handles plain text fine too
+  let contentHash: string | null = null
+
+  if (isNumerical) {
+    contentHash = computeQuestionHash({
+      questionType: 'numerical',
+      statement,
+      correctAnswerExact,
+      correctAnswerMin,
+      correctAnswerMax,
+    })
+  } else {
+    const optMap = Object.fromEntries(options.map(o => [o.key, o.text]))
+    contentHash = computeQuestionHash({
+      questionType: 'mcq',
+      statement,
+      optionA: optMap['A'] || '',
+      optionB: optMap['B'] || '',
+      optionC: optMap['C'] || '',
+      optionD: optMap['D'] || '',
+    })
+  }
+
   if (isNumerical) {
     const hasExact = correctAnswerExact !== undefined
     const hasRange = correctAnswerMin !== undefined && correctAnswerMax !== undefined
@@ -184,6 +346,7 @@ function parseQuestionSection(section: string): ParsedQuestion {
       negativeMarks,
       difficulty,
       explanation,
+      contentHash, // ✅
     }
   } else {
     if (!correctAnswer) throw new Error('Missing ANSWER field')
@@ -196,6 +359,7 @@ function parseQuestionSection(section: string): ParsedQuestion {
       negativeMarks,
       difficulty,
       explanation,
+      contentHash, // ✅
     }
   }
 }

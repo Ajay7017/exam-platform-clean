@@ -2,7 +2,6 @@ import { Queue, Worker, Job } from 'bullmq'
 import Redis from 'ioredis'
 import { prisma } from './prisma'
 import { cache } from './redis'
-import type { ParsedQuestion } from './question-parser'
 
 export const connection = new Redis({
   host:     process.env.REDIS_HOST     || 'localhost',
@@ -12,86 +11,22 @@ export const connection = new Redis({
   tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
 })
 
-// ─── Question import queue (unchanged) ───────────────────────────────────────
+// ─── Question import queue ────────────────────────────────────────────────────
+// NOTE: The actual import processing happens in
+// src/app/api/admin/questions/import/[jobId]/confirm/route.ts
+// via processImportInBackground(). This worker is kept only to satisfy
+// startQuestionImportWorker() calls in exam-sync-worker.ts.
+// It does nothing — jobs are not queued through BullMQ for imports anymore.
 
 export const questionImportQueue = new Queue('question-import', { connection })
 
-interface ImportJobData {
-  importJobId: string
-  topicId:     string
-  questions:   ParsedQuestion[]
-}
-
-export async function queueQuestionImport(
-  importJobId: string,
-  topicId:     string,
-  questions:   ParsedQuestion[]
-) {
-  await questionImportQueue.add('import-questions', { importJobId, topicId, questions })
-}
-
 export function startQuestionImportWorker() {
-  const worker = new Worker<ImportJobData>(
+  const worker = new Worker(
     'question-import',
-    async (job: Job<ImportJobData>) => {
-      const { importJobId, topicId, questions } = job.data
-      console.log(`Processing import job: ${importJobId}`)
-
-      await prisma.importJob.update({ where: { id: importJobId }, data: { status: 'processing' } })
-
-      let successCount = 0
-      let failedCount  = 0
-      const errors: string[] = []
-
-      try {
-        for (let i = 0; i < questions.length; i++) {
-          const question = questions[i]
-          try {
-            await prisma.question.create({
-              data: {
-                statement:     question.statement,
-                imageUrl:      question.statementImage,
-                topicId,
-                marks:         question.marks,
-                negativeMarks: question.negativeMarks,
-                difficulty:    question.difficulty,
-                explanation:   question.explanation,
-                isActive:      true,
-                options: {
-                  create: question.options.map((opt, idx) => ({
-                    text:      opt.text,
-                    imageUrl:  opt.imageUrl,
-                    optionKey: opt.key,
-                    isCorrect: opt.key === question.correctAnswer,
-                    sequence:  idx,
-                  })),
-                },
-              },
-            })
-            successCount++
-            await prisma.importJob.update({ where: { id: importJobId }, data: { successCount } })
-            await job.updateProgress(((i + 1) / questions.length) * 100)
-          } catch (error: any) {
-            console.error(`Error importing question ${i + 1}:`, error)
-            failedCount++
-            errors.push(`Question ${i + 1}: ${error.message}`)
-            await prisma.importJob.update({ where: { id: importJobId }, data: { failedCount } })
-          }
-        }
-
-        await prisma.importJob.update({
-          where: { id: importJobId },
-          data:  { status: 'completed', completedAt: new Date(), errors: errors.length > 0 ? errors : null },
-        })
-        console.log(`Import job ${importJobId} completed: ${successCount} success, ${failedCount} failed`)
-      } catch (error: any) {
-        console.error(`Import job ${importJobId} failed:`, error)
-        await prisma.importJob.update({
-          where: { id: importJobId },
-          data:  { status: 'failed', errors: [error.message], completedAt: new Date() },
-        })
-        throw error
-      }
+    async (job: Job) => {
+      // Import processing is handled directly in confirm/route.ts
+      // This worker intentionally does nothing
+      console.log(`[ImportWorker] Job ${job.id} received but processing is handled via HTTP confirm route`)
     },
     { connection, concurrency: 1 }
   )

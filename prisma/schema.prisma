@@ -148,6 +148,7 @@ model Question {
   difficulty    Difficulty @default(medium)
   isActive      Boolean    @default(true)
   version       Int        @default(1)
+  contentHash   String?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -167,6 +168,7 @@ model Question {
   @@index([topicId, isActive])
   @@index([subTopicId])
   @@index([difficulty])
+  @@index([contentHash])    
 }
 
 model Option {
@@ -424,6 +426,7 @@ model ImportJob {
   totalQuestions Int
   successCount   Int       @default(0)
   failedCount    Int       @default(0)
+  skippedCount   Int       @default(0)
   status         String    @default("queued")
   errors         Json?
   previewData    Json?

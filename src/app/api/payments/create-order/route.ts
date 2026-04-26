@@ -4,10 +4,23 @@ import { prisma } from '@/lib/prisma'
 import { razorpay, getRazorpayPublicKey, validatePaymentAmount, isTestMode } from '@/lib/razorpay'
 import { requireAuth } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
-
 import { createOrderSchema } from '@/lib/validations/payment'
 
-// ── handler ────────────────────────────────────────────────────────────────
+// Helper: fetch a Razorpay order and return it only if still unpaid.
+// Returns null if the order is paid, expired, or not found.
+// Cast to `any` because the Razorpay SDK types don't expose `status` on Orders.
+async function fetchReusableOrder(orderId: string): Promise<{ id: string; amount: number } | null> {
+  try {
+    const order = await (razorpay.orders.fetch as (id: string) => Promise<any>)(orderId)
+    if (order?.status === 'created') {
+      return { id: order.id as string, amount: order.amount as number }
+    }
+    return null
+  } catch {
+    // Order not found on Razorpay or network error — fall through to create new
+    return null
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -28,29 +41,62 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Bundle not found' }, { status: 404 })
       }
 
-      // Check already purchased
-      const existingPurchase = await prisma.purchase.findFirst({
+      // Already purchased (active)
+      const existingActivePurchase = await prisma.purchase.findFirst({
         where: {
           userId,
           bundleId,
           status: 'active',
-          OR: [
-            { validUntil: null },
-            { validUntil: { gte: new Date() } },
-          ],
+          OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }],
         },
       })
 
-      if (existingPurchase) {
+      if (existingActivePurchase) {
         return NextResponse.json({
           success: true,
           alreadyOwned: true,
-          purchaseId: existingPurchase.id,
+          purchaseId: existingActivePurchase.id,
           message: 'You already own this bundle',
         })
       }
 
-      // Calculate final price
+      // ── CRITICAL FIX: Reuse existing pending purchase+order ──────────────
+      // Prevents duplicate Purchase/Payment records when user dismisses modal
+      // and clicks Buy again. We find the most recent pending record and check
+      // if its Razorpay order is still open before creating a new one.
+      const pendingBundlePurchase = await prisma.purchase.findFirst({
+        where: { userId, bundleId, status: 'pending' },
+        include: { payment: true },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      // razorpayOrderId is String? in schema — extract safely before using
+      const pendingBundleOrderId: string | null =
+        pendingBundlePurchase?.payment?.razorpayOrderId ?? null
+
+      if (pendingBundleOrderId) {
+        const reusable = await fetchReusableOrder(pendingBundleOrderId)
+        if (reusable && pendingBundlePurchase?.payment) {
+          console.log('[CREATE-ORDER] Reusing existing pending bundle order:', {
+            purchaseId: pendingBundlePurchase.id,
+            orderId: reusable.id,
+            userId,
+            bundleId,
+          })
+          return NextResponse.json({
+            success: true,
+            orderId: reusable.id,
+            amount: pendingBundlePurchase.payment.amount,
+            currency: 'INR',
+            key: getRazorpayPublicKey(),
+            purchaseId: pendingBundlePurchase.id,
+            bundleName: bundle.name,
+            isTestMode,
+          })
+        }
+      }
+
+      // Create new purchase + Razorpay order
       const discountAmount = Math.round(bundle.price * (bundle.discount / 100))
       const finalPrice = bundle.price - discountAmount
 
@@ -66,12 +112,12 @@ export async function POST(request: Request) {
           status: 'pending',
           type: 'bundle',
           validFrom: new Date(),
-          validUntil: null,   // lifetime access — bundles never expire
+          validUntil: null,
         },
       })
 
       try {
-        const razorpayOrder = await razorpay.orders.create({
+        const razorpayOrder = await (razorpay.orders.create as (opts: any) => Promise<any>)({
           amount: finalPrice,
           currency: 'INR',
           receipt: purchase.id,
@@ -82,7 +128,7 @@ export async function POST(request: Request) {
             bundleName: bundle.name.substring(0, 30),
             environment: process.env.NODE_ENV || 'development',
           },
-        } as any)
+        })
 
         await prisma.payment.create({
           data: {
@@ -109,7 +155,7 @@ export async function POST(request: Request) {
           where: { id: purchase.id },
           data: { status: 'failed' },
         })
-        console.error('Razorpay bundle order creation failed:', razorpayError)
+        console.error('[CREATE-ORDER] Razorpay bundle order creation failed:', razorpayError)
         return NextResponse.json(
           { error: 'Failed to create payment order. Please try again.' },
           { status: 500 }
@@ -118,7 +164,7 @@ export async function POST(request: Request) {
     }
 
     // ── SINGLE EXAM flow ──────────────────────────────────────────────────
-    const { examId } = body  // TypeScript now knows body.type === 'single_exam'
+    const { examId } = body
 
     const exam = await prisma.exam.findUnique({
       where: { id: examId },
@@ -138,7 +184,7 @@ export async function POST(request: Request) {
 
     const now = new Date()
 
-    // ── 1. Direct exam purchase check ─────────────────────────────────────
+    // Check direct active purchase
     const existingPurchase = await prisma.purchase.findFirst({
       where: {
         userId,
@@ -157,24 +203,14 @@ export async function POST(request: Request) {
       })
     }
 
-    // ── 2. Bundle ownership check ─────────────────────────────────────────
-    // Student may already have access to this exam via a purchased bundle.
-    // If so, block the order creation — no financial harm intended, but
-    // prevents dangling pending records and eliminates any double-pay risk.
+    // Check bundle ownership
     const bundleAccess = await prisma.purchase.findFirst({
       where: {
         userId,
         type: 'bundle',
         status: 'active',
-        OR: [
-          { validUntil: null },
-          { validUntil: { gte: now } },
-        ],
-        bundle: {
-          exams: {
-            some: { examId },
-          },
-        },
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+        bundle: { exams: { some: { examId } } },
       },
     })
 
@@ -187,7 +223,7 @@ export async function POST(request: Request) {
       })
     }
 
-    // ── 3. Free exam enrollment ───────────────────────────────────────────
+    // Free exam enrollment
     if (exam.isFree || exam.price === 0) {
       const purchase = await prisma.purchase.create({
         data: {
@@ -209,7 +245,41 @@ export async function POST(request: Request) {
       })
     }
 
-    // ── 4. Paid exam — create Razorpay order ──────────────────────────────
+    // ── CRITICAL FIX: Reuse existing pending exam purchase+order ──────────
+    const pendingExamPurchase = await prisma.purchase.findFirst({
+      where: { userId, examId, status: 'pending' },
+      include: { payment: true },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    // razorpayOrderId is String? in schema — extract safely before using
+    const pendingExamOrderId: string | null =
+      pendingExamPurchase?.payment?.razorpayOrderId ?? null
+
+    if (pendingExamOrderId) {
+      const reusable = await fetchReusableOrder(pendingExamOrderId)
+      if (reusable && pendingExamPurchase?.payment) {
+        console.log('[CREATE-ORDER] Reusing existing pending exam order:', {
+          purchaseId: pendingExamPurchase.id,
+          orderId: reusable.id,
+          userId,
+          examId,
+        })
+        return NextResponse.json({
+          success: true,
+          orderId: reusable.id,
+          amount: pendingExamPurchase.payment.amount,
+          currency: 'INR',
+          key: getRazorpayPublicKey(),
+          purchaseId: pendingExamPurchase.id,
+          examTitle: exam.title,
+          examSubject: exam.subject?.name || 'General',
+          isTestMode,
+        })
+      }
+    }
+
+    // Paid exam — create new Razorpay order
     const amountInPaise = exam.price
 
     if (!validatePaymentAmount(amountInPaise)) {
@@ -227,7 +297,7 @@ export async function POST(request: Request) {
     })
 
     try {
-      const razorpayOrder = await razorpay.orders.create({
+      const razorpayOrder = await (razorpay.orders.create as (opts: any) => Promise<any>)({
         amount: amountInPaise,
         currency: 'INR',
         receipt: purchase.id,
@@ -238,7 +308,7 @@ export async function POST(request: Request) {
           examName: exam.title.substring(0, 30),
           environment: process.env.NODE_ENV || 'development',
         },
-      } as any)
+      })
 
       await prisma.payment.create({
         data: {
@@ -250,7 +320,7 @@ export async function POST(request: Request) {
         },
       })
 
-      console.log('Razorpay order created:', {
+      console.log('[CREATE-ORDER] Razorpay order created:', {
         orderId: razorpayOrder.id,
         purchaseId: purchase.id,
         amount: amountInPaise,
@@ -271,7 +341,7 @@ export async function POST(request: Request) {
         isTestMode,
       })
     } catch (razorpayError: any) {
-      console.error('Razorpay order creation failed:', {
+      console.error('[CREATE-ORDER] Razorpay order creation failed:', {
         error: razorpayError.message,
         purchaseId: purchase.id,
         userId,
@@ -293,7 +363,7 @@ export async function POST(request: Request) {
       )
     }
   } catch (error) {
-    console.error('CREATE ORDER ERROR:', error)
+    console.error('[CREATE-ORDER] ERROR:', error)
     return handleApiError(error)
   }
 }

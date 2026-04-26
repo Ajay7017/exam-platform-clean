@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Lock, CheckCircle2, Play } from 'lucide-react'
+import { Loader2, Lock, CheckCircle2, Play, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 declare global {
@@ -21,17 +21,26 @@ interface PurchaseButtonProps {
   isPurchased: boolean
 }
 
+const VERIFY_TIMEOUT_MS = 20_000
+
 export default function PurchaseButton({
   examId,
   examSlug,
   examTitle,
   price,
   isFree,
-  isPurchased
+  isPurchased,
 }: PurchaseButtonProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [paymentPossiblyComplete, setPaymentPossiblyComplete] = useState(false)
+
+  const resetState = () => {
+    setLoading(false)
+    setVerifying(false)
+  }
 
   const handleStartExam = () => {
     router.push(`/exam/${examSlug}/start`)
@@ -45,10 +54,7 @@ export default function PurchaseButton({
       const response = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          examId,
-          type: 'single_exam'
-        })
+        body: JSON.stringify({ examId, type: 'single_exam' }),
       })
 
       const data = await response.json()
@@ -59,19 +65,15 @@ export default function PurchaseButton({
 
       if (data.isFree || data.alreadyOwned) {
         toast.success('✅ Enrolled successfully!', {
-          description: 'You can now start the exam. Good luck!'
+          description: 'You can now start the exam. Good luck!',
         })
-        
-        // Refresh the page to update purchase status
         router.refresh()
-        
-        // Navigate after a short delay
         setTimeout(() => {
           router.push(`/exam/${examSlug}/start`)
         }, 1000)
       }
     } catch (error: any) {
-      console.error('Enrollment error:', error)
+      console.error('[EXAM] Enrollment error:', error)
       setError(error.message || 'Failed to enroll. Please try again.')
       toast.error('Failed to enroll')
     } finally {
@@ -82,16 +84,13 @@ export default function PurchaseButton({
   const handlePurchase = async () => {
     setLoading(true)
     setError(null)
+    setPaymentPossiblyComplete(false)
 
     try {
-      // 1. Create order
       const orderResponse = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          examId,
-          type: 'single_exam'
-        })
+        body: JSON.stringify({ examId, type: 'single_exam' }),
       })
 
       const orderData = await orderResponse.json()
@@ -100,30 +99,40 @@ export default function PurchaseButton({
         throw new Error(orderData.error || 'Failed to create order')
       }
 
-      // Handle already owned
       if (orderData.alreadyOwned) {
         toast.success('You already own this exam!')
         router.refresh()
+        resetState()
         return
       }
 
-      // 2. Load Razorpay if not already loaded
       if (!window.Razorpay) {
         throw new Error('Payment gateway not loaded. Please refresh the page.')
       }
 
-      // 3. Open Razorpay checkout
       const options = {
         key: orderData.key,
         amount: orderData.amount,
         currency: orderData.currency,
-        name: 'ExamPro',
+        name: 'Mockzy',
         description: orderData.examTitle,
         order_id: orderData.orderId,
+
         handler: async function (response: any) {
-          // 4. Verify payment on backend
+          setVerifying(true)
+          setLoading(false)
+
+          const verifyTimeout = setTimeout(() => {
+            console.warn('[EXAM] Verify timed out — payment may still be processing')
+            setVerifying(false)
+            setPaymentPossiblyComplete(true)
+            toast.info('Payment received. Verifying access...', {
+              description: 'Please check My Purchases in a moment.',
+              duration: 8000,
+            })
+          }, VERIFY_TIMEOUT_MS)
+
           try {
-            setLoading(true)
             const verifyResponse = await fetch('/api/payments/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -131,67 +140,69 @@ export default function PurchaseButton({
                 razorpayOrderId: response.razorpay_order_id,
                 razorpayPaymentId: response.razorpay_payment_id,
                 razorpaySignature: response.razorpay_signature,
-                purchaseId: orderData.purchaseId
-              })
+                purchaseId: orderData.purchaseId,
+              }),
             })
 
+            clearTimeout(verifyTimeout)
             const verifyData = await verifyResponse.json()
 
             if (verifyResponse.ok && verifyData.success) {
               toast.success('🎉 Payment Successful!', {
-                description: 'You can now start the exam. Good luck!'
+                description: 'You can now start the exam. Good luck!',
               })
-              
-              // Refresh to update purchase status
               router.refresh()
-              
               setTimeout(() => {
                 router.push(`/exam/${examSlug}/start`)
               }, 1000)
             } else {
-              throw new Error(verifyData.error || 'Payment verification failed')
+              console.error('[EXAM] Verify failed after payment:', verifyData)
+              setPaymentPossiblyComplete(true)
+              toast.warning('Payment received but access setup delayed.', {
+                description: 'Please check My Purchases or contact support.',
+                duration: 10000,
+              })
             }
-          } catch (error: any) {
-            console.error('Verification error:', error)
-            setError('Payment verification failed. Please contact support.')
-            toast.error('Payment verification failed')
+          } catch (err: any) {
+            clearTimeout(verifyTimeout)
+            console.error('[EXAM] Verify network error:', err)
+            setPaymentPossiblyComplete(true)
+            toast.warning('Payment received. Please check My Purchases.', {
+              duration: 10000,
+            })
           } finally {
-            setLoading(false)
+            setVerifying(false)
           }
         },
-        prefill: {
-          name: '',
-          email: '',
-          contact: ''
-        },
-        theme: {
-          color: '#3B82F6'
-        },
+
+        prefill: { name: '', email: '', contact: '' },
+        theme: { color: '#3B82F6' },
         modal: {
-          ondismiss: function() {
-            setLoading(false)
-          }
-        }
+          ondismiss: () => {
+            resetState()
+          },
+        },
       }
 
       const razorpay = new window.Razorpay(options)
-      razorpay.on('payment.failed', function (response: any) {
-        setError(response.error.description || 'Payment failed')
-        toast.error('Payment failed')
-        setLoading(false)
-      })
-      
-      razorpay.open()
 
-    } catch (error: any) {
-      console.error('Purchase error:', error)
-      setError(error.message || 'Failed to initiate payment. Please try again.')
-      toast.error(error.message || 'Failed to initiate payment')
-      setLoading(false)
+      razorpay.on('payment.failed', (response: any) => {
+        const msg = response.error?.description || 'Payment failed'
+        setError(msg)
+        toast.error('Payment failed', { description: msg })
+        resetState()
+      })
+
+      razorpay.open()
+    } catch (err: any) {
+      console.error('[EXAM] Purchase error:', err)
+      setError(err.message || 'Failed to initiate payment. Please try again.')
+      toast.error(err.message || 'Failed to initiate payment')
+      resetState()
     }
   }
 
-  // Case 1: Already purchased or enrolled (free/paid)
+  // Already purchased or free — show Start button
   if (isPurchased || isFree) {
     return (
       <div className="space-y-3">
@@ -212,13 +223,13 @@ export default function PurchaseButton({
             </>
           )}
         </button>
-        
+
         {isFree && !isPurchased && (
           <p className="text-sm text-center text-muted-foreground">
             This is a free exam. Click to start immediately.
           </p>
         )}
-        
+
         {isPurchased && (
           <div className="flex items-center justify-center gap-2 text-sm text-green-600">
             <CheckCircle2 className="h-4 w-4" />
@@ -229,7 +240,7 @@ export default function PurchaseButton({
     )
   }
 
-  // Case 2: Free exam, not yet enrolled
+  // Free exam, not yet enrolled
   if (isFree && !isPurchased) {
     return (
       <div className="space-y-3">
@@ -258,21 +269,56 @@ export default function PurchaseButton({
         )}
 
         <p className="text-sm text-center text-muted-foreground">
-          Free exam - No payment required
+          Free exam — No payment required
         </p>
       </div>
     )
   }
 
-  // Case 3: Paid exam, not purchased
+  // Payment went through but access isn't confirmed yet
+  if (paymentPossiblyComplete) {
+    return (
+      <div className="space-y-3">
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold">Payment received!</p>
+            <p className="mt-0.5">
+              Your access is being activated. Please check{' '}
+              <button
+                onClick={() => router.push('/purchases')}
+                className="underline font-medium"
+              >
+                My Purchases
+              </button>{' '}
+              in a moment, or refresh this page.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => router.refresh()}
+          className="w-full bg-blue-50 text-blue-700 border border-blue-200 px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+        >
+          Refresh Page
+        </button>
+      </div>
+    )
+  }
+
+  // Paid exam, not purchased
   return (
     <div className="space-y-3">
       <button
         onClick={handlePurchase}
-        disabled={loading}
+        disabled={loading || verifying}
         className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
       >
-        {loading ? (
+        {verifying ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Confirming access...
+          </>
+        ) : loading ? (
           <>
             <Loader2 className="h-5 w-5 animate-spin" />
             Processing...
@@ -280,7 +326,7 @@ export default function PurchaseButton({
         ) : (
           <>
             <Lock className="h-5 w-5" />
-            Buy Now - ₹{(price / 100).toFixed(0)}
+            Buy Now — ₹{(price / 100).toFixed(0)}
           </>
         )}
       </button>
