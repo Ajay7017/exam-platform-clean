@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       const pendingBundlePurchase = await prisma.purchase.findFirst({
         where: { userId, bundleId, status: 'pending' },
         include: { payment: true },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { purchasedAt: 'desc' },
       })
 
       // razorpayOrderId is String? in schema — extract safely before using
@@ -249,7 +249,7 @@ export async function POST(request: Request) {
     const pendingExamPurchase = await prisma.purchase.findFirst({
       where: { userId, examId, status: 'pending' },
       include: { payment: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { purchasedAt: 'desc' },
     })
 
     // razorpayOrderId is String? in schema — extract safely before using
