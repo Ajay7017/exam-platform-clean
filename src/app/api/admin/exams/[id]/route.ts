@@ -147,12 +147,12 @@ export async function PUT(
         select: { id: true, marks: true }
       })
       
-      if (questions.length !== validated.questionIds.length) {
-        return NextResponse.json(
-          { error: 'Some questions were not found' },
-          { status: 400 }
-        )
-      }
+      if (questions.length === 0) {
+  return NextResponse.json(
+    { error: 'No valid questions found' },
+    { status: 400 }
+  )
+}
       
       totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
     }

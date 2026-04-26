@@ -156,12 +156,12 @@ export async function POST(request: NextRequest) {
       select: { id: true, marks: true }
     })
 
-    if (questions.length !== validated.questionIds.length) {
-      return NextResponse.json(
-        { error: `Found ${questions.length} questions out of ${validated.questionIds.length} requested` },
-        { status: 400 }
-      )
-    }
+    if (questions.length === 0) {
+  return NextResponse.json(
+    { error: 'No valid questions found' },
+    { status: 400 }
+  )
+}
 
     const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
 

@@ -21,8 +21,12 @@ export const createExamSchema = z.object({
     .max(300, 'Duration cannot exceed 300 minutes'),
   
   questionIds: z.array(z.string().cuid())
-    .min(2, 'Exam must have at least 2 questions')
-    .max(200, 'Exam cannot have more than 200 questions'),
+  .transform(ids => Array.from(new Set(ids)))
+  .pipe(
+    z.array(z.string().cuid())
+      .min(2, 'Exam must have at least 2 questions')
+      .max(200, 'Exam cannot have more than 200 questions')
+  ),
   
   price: z.number()
     .int('Price must be a whole number')

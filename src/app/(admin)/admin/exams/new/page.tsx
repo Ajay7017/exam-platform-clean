@@ -1354,7 +1354,7 @@ export default function CreateExamPage() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
                         Selected
-                        <span className="ml-1.5 text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full text-xs font-medium">{selectedIds.length}</span>
+                        <span className="ml-1.5 text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full text-xs font-medium">{selectedQuestions.length}</span>
                       </CardTitle>
                       <span className="text-xs text-gray-500 font-medium">{totalSelectedMarks} marks</span>
                     </div>
@@ -1384,7 +1384,7 @@ export default function CreateExamPage() {
                           <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded-md border border-blue-100 mt-1">
                             <span className="text-xs font-semibold text-blue-700">Total</span>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-blue-700 font-semibold">{selectedIds.length}Q</span>
+                              <span className="text-xs text-blue-700 font-semibold">{selectedQuestions.length}Q</span>
                               <span className="text-blue-300 text-xs">·</span>
                               <span className="text-xs text-blue-600">{totalSelectedMarks}m</span>
                             </div>
@@ -1442,7 +1442,7 @@ export default function CreateExamPage() {
           <div className="flex items-center gap-4 text-sm text-gray-600">
             {step === 2 && selectedIds.length > 0 && (
               <>
-                <span><strong className="text-gray-900">{selectedIds.length}</strong> questions</span>
+                <span><strong className="text-gray-900">{selectedQuestions.length}</strong> questions</span>
                 <span className="text-gray-300">·</span>
                 <span><strong className="text-gray-900">{totalSelectedMarks}</strong> marks</span>
                 <span className="text-gray-300">·</span>
