@@ -1,4 +1,3 @@
-// src/app/(admin)/admin/exams/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -17,11 +16,17 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet'
 import { toast } from 'sonner'
 import {
   Plus, Search, Edit, Trash2, Eye, Users, Clock, FileQuestion,
   Loader2, LayoutGrid, List, Gift, Radio, Globe, EyeOff, Tag,
+  ChevronRight, IndianRupee,
 } from 'lucide-react'
+
+// ── types ─────────────────────────────────────────────────────────────────
 
 interface Exam {
   id: string
@@ -38,7 +43,8 @@ interface Exam {
   isFree: boolean
   isPublished: boolean
   totalAttempts: number
-  tags: string[]   // ← ADDED
+  totalPurchases: number
+  tags: string[]
 }
 
 interface Stats {
@@ -47,19 +53,36 @@ interface Stats {
   paid: number
   published: number
   totalAttempts: number
+  totalPurchases: number  // ADD THIS
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+interface PurchaseRecord {
+  purchaseId:  string
+  purchasedAt: string
+  validUntil:  string | null
+  price:       number
+  user: {
+    id:    string
+    name:  string
+    email: string
+    phone: string | null
+    image: string | null
+  }
+  payment: {
+    amount:            number
+    razorpayPaymentId: string | null
+    paidAt:            string | null
+    method:            string | null
+  } | null
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────
 
 const SUBJECT_GRADIENTS = [
-  'from-violet-500 to-purple-700',
-  'from-blue-500 to-cyan-700',
-  'from-emerald-500 to-teal-700',
-  'from-orange-500 to-amber-700',
-  'from-pink-500 to-rose-700',
-  'from-indigo-500 to-blue-700',
-  'from-teal-500 to-green-700',
-  'from-red-500 to-orange-700',
+  'from-violet-500 to-purple-700', 'from-blue-500 to-cyan-700',
+  'from-emerald-500 to-teal-700',  'from-orange-500 to-amber-700',
+  'from-pink-500 to-rose-700',     'from-indigo-500 to-blue-700',
+  'from-teal-500 to-green-700',    'from-red-500 to-orange-700',
 ]
 
 function getSubjectGradient(subject: string) {
@@ -67,37 +90,145 @@ function getSubjectGradient(subject: string) {
   for (let i = 0; i < subject.length; i++) hash = subject.charCodeAt(i) + ((hash << 5) - hash)
   return SUBJECT_GRADIENTS[Math.abs(hash) % SUBJECT_GRADIENTS.length]
 }
-
-function getSubjectInitial(subject: string) {
-  return subject?.trim()?.[0]?.toUpperCase() || '?'
-}
-
+function getSubjectInitial(subject: string) { return subject?.trim()?.[0]?.toUpperCase() || '?' }
 function getDifficultyColor(d: string) {
   switch (d) {
-    case 'easy': return 'bg-green-100 text-green-700'
+    case 'easy':   return 'bg-green-100 text-green-700'
     case 'medium': return 'bg-yellow-100 text-yellow-700'
-    case 'hard': return 'bg-red-100 text-red-700'
-    default: return 'bg-gray-100 text-gray-700'
+    case 'hard':   return 'bg-red-100 text-red-700'
+    default:       return 'bg-gray-100 text-gray-700'
   }
 }
 function getOptimizedThumbnail(url: string): string {
   if (!url || !url.includes('cloudinary.com')) return url
   return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/')
 }
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function formatPrice(paise: number) { return `₹${(paise / 100).toFixed(0)}` }
 
-// ── component ─────────────────────────────────────────────────────────────────
+// ── Purchases Drawer ──────────────────────────────────────────────────────
+
+function PurchasesDrawer({
+  exam, open, onClose,
+}: {
+  exam: Exam | null
+  open: boolean
+  onClose: () => void
+}) {
+  const [purchases, setPurchases]   = useState<PurchaseRecord[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
+
+  useEffect(() => {
+    if (!open || !exam) return
+    setPurchases([])
+    setLoading(true)
+    fetch(`/api/admin/exams/${exam.id}/purchases`)
+      .then(r => r.json())
+      .then(data => {
+        setPurchases(data.purchases ?? [])
+        setTotalCount(data.pagination?.total ?? 0)
+      })
+      .catch(() => toast.error('Failed to load purchases'))
+      .finally(() => setLoading(false))
+  }, [open, exam])
+
+  return (
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetHeader className="pb-4 border-b">
+          <SheetTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-blue-600" />
+            Purchases — {exam?.title}
+          </SheetTitle>
+          <SheetDescription>
+            {totalCount} active purchase{totalCount !== 1 ? 's' : ''}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="mt-4">
+          {loading ? (
+            <div className="flex justify-center items-center h-40">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : purchases.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+              <Users className="h-10 w-10 mb-2 opacity-30" />
+              <p className="text-sm">No active purchases yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {purchases.map(p => (
+                <div key={p.purchaseId}
+                  className="border rounded-lg p-4 bg-white hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                        {p.user.image
+                          ? <img src={p.user.image} className="w-9 h-9 rounded-full object-cover" alt="" />
+                          : <span className="text-sm font-bold text-indigo-600">
+                              {p.user.name?.[0]?.toUpperCase() ?? '?'}
+                            </span>
+                        }
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-gray-900 truncate">{p.user.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{p.user.email}</p>
+                        {p.user.phone && <p className="text-xs text-gray-400">{p.user.phone}</p>}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold text-green-600">
+                        {p.price === 0 ? 'Free' : formatPrice(p.price)}
+                      </p>
+                      <p className="text-xs text-gray-400">{formatDate(p.purchasedAt)}</p>
+                    </div>
+                  </div>
+
+                  {p.payment && (
+                    <div className="mt-3 pt-3 border-t flex flex-wrap gap-x-4 gap-y-1">
+                      {p.payment.razorpayPaymentId && (
+                        <span className="text-xs text-gray-400">
+                          ID: <span className="font-mono text-gray-600">{p.payment.razorpayPaymentId}</span>
+                        </span>
+                      )}
+                      {p.payment.method && (
+                        <span className="text-xs text-gray-400 capitalize">
+                          Via: <span className="text-gray-600">{p.payment.method}</span>
+                        </span>
+                      )}
+                      {p.validUntil && (
+                        <span className="text-xs text-gray-400">
+                          Valid until: <span className="text-gray-600">{formatDate(p.validUntil)}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ── main component ────────────────────────────────────────────────────────
 
 export default function AdminExamsPage() {
   const router = useRouter()
-  const [exams, setExams] = useState<Exam[]>([])
-  const [stats, setStats] = useState<Stats>({ total: 0, free: 0, paid: 0, published: 0, totalAttempts: 0 })
+  const [exams, setExams]   = useState<Exam[]>([])
+  const [stats, setStats]   = useState<Stats>({ total: 0, free: 0, paid: 0, published: 0, totalAttempts: 0, totalPurchases: 0 })
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [subjectFilter, setSubjectFilter] = useState('all')
+  const [searchQuery, setSearchQuery]         = useState('')
+  const [subjectFilter, setSubjectFilter]     = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')
-  const [publishFilter, setPublishFilter] = useState('all')
-  const [tagFilter, setTagFilter] = useState('all')          // ← ADDED
-  const [allTags, setAllTags] = useState<string[]>([])       // ← ADDED
+  const [publishFilter, setPublishFilter]     = useState('all')
+  const [tagFilter, setTagFilter]             = useState('all')
+  const [allTags, setAllTags]                 = useState<string[]>([])
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
@@ -106,16 +237,19 @@ export default function AdminExamsPage() {
     return 'grid'
   })
 
-  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [togglingId, setTogglingId]             = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [examToDelete, setExamToDelete] = useState<Exam | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [examToDelete, setExamToDelete]         = useState<Exam | null>(null)
+  const [deleting, setDeleting]                 = useState(false)
+
+  // ── drawer state ──
+  const [drawerExam, setDrawerExam] = useState<Exam | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  const openPurchasesDrawer = (exam: Exam) => { setDrawerExam(exam); setDrawerOpen(true) }
 
   useEffect(() => { fetchExams() }, [])
-
-  useEffect(() => {
-    localStorage.setItem('examViewMode', viewMode)
-  }, [viewMode])
+  useEffect(() => { localStorage.setItem('examViewMode', viewMode) }, [viewMode])
 
   const fetchExams = async () => {
     try {
@@ -125,14 +259,14 @@ export default function AdminExamsPage() {
       const data = await res.json()
       const arr: Exam[] = data.exams || []
       setExams(arr)
-      // ← ADDED: read allTags from the API response
       if (data.allTags) setAllTags(data.allTags)
       setStats({
-        total: arr.length,
-        free: arr.filter(e => e.isFree).length,
-        paid: arr.filter(e => !e.isFree).length,
-        published: arr.filter(e => e.isPublished).length,
+        total:         arr.length,
+        free:          arr.filter(e => e.isFree).length,
+        paid:          arr.filter(e => !e.isFree).length,
+        published:     arr.filter(e => e.isPublished).length,
         totalAttempts: arr.reduce((s, e) => s + e.totalAttempts, 0),
+        totalPurchases: arr.reduce((s, e) => s + e.totalPurchases, 0), 
       })
     } catch {
       toast.error('Failed to load exams')
@@ -141,16 +275,14 @@ export default function AdminExamsPage() {
     }
   }
 
-  // ── filtering ─────────────────────────────────────────────────────────────
   const filteredExams = exams.filter(e => {
-    const matchSearch = e.title.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchSearch  = e.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchSubject = subjectFilter === 'all' || e.subjectSlug === subjectFilter
-    const matchDiff = difficultyFilter === 'all' || e.difficulty === difficultyFilter
+    const matchDiff    = difficultyFilter === 'all' || e.difficulty === difficultyFilter
     const matchPublish =
       publishFilter === 'all' ||
       (publishFilter === 'published' && e.isPublished) ||
       (publishFilter === 'draft' && !e.isPublished)
-    // ← ADDED: tag filter
     const matchTag = tagFilter === 'all' || (e.tags && e.tags.includes(tagFilter))
     return matchSearch && matchSubject && matchDiff && matchPublish && matchTag
   })
@@ -159,7 +291,6 @@ export default function AdminExamsPage() {
     new Map(exams.map(e => [e.subjectSlug, e.subject])).entries()
   ).map(([slug, name]) => ({ slug, name }))
 
-  // ── actions ───────────────────────────────────────────────────────────────
   const handleTogglePublish = async (exam: Exam) => {
     setTogglingId(exam.id)
     try {
@@ -170,10 +301,7 @@ export default function AdminExamsPage() {
       })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
       setExams(prev => prev.map(e => e.id === exam.id ? { ...e, isPublished: !e.isPublished } : e))
-      setStats(prev => ({
-        ...prev,
-        published: exam.isPublished ? prev.published - 1 : prev.published + 1,
-      }))
+      setStats(prev => ({ ...prev, published: exam.isPublished ? prev.published - 1 : prev.published + 1 }))
       toast.success(exam.isPublished ? 'Exam unpublished' : 'Exam published')
     } catch (err: any) {
       toast.error(err.message || 'Failed to update exam')
@@ -201,15 +329,13 @@ export default function AdminExamsPage() {
     }
   }
 
-  // ── sub-components ────────────────────────────────────────────────────────
+  // ── sub-components ────────────────────────────────────────────────────
 
   function ExamCardHeader({ exam }: { exam: Exam }) {
     const gradient = getSubjectGradient(exam.subject)
-    const initial = getSubjectInitial(exam.subject)
-
+    const initial  = getSubjectInitial(exam.subject)
     if (exam.thumbnail) {
       return (
-        // AFTER
         <div className="relative w-full rounded-t-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
           <img src={getOptimizedThumbnail(exam.thumbnail)} alt={exam.title} className="w-full h-full object-cover" />
           <div className="absolute top-3 left-3">
@@ -223,16 +349,10 @@ export default function AdminExamsPage() {
         </div>
       )
     }
-
     return (
       <div className={`relative w-full bg-gradient-to-br ${gradient} rounded-t-lg overflow-hidden`} style={{ aspectRatio: '16/9' }}>
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
-            backgroundSize: '18px 18px',
-          }}
-        />
+        <div className="absolute inset-0 opacity-10"
+          style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
           <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
             <span className="text-2xl font-bold text-white">{initial}</span>
@@ -258,26 +378,21 @@ export default function AdminExamsPage() {
         <CardContent className="p-0">
           <ExamCardHeader exam={exam} />
           <div className="p-4">
-            <h3 className="font-semibold text-gray-900 truncate mb-1" title={exam.title}>
-              {exam.title}
-            </h3>
+            <h3 className="font-semibold text-gray-900 truncate mb-1" title={exam.title}>{exam.title}</h3>
             <p className="text-sm text-gray-500 mb-2">{exam.subject}</p>
 
-            {/* ← ADDED: tag pills on admin card */}
             {exam.tags && exam.tags.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-3">
                 {exam.tags.map(tag => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
-                  >
+                  <span key={tag}
+                    className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
                     <Tag className="h-2.5 w-2.5" />{tag}
                   </span>
                 ))}
               </div>
             )}
 
-            <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+            <div className="flex items-center gap-3 text-sm text-gray-600 mb-3">
               <div className="flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5" /><span>{exam.duration}min</span>
               </div>
@@ -289,27 +404,39 @@ export default function AdminExamsPage() {
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-3">
               {exam.isFree
                 ? <span className="text-base font-bold text-green-600">Free</span>
                 : <span className="text-base font-bold text-gray-900">₹{(exam.price / 100).toFixed(2)}</span>
               }
             </div>
 
+            {/* Purchases — clickable, only shown for paid exams */}
+            {!exam.isFree && (
+              <button
+                onClick={() => openPurchasesDrawer(exam)}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 mb-3 group transition-colors"
+              >
+                <IndianRupee className="h-3.5 w-3.5" />
+                <span className="font-medium">{exam.totalPurchases} purchases</span>
+                <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            )}
+
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/exams/${exam.id}`)}>
+              <Button variant="outline" size="sm" className="flex-1"
+                onClick={() => router.push(`/admin/exams/${exam.id}`)}>
                 <Eye className="h-3 w-3 mr-1" />View
               </Button>
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/exams/${exam.id}/edit`)}>
+              <Button variant="outline" size="sm" className="flex-1"
+                onClick={() => router.push(`/admin/exams/${exam.id}/edit`)}>
                 <Edit className="h-3 w-3 mr-1" />Edit
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={toggling}
+              <Button variant="outline" size="sm" disabled={toggling}
                 onClick={() => handleTogglePublish(exam)}
-                className={exam.isPublished ? 'text-orange-600 border-orange-300 hover:bg-orange-50' : 'text-green-600 border-green-300 hover:bg-green-50'}
-              >
+                className={exam.isPublished
+                  ? 'text-orange-600 border-orange-300 hover:bg-orange-50'
+                  : 'text-green-600 border-green-300 hover:bg-green-50'}>
                 {toggling
                   ? <Loader2 className="h-3 w-3 animate-spin" />
                   : exam.isPublished
@@ -327,7 +454,8 @@ export default function AdminExamsPage() {
     )
   }
 
-  // ── render ────────────────────────────────────────────────────────────────
+  // ── render ────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-6">
 
@@ -345,10 +473,10 @@ export default function AdminExamsPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         {[
-          { label: 'Total Exams', value: stats.total, icon: FileQuestion, color: 'bg-blue-100 text-blue-600' },
-          { label: 'Free Exams', value: stats.free, icon: Gift, color: 'bg-green-100 text-green-600' },
-          { label: 'Published', value: stats.published, icon: Radio, color: 'bg-yellow-100 text-yellow-600' },
-          { label: 'Total Attempts', value: stats.totalAttempts.toLocaleString(), icon: Users, color: 'bg-red-100 text-red-600' },
+          { label: 'Total Exams',    value: stats.total,                    icon: FileQuestion, color: 'bg-blue-100 text-blue-600' },
+          { label: 'Free Exams',     value: stats.free,                     icon: Gift,         color: 'bg-green-100 text-green-600' },
+          { label: 'Published',      value: stats.published,                icon: Radio,        color: 'bg-yellow-100 text-yellow-600' },
+          { label: 'Total Purchases', value: stats.totalPurchases.toLocaleString(), icon: IndianRupee, color: 'bg-blue-100 text-blue-600' },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label}>
             <CardContent className="pt-6">
@@ -370,18 +498,11 @@ export default function AdminExamsPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row gap-3 flex-wrap">
-            {/* Search */}
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Search exams by title..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
+              <Input placeholder="Search exams by title..." value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)} className="pl-9" />
             </div>
-
-            {/* Subject */}
             <Select value={subjectFilter} onValueChange={setSubjectFilter}>
               <SelectTrigger className="w-44"><SelectValue placeholder="All Subjects" /></SelectTrigger>
               <SelectContent>
@@ -389,8 +510,6 @@ export default function AdminExamsPage() {
                 {subjects.map(s => <SelectItem key={s.slug} value={s.slug}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
-
-            {/* Difficulty */}
             <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
               <SelectTrigger className="w-44"><SelectValue placeholder="All Difficulties" /></SelectTrigger>
               <SelectContent>
@@ -400,8 +519,6 @@ export default function AdminExamsPage() {
                 <SelectItem value="hard">Hard</SelectItem>
               </SelectContent>
             </Select>
-
-            {/* Publish status */}
             <Select value={publishFilter} onValueChange={setPublishFilter}>
               <SelectTrigger className="w-44"><SelectValue placeholder="All Status" /></SelectTrigger>
               <SelectContent>
@@ -410,8 +527,6 @@ export default function AdminExamsPage() {
                 <SelectItem value="draft">Draft</SelectItem>
               </SelectContent>
             </Select>
-
-            {/* ← ADDED: Tag / Category filter — only shows when tags exist */}
             {allTags.length > 0 && (
               <Select value={tagFilter} onValueChange={setTagFilter}>
                 <SelectTrigger className="w-44"><SelectValue placeholder="All Categories" /></SelectTrigger>
@@ -427,21 +542,13 @@ export default function AdminExamsPage() {
                 </SelectContent>
               </Select>
             )}
-
-            {/* View toggle */}
             <div className="flex gap-1 border rounded-md p-1 h-10 self-start">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Grid view"
-              >
+              <button onClick={() => setViewMode('grid')}
+                className={`px-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                 <LayoutGrid className="h-4 w-4" />
               </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-2 rounded transition-colors ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
-                title="List view"
-              >
+              <button onClick={() => setViewMode('list')}
+                className={`px-2 rounded transition-colors ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                 <List className="h-4 w-4" />
               </button>
             </div>
@@ -488,6 +595,7 @@ export default function AdminExamsPage() {
                   <TableHead>Duration</TableHead>
                   <TableHead>Questions</TableHead>
                   <TableHead>Attempts</TableHead>
+                  <TableHead>Purchases</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -509,22 +617,17 @@ export default function AdminExamsPage() {
                           {exam.subject}
                         </div>
                       </TableCell>
-                      {/* ← ADDED: tags column in list view */}
                       <TableCell>
                         {exam.tags && exam.tags.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {exam.tags.map(tag => (
-                              <span
-                                key={tag}
-                                className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
-                              >
+                              <span key={tag}
+                                className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
                                 {tag}
                               </span>
                             ))}
                           </div>
-                        ) : (
-                          <span className="text-gray-300 text-xs">—</span>
-                        )}
+                        ) : <span className="text-gray-300 text-xs">—</span>}
                       </TableCell>
                       <TableCell>
                         <Badge className={getDifficultyColor(exam.difficulty)}>{exam.difficulty}</Badge>
@@ -532,11 +635,22 @@ export default function AdminExamsPage() {
                       <TableCell>{exam.duration}min</TableCell>
                       <TableCell>{exam.totalQuestions}</TableCell>
                       <TableCell>{exam.totalAttempts}</TableCell>
+                      {/* Purchases column — clickable for paid exams */}
+                      <TableCell>
+                        {!exam.isFree ? (
+                          <button
+                            onClick={() => openPurchasesDrawer(exam)}
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium text-sm group transition-colors"
+                          >
+                            {exam.totalPurchases}
+                            <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </button>
+                        ) : <span className="text-gray-300 text-xs">—</span>}
+                      </TableCell>
                       <TableCell>
                         {exam.isFree
                           ? <span className="text-green-600 font-medium">Free</span>
-                          : <span>₹{(exam.price / 100).toFixed(2)}</span>
-                        }
+                          : <span>₹{(exam.price / 100).toFixed(2)}</span>}
                       </TableCell>
                       <TableCell>
                         <Badge className={exam.isPublished ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
@@ -551,13 +665,9 @@ export default function AdminExamsPage() {
                           <Button variant="ghost" size="icon" onClick={() => router.push(`/admin/exams/${exam.id}/edit`)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={toggling}
+                          <Button variant="ghost" size="icon" disabled={toggling}
                             onClick={() => handleTogglePublish(exam)}
-                            title={exam.isPublished ? 'Unpublish' : 'Publish'}
-                          >
+                            title={exam.isPublished ? 'Unpublish' : 'Publish'}>
                             {toggling
                               ? <Loader2 className="h-4 w-4 animate-spin" />
                               : exam.isPublished
@@ -597,6 +707,14 @@ export default function AdminExamsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Purchases Drawer */}
+      <PurchasesDrawer
+        exam={drawerExam}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
+
     </div>
   )
 }

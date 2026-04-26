@@ -1,286 +1,242 @@
 // src/app/api/admin/analytics/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth-utils';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth-utils'
+import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser()
 
     if (!user || user.role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    // Get current month start and previous month start
-    const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const last6MonthsStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    // ── Date boundaries ───────────────────────────────────────────────────
+    const now                = new Date()
+    const currentMonthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const last30Days         = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const last7Days          = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000)
+    const last6MonthsStart   = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
-    // 1. Total Users and Growth
+    // ── 1. Users ──────────────────────────────────────────────────────────
     const [totalUsers, currentMonthUsers, previousMonthUsers] = await Promise.all([
       prisma.user.count(),
+      prisma.user.count({ where: { createdAt: { gte: currentMonthStart } } }),
       prisma.user.count({
-        where: { createdAt: { gte: currentMonthStart } },
+        where: { createdAt: { gte: previousMonthStart, lt: currentMonthStart } },
       }),
-      prisma.user.count({
-        where: {
-          createdAt: {
-            gte: previousMonthStart,
-            lt: currentMonthStart,
-          },
-        },
-      }),
-    ]);
+    ])
 
-    const userGrowth = previousMonthUsers > 0 
-      ? ((currentMonthUsers - previousMonthUsers) / previousMonthUsers) * 100 
-      : 100;
+    const userGrowth =
+      previousMonthUsers > 0
+        ? ((currentMonthUsers - previousMonthUsers) / previousMonthUsers) * 100
+        : currentMonthUsers > 0 ? 100 : 0
 
-    // 2. Total Questions and Growth
+    // ── 2. Questions ──────────────────────────────────────────────────────
     const [totalQuestions, currentMonthQuestions, previousMonthQuestions] = await Promise.all([
       prisma.question.count(),
+      prisma.question.count({ where: { createdAt: { gte: currentMonthStart } } }),
       prisma.question.count({
-        where: { createdAt: { gte: currentMonthStart } },
+        where: { createdAt: { gte: previousMonthStart, lt: currentMonthStart } },
       }),
-      prisma.question.count({
-        where: {
-          createdAt: {
-            gte: previousMonthStart,
-            lt: currentMonthStart,
-          },
-        },
-      }),
-    ]);
+    ])
 
-    const questionGrowth = previousMonthQuestions > 0
-      ? ((currentMonthQuestions - previousMonthQuestions) / previousMonthQuestions) * 100
-      : 100;
+    const questionGrowth =
+      previousMonthQuestions > 0
+        ? ((currentMonthQuestions - previousMonthQuestions) / previousMonthQuestions) * 100
+        : currentMonthQuestions > 0 ? 100 : 0
 
-    // 3. Total Attempts and Growth
+    // ── 3. Attempts ───────────────────────────────────────────────────────
     const [totalAttempts, currentMonthAttempts, previousMonthAttempts] = await Promise.all([
       prisma.attempt.count(),
+      prisma.attempt.count({ where: { createdAt: { gte: currentMonthStart } } }),
       prisma.attempt.count({
-        where: { createdAt: { gte: currentMonthStart } },
+        where: { createdAt: { gte: previousMonthStart, lt: currentMonthStart } },
       }),
-      prisma.attempt.count({
-        where: {
-          createdAt: {
-            gte: previousMonthStart,
-            lt: currentMonthStart,
-          },
-        },
+    ])
+
+    const attemptGrowth =
+      previousMonthAttempts > 0
+        ? ((currentMonthAttempts - previousMonthAttempts) / previousMonthAttempts) * 100
+        : currentMonthAttempts > 0 ? 100 : 0
+
+    // ── 4. Revenue ────────────────────────────────────────────────────────
+    //    FIX: was querying Purchase with status:'graded' (an Attempt status).
+    //    Correct Purchase status is 'active'.
+    //    Also using ALL-TIME total for the metric card, not just current month.
+    const [totalRevenueAll, currentMonthRevenue, previousMonthRevenue] = await Promise.all([
+      prisma.purchase.aggregate({
+        where: { status: 'active' },
+        _sum: { price: true },
       }),
-    ]);
-
-    const attemptGrowth = previousMonthAttempts > 0
-      ? ((currentMonthAttempts - previousMonthAttempts) / previousMonthAttempts) * 100
-      : 100;
-
-    // 4. Revenue and Growth
-    const [currentMonthRevenue, previousMonthRevenue] = await Promise.all([
       prisma.purchase.aggregate({
         where: {
-          status: 'graded',
+          status: 'active',
           purchasedAt: { gte: currentMonthStart },
         },
         _sum: { price: true },
       }),
       prisma.purchase.aggregate({
         where: {
-          status: 'graded',
-          purchasedAt: {
-            gte: previousMonthStart,
-            lt: currentMonthStart,
-          },
+          status: 'active',
+          purchasedAt: { gte: previousMonthStart, lt: currentMonthStart },
         },
         _sum: { price: true },
       }),
-    ]);
+    ])
 
-    const totalRevenue = currentMonthRevenue._sum.price || 0;
-    const prevRevenue = previousMonthRevenue._sum.price || 0;
-    const revenueGrowth = prevRevenue > 0 
-      ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 
-      : 100;
+    const totalRevenuePaise = totalRevenueAll._sum.price    || 0
+    const currMonthPaise    = currentMonthRevenue._sum.price || 0
+    const prevMonthPaise    = previousMonthRevenue._sum.price || 0
 
-    // 5. User Signups (Last 30 Days) - Group by 5-day intervals
-    const userSignups = await prisma.user.groupBy({
-      by: ['createdAt'],
+    const revenueGrowth =
+      prevMonthPaise > 0
+        ? ((currMonthPaise - prevMonthPaise) / prevMonthPaise) * 100
+        : currMonthPaise > 0 ? 100 : 0
+
+    // ── 5. Bundle stats ───────────────────────────────────────────────────
+    const [totalBundles, activeBundles, bundlePurchases, examPurchases] = await Promise.all([
+      prisma.bundle.count(),
+      prisma.bundle.count({ where: { isActive: true } }),
+      prisma.purchase.count({ where: { status: 'active', type: 'bundle' } }),
+      prisma.purchase.count({ where: { status: 'active', type: 'single_exam' } }),
+    ])
+
+    // ── 6. User signup chart (last 30 days, 5-day buckets) ────────────────
+    const userSignupsRaw = await prisma.user.findMany({
       where: { createdAt: { gte: last30Days } },
-      _count: true,
-    });
+      select: { createdAt: true },
+    })
 
-    // Group into 5-day intervals
-    const signupData = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(last30Days.getTime() + i * 5 * 24 * 60 * 60 * 1000);
-      const nextDate = new Date(date.getTime() + 5 * 24 * 60 * 60 * 1000);
-      const count = userSignups.filter(
-        (s) => s.createdAt >= date && s.createdAt < nextDate
-      ).length;
+    const signupData = Array.from({ length: 6 }, (_, i) => {
+      const bucketStart = new Date(last30Days.getTime() + i * 5 * 24 * 60 * 60 * 1000)
+      const bucketEnd   = new Date(bucketStart.getTime()     + 5 * 24 * 60 * 60 * 1000)
+      const count = userSignupsRaw.filter(
+        u => u.createdAt >= bucketStart && u.createdAt < bucketEnd
+      ).length
       return {
-        date: `${date.getDate()} ${date.toLocaleString('default', { month: 'short' })}`,
+        date:  `${bucketStart.getDate()} ${bucketStart.toLocaleString('default', { month: 'short' })}`,
         users: count,
-      };
-    });
+      }
+    })
 
-    // 6. Exam Attempts (Last 7 Days)
-    const attemptsByDay = await prisma.attempt.groupBy({
-      by: ['createdAt'],
+    // ── 7. Exam attempts chart (last 7 days) ──────────────────────────────
+    const attemptsRaw = await prisma.attempt.findMany({
       where: { createdAt: { gte: last7Days } },
-      _count: true,
-    });
+      select: { createdAt: true },
+    })
 
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const examAttemptsData = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(last7Days.getTime() + i * 24 * 60 * 60 * 1000);
-      const count = attemptsByDay.filter(
-        (a) => new Date(a.createdAt).toDateString() === date.toDateString()
-      ).length;
-      return {
-        day: days[date.getDay()],
-        attempts: count,
-      };
-    });
+      const date = new Date(last7Days.getTime() + i * 24 * 60 * 60 * 1000)
+      const count = attemptsRaw.filter(
+        a => new Date(a.createdAt).toDateString() === date.toDateString()
+      ).length
+      return { day: days[date.getDay()], attempts: count }
+    })
 
-    // 7. Subject Distribution (Questions per subject)
-    // Fetch all subjects with their nested topic->question counts
+    // ── 8. Subject distribution (questions per subject, top 5) ────────────
     const allSubjects = await prisma.subject.findMany({
       select: {
-        id: true,
         name: true,
-        topics: {
-          select: {
-            _count: {
-              select: { questions: true },
-            },
-          },
-        },
+        topics: { select: { _count: { select: { questions: true } } } },
       },
-    });
+    })
 
-    // Calculate total questions per subject, sort by count desc, and take top 5
-    const subjectDistribution = allSubjects
-      .map((subject) => {
-        // Sum the question counts from all topics belonging to this subject
-        const totalQuestions = subject.topics.reduce(
-          (sum, topic) => sum + topic._count.questions,
-          0
-        );
-        return {
-          name: subject.name,
-          value: totalQuestions,
-        };
-      })
-      .sort((a, b) => b.value - a.value) // Sort Highest to Lowest
-      .slice(0, 5); // Take top 5
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+    const subjectData = allSubjects
+      .map(s => ({
+        name:  s.name,
+        value: s.topics.reduce((sum, t) => sum + t._count.questions, 0),
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+      .map((s, i) => ({ ...s, color: colors[i] }))
 
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-    const subjectData = subjectDistribution.map((subject, idx) => ({
-      name: subject.name,
-      value: subject.value,
-      color: colors[idx % colors.length],
-    }));
-
-    // 8. Revenue Trend (Last 6 Months)
-    const revenueByMonth = await prisma.purchase.groupBy({
-      by: ['purchasedAt'],
+    // ── 9. Revenue trend (last 6 months) ──────────────────────────────────
+    //    FIX: was using status:'graded'. Correct is status:'active'.
+    const revenuePurchases = await prisma.purchase.findMany({
       where: {
-        status: 'graded',
+        status: 'active',
         purchasedAt: { gte: last6MonthsStart },
       },
-      _sum: { price: true },
-    });
+      select: { purchasedAt: true, price: true },
+    })
 
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     const revenueData = Array.from({ length: 6 }, (_, i) => {
-      const date = new Date(last6MonthsStart.getTime());
-      date.setMonth(date.getMonth() + i);
-      const monthRevenue = revenueByMonth
-        .filter((r) => {
-          const rDate = new Date(r.purchasedAt);
-          return rDate.getMonth() === date.getMonth() && rDate.getFullYear() === date.getFullYear();
+      const d = new Date(last6MonthsStart)
+      d.setMonth(d.getMonth() + i)
+      const monthRevenue = revenuePurchases
+        .filter(p => {
+          const pd = new Date(p.purchasedAt)
+          return pd.getMonth() === d.getMonth() && pd.getFullYear() === d.getFullYear()
         })
-        .reduce((sum, r) => sum + (r._sum.price || 0), 0);
-      
+        .reduce((sum, p) => sum + p.price, 0)
       return {
-        month: months[date.getMonth()],
-        revenue: monthRevenue / 100, // Convert paise to rupees
-      };
-    });
+        month:   monthNames[d.getMonth()],
+        revenue: monthRevenue / 100, // paise → rupees
+      }
+    })
 
-    // 9. Top Performing Exams
+    // ── 10. Top performing exams (this month, by attempts) ────────────────
     const topExams = await prisma.exam.findMany({
-      where: {
-        isPublished: true,
-        createdAt: { gte: currentMonthStart },
-      },
+      where: { isPublished: true },
       select: {
-        id: true,
+        id:    true,
         title: true,
-        totalAttempts: true,
-        _count: {
-          select: { attempts: true },
-        },
+        _count: { select: { attempts: true } },
       },
-      orderBy: {
-        attempts: { _count: 'desc' },
-      },
+      orderBy: { attempts: { _count: 'desc' } },
       take: 5,
-    });
+    })
 
-    // Calculate trend (comparing with previous attempts)
     const topPerformers = await Promise.all(
-      topExams.map(async (exam) => {
+      topExams.map(async exam => {
         const prevAttempts = await prisma.attempt.count({
           where: {
-            examId: exam.id,
-            createdAt: {
-              gte: previousMonthStart,
-              lt: currentMonthStart,
-            },
+            examId:    exam.id,
+            createdAt: { gte: previousMonthStart, lt: currentMonthStart },
           },
-        });
-
-        const currentAttempts = exam._count.attempts;
-        const trend = prevAttempts > 0 
-          ? `+${Math.round(((currentAttempts - prevAttempts) / prevAttempts) * 100)}%`
-          : '+100%';
-
-        return {
-          name: exam.title,
-          attempts: currentAttempts,
-          trend,
-        };
+        })
+        const curr  = exam._count.attempts
+        const trend =
+          prevAttempts > 0
+            ? `+${Math.round(((curr - prevAttempts) / prevAttempts) * 100)}%`
+            : curr > 0 ? '+100%' : '0%'
+        return { name: exam.title, attempts: curr, trend }
       })
-    );
+    )
 
+    // ── Response ──────────────────────────────────────────────────────────
     return NextResponse.json({
       metrics: {
         totalUsers,
-        userGrowth: Math.round(userGrowth * 10) / 10,
+        userGrowth:     Math.round(userGrowth     * 10) / 10,
         totalQuestions,
         questionGrowth: Math.round(questionGrowth * 10) / 10,
         totalAttempts,
-        attemptGrowth: Math.round(attemptGrowth * 10) / 10,
-        revenue: totalRevenue / 100, // Convert paise to rupees
-        revenueGrowth: Math.round(revenueGrowth * 10) / 10,
+        attemptGrowth:  Math.round(attemptGrowth  * 10) / 10,
+        revenue:        totalRevenuePaise / 100,   // all-time, in rupees
+        revenueGrowth:  Math.round(revenueGrowth  * 10) / 10,
+        // Bundle metrics
+        totalBundles,
+        activeBundles,
+        bundlePurchases,
+        examPurchases,
+        totalPurchases: bundlePurchases + examPurchases,
       },
       charts: {
-        userSignups: signupData,
-        examAttempts: examAttemptsData,
+        userSignups:         signupData,
+        examAttempts:        examAttemptsData,
         subjectDistribution: subjectData,
-        revenue: revenueData,
+        revenue:             revenueData,
       },
       topPerformers,
-    });
+    })
   } catch (error) {
-    console.error('Analytics error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch analytics' },
-      { status: 500 }
-    );
+    console.error('Analytics error:', error)
+    return NextResponse.json({ error: 'Failed to fetch analytics' }, { status: 500 })
   }
 }

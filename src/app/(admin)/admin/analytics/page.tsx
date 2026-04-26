@@ -1,142 +1,134 @@
 // src/app/(admin)/admin/analytics/page.tsx
+'use client'
 
-'use client';
-
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Users, FileQuestion, BookOpen, DollarSign } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+  TrendingUp, TrendingDown, Users, FileQuestion,
+  BookOpen, IndianRupee, Package, ShoppingBag,
+} from 'lucide-react'
+import {
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
+
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface AnalyticsData {
   metrics: {
-    totalUsers: number;
-    userGrowth: number;
-    totalQuestions: number;
-    questionGrowth: number;
-    totalAttempts: number;
-    attemptGrowth: number;
-    revenue: number;
-    revenueGrowth: number;
-  };
+    totalUsers:       number
+    userGrowth:       number
+    totalQuestions:   number
+    questionGrowth:   number
+    totalAttempts:    number
+    attemptGrowth:    number
+    revenue:          number
+    revenueGrowth:    number
+    totalBundles:     number
+    activeBundles:    number
+    bundlePurchases:  number
+    examPurchases:    number
+    totalPurchases:   number
+  }
   charts: {
-    userSignups: Array<{ date: string; users: number }>;
-    examAttempts: Array<{ day: string; attempts: number }>;
-    subjectDistribution: Array<{ name: string; value: number; color: string }>;
-    revenue: Array<{ month: string; revenue: number }>;
-  };
-  topPerformers: Array<{ name: string; attempts: number; trend: string }>;
+    userSignups:         Array<{ date: string; users: number }>
+    examAttempts:        Array<{ day: string; attempts: number }>
+    subjectDistribution: Array<{ name: string; value: number; color: string }>
+    revenue:             Array<{ month: string; revenue: number }>
+  }
+  topPerformers: Array<{ name: string; attempts: number; trend: string }>
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function formatCurrency(amount: number) {
+  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`
+  if (amount >= 1000)   return `₹${(amount / 1000).toFixed(1)}K`
+  return `₹${amount.toFixed(0)}`
+}
+
+function GrowthBadge({ value }: { value: number }) {
+  const positive = value >= 0
+  return (
+    <div className="flex items-center gap-1 mt-2">
+      {positive
+        ? <TrendingUp  className="h-4 w-4 text-green-500" />
+        : <TrendingDown className="h-4 w-4 text-red-500" />}
+      <span className={`text-sm font-medium ${positive ? 'text-green-500' : 'text-red-500'}`}>
+        {positive ? '+' : ''}{value}%
+      </span>
+      <span className="text-xs text-gray-500">vs last month</span>
+    </div>
+  )
+}
+
+// ── Component ─────────────────────────────────────────────────────────────
+
 export default function AnalyticsPage() {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]         = useState<AnalyticsData | null>(null)
+  const [loading, setLoading]   = useState(true)
 
   useEffect(() => {
-    fetchAnalytics();
-  }, []);
-
-  const fetchAnalytics = async () => {
-    try {
-      const response = await fetch('/api/admin/analytics');
-      if (response.ok) {
-        const analyticsData = await response.json();
-        setData(analyticsData);
-      }
-    } catch (error) {
-      console.error('Failed to fetch analytics:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const formatCurrency = (amount: number) => {
-    if (amount >= 100000) {
-      return `₹${(amount / 100000).toFixed(1)}L`;
-    }
-    return `₹${(amount / 1000).toFixed(1)}K`;
-  };
+    fetch('/api/admin/analytics')
+      .then(r => r.json())
+      .then(setData)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
 
   if (loading) {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-          <p className="mt-2 text-gray-600">Loading analytics data...</p>
+          <p className="mt-2 text-gray-600">Loading analytics data…</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="pt-6">
-                <div className="h-24 bg-gray-100 animate-pulse rounded" />
-              </CardContent>
-            </Card>
+          {[1,2,3,4].map(i => (
+            <Card key={i}><CardContent className="pt-6">
+              <div className="h-24 bg-gray-100 animate-pulse rounded" />
+            </CardContent></Card>
           ))}
         </div>
       </div>
-    );
+    )
   }
 
   if (!data) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-          <p className="mt-2 text-red-600">Failed to load analytics data</p>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
+        <p className="mt-2 text-red-600">Failed to load analytics data</p>
       </div>
-    );
+    )
   }
+
+  const { metrics, charts, topPerformers } = data
 
   return (
     <div className="space-y-6">
+
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-        <p className="mt-2 text-gray-600">
-          Platform insights and performance metrics
-        </p>
+        <p className="mt-2 text-gray-600">Platform insights and performance metrics</p>
       </div>
 
-      {/* Key Metrics */}
+      {/* ── Row 1: Core metrics ─────────────────────────────────────────── */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Total Users</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {data.metrics.totalUsers.toLocaleString()}
+                  {metrics.totalUsers.toLocaleString()}
                 </p>
-                <div className="flex items-center gap-1 mt-2">
-                  {data.metrics.userGrowth >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-success-500" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-error-500" />
-                  )}
-                  <span className={`text-sm font-medium ${
-                    data.metrics.userGrowth >= 0 ? 'text-success-500' : 'text-error-500'
-                  }`}>
-                    {data.metrics.userGrowth >= 0 ? '+' : ''}{data.metrics.userGrowth}%
-                  </span>
-                  <span className="text-xs text-gray-500">vs last month</span>
-                </div>
+                <GrowthBadge value={metrics.userGrowth} />
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-100">
-                <Users className="h-6 w-6 text-primary-600" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+                <Users className="h-6 w-6 text-blue-600" />
               </div>
             </div>
           </CardContent>
@@ -148,24 +140,12 @@ export default function AnalyticsPage() {
               <div>
                 <p className="text-sm text-gray-600">Total Questions</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {data.metrics.totalQuestions.toLocaleString()}
+                  {metrics.totalQuestions.toLocaleString()}
                 </p>
-                <div className="flex items-center gap-1 mt-2">
-                  {data.metrics.questionGrowth >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-success-500" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-error-500" />
-                  )}
-                  <span className={`text-sm font-medium ${
-                    data.metrics.questionGrowth >= 0 ? 'text-success-500' : 'text-error-500'
-                  }`}>
-                    {data.metrics.questionGrowth >= 0 ? '+' : ''}{data.metrics.questionGrowth}%
-                  </span>
-                  <span className="text-xs text-gray-500">vs last month</span>
-                </div>
+                <GrowthBadge value={metrics.questionGrowth} />
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success-100">
-                <FileQuestion className="h-6 w-6 text-success-600" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                <FileQuestion className="h-6 w-6 text-green-600" />
               </div>
             </div>
           </CardContent>
@@ -177,24 +157,12 @@ export default function AnalyticsPage() {
               <div>
                 <p className="text-sm text-gray-600">Exam Attempts</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {data.metrics.totalAttempts.toLocaleString()}
+                  {metrics.totalAttempts.toLocaleString()}
                 </p>
-                <div className="flex items-center gap-1 mt-2">
-                  {data.metrics.attemptGrowth >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-success-500" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-error-500" />
-                  )}
-                  <span className={`text-sm font-medium ${
-                    data.metrics.attemptGrowth >= 0 ? 'text-success-500' : 'text-error-500'
-                  }`}>
-                    {data.metrics.attemptGrowth >= 0 ? '+' : ''}{data.metrics.attemptGrowth}%
-                  </span>
-                  <span className="text-xs text-gray-500">vs last month</span>
-                </div>
+                <GrowthBadge value={metrics.attemptGrowth} />
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-warning-100">
-                <BookOpen className="h-6 w-6 text-warning-600" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
+                <BookOpen className="h-6 w-6 text-yellow-600" />
               </div>
             </div>
           </CardContent>
@@ -204,35 +172,85 @@ export default function AnalyticsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Revenue</p>
+                <p className="text-sm text-gray-600">Revenue (All-Time)</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCurrency(data.metrics.revenue)}
+                  {formatCurrency(metrics.revenue)}
                 </p>
-                <div className="flex items-center gap-1 mt-2">
-                  {data.metrics.revenueGrowth >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-success-500" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-error-500" />
-                  )}
-                  <span className={`text-sm font-medium ${
-                    data.metrics.revenueGrowth >= 0 ? 'text-success-500' : 'text-error-500'
-                  }`}>
-                    {data.metrics.revenueGrowth >= 0 ? '+' : ''}{data.metrics.revenueGrowth}%
-                  </span>
-                  <span className="text-xs text-gray-500">vs last month</span>
-                </div>
+                <GrowthBadge value={metrics.revenueGrowth} />
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-error-100">
-                <DollarSign className="h-6 w-6 text-error-600" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-100">
+                <IndianRupee className="h-6 w-6 text-orange-600" />
               </div>
             </div>
           </CardContent>
         </Card>
+
       </div>
 
-      {/* Charts Row 1 */}
+      {/* ── Row 2: Purchase & Bundle metrics ────────────────────────────── */}
+      <div className="grid gap-4 md:grid-cols-3">
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Purchases</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {metrics.totalPurchases.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {metrics.examPurchases} exam · {metrics.bundlePurchases} bundle
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
+                <ShoppingBag className="h-6 w-6 text-indigo-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Bundle Purchases</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {metrics.bundlePurchases.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {metrics.activeBundles} active bundles
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-100">
+                <Package className="h-6 w-6 text-pink-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Single Exam Purchases</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {metrics.examPurchases.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Individual exam sales</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100">
+                <BookOpen className="h-6 w-6 text-teal-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* ── Row 3: Charts ────────────────────────────────────────────────── */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* User Signups Chart */}
+
+        {/* User Signups */}
         <Card>
           <CardHeader>
             <CardTitle>User Signups</CardTitle>
@@ -240,25 +258,19 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={data.charts.userSignups}>
+              <LineChart data={charts.userSignups}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
-                <YAxis />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="users"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={{ fill: '#3b82f6' }}
-                />
+                <Line type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6' }} />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Exam Attempts Chart */}
+        {/* Exam Attempts */}
         <Card>
           <CardHeader>
             <CardTitle>Exam Attempts</CardTitle>
@@ -266,10 +278,10 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.charts.examAttempts}>
+              <BarChart data={charts.examAttempts}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
-                <YAxis />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="attempts" fill="#10b981" />
@@ -277,53 +289,47 @@ export default function AnalyticsPage() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+
       </div>
 
-      {/* Charts Row 2 */}
+      {/* ── Row 4: Subject dist + Revenue trend ─────────────────────────── */}
       <div className="grid gap-6 lg:grid-cols-2">
+
         {/* Subject Distribution */}
         <Card>
           <CardHeader>
             <CardTitle>Question Distribution by Subject</CardTitle>
-            <CardDescription>Total questions across subjects</CardDescription>
+            <CardDescription>Top 5 subjects by question count</CardDescription>
           </CardHeader>
           <CardContent>
-            {data.charts.subjectDistribution.length > 0 ? (
+            {charts.subjectDistribution.length > 0 ? (
               <>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={data.charts.subjectDistribution}
-                      cx="50%"
-                      cy="50%"
+                      data={charts.subjectDistribution}
+                      cx="50%" cy="50%"
                       labelLine={false}
-                      label={(props) => {
-                        const name = props.name ?? "Unknown";
-                        const percent = typeof props.percent === "number" ? props.percent : 0;
-                        return `${name}: ${(percent * 100).toFixed(0)}%`;
-                      }}
+                      label={({ name, percent }) =>
+                        `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`
+                      }
                       outerRadius={100}
-                      fill="#8884d8"
                       dataKey="value"
                     >
-                      {data.charts.subjectDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      {charts.subjectDistribution.map((entry, i) => (
+                        <Cell key={`cell-${i}`} fill={entry.color} />
                       ))}
                     </Pie>
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="mt-4 grid grid-cols-3 gap-4">
-                  {data.charts.subjectDistribution.map((subject) => (
-                    <div key={subject.name} className="text-center">
-                      <div
-                        className="h-3 w-3 rounded-full mx-auto mb-1"
-                        style={{ backgroundColor: subject.color }}
-                      />
-                      <div className="text-xs text-gray-600">{subject.name}</div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {subject.value}
-                      </div>
+                  {charts.subjectDistribution.map(s => (
+                    <div key={s.name} className="text-center">
+                      <div className="h-3 w-3 rounded-full mx-auto mb-1"
+                        style={{ backgroundColor: s.color }} />
+                      <div className="text-xs text-gray-600">{s.name}</div>
+                      <div className="text-sm font-semibold text-gray-900">{s.value}</div>
                     </div>
                   ))}
                 </div>
@@ -336,62 +342,61 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        {/* Revenue Chart */}
+        {/* Revenue Trend */}
         <Card>
           <CardHeader>
             <CardTitle>Revenue Trend</CardTitle>
-            <CardDescription>Last 6 months</CardDescription>
+            <CardDescription>Last 6 months (₹)</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.charts.revenue}>
+              <BarChart data={charts.revenue}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
-                <YAxis />
+                <YAxis tickFormatter={v => `₹${v}`} />
                 <Tooltip
-                  formatter={(value: number) => `₹${(value / 1000).toFixed(1)}K`}
+                  formatter={(value: number) =>
+                    value >= 1000
+                      ? [`₹${(value / 1000).toFixed(1)}K`, 'Revenue']
+                      : [`₹${value}`, 'Revenue']
+                  }
                 />
                 <Legend />
-                <Bar dataKey="revenue" fill="#f59e0b" />
+                <Bar dataKey="revenue" fill="#f59e0b" name="Revenue (₹)" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
+
       </div>
 
-      {/* Top Performers */}
+      {/* ── Top Performers ───────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle>Top Performing Exams</CardTitle>
-          <CardDescription>Most attempted exams this month</CardDescription>
+          <CardDescription>Most attempted exams (all time)</CardDescription>
         </CardHeader>
         <CardContent>
-          {data.topPerformers.length > 0 ? (
+          {topPerformers.length > 0 ? (
             <div className="space-y-4">
-              {data.topPerformers.map((exam, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-4 rounded-lg bg-gray-50"
-                >
+              {topPerformers.map((exam, idx) => (
+                <div key={idx}
+                  className="flex items-center justify-between p-4 rounded-lg bg-gray-50">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-primary-600 font-bold">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold">
                       {idx + 1}
                     </div>
                     <div>
                       <div className="font-medium text-gray-900">{exam.name}</div>
-                      <div className="text-sm text-gray-500">
-                        {exam.attempts} attempts
-                      </div>
+                      <div className="text-sm text-gray-500">{exam.attempts} attempts</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {exam.trend.startsWith('+') ? (
-                      <TrendingUp className="h-4 w-4 text-success-500" />
-                    ) : (
-                      <TrendingDown className="h-4 w-4 text-error-500" />
-                    )}
+                    {exam.trend.startsWith('+')
+                      ? <TrendingUp  className="h-4 w-4 text-green-500" />
+                      : <TrendingDown className="h-4 w-4 text-red-500" />}
                     <span className={`text-sm font-medium ${
-                      exam.trend.startsWith('+') ? 'text-success-500' : 'text-error-500'
+                      exam.trend.startsWith('+') ? 'text-green-500' : 'text-red-500'
                     }`}>
                       {exam.trend}
                     </span>
@@ -400,12 +405,11 @@ export default function AnalyticsPage() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              No exam data available for this month
-            </div>
+            <div className="text-center py-8 text-gray-500">No exam data available</div>
           )}
         </CardContent>
       </Card>
+
     </div>
-  );
+  )
 }

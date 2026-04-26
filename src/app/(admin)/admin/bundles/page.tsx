@@ -1,4 +1,3 @@
-// src/app/(admin)/admin/bundles/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -17,11 +16,14 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet'
 import { toast } from 'sonner'
 import {
-  Plus, Search, Edit, Trash2, Eye, Users, Loader2,
-  LayoutGrid, List, Package, Globe, EyeOff, Tag, IndianRupee,
-  Layers,
+  Plus, Search, Edit, Trash2, Users, Loader2,
+  LayoutGrid, List, Package, Globe, EyeOff,
+  Layers, IndianRupee, ChevronRight,
 } from 'lucide-react'
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -52,15 +54,32 @@ interface Stats {
   totalPurchases: number
 }
 
+interface PurchaseRecord {
+  purchaseId:  string
+  purchasedAt: string
+  validUntil:  string | null
+  price:       number
+  user: {
+    id:    string
+    name:  string
+    email: string
+    phone: string | null
+    image: string | null
+  }
+  payment: {
+    amount:            number
+    razorpayPaymentId: string | null
+    paidAt:            string | null
+    method:            string | null
+  } | null
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 const BUNDLE_GRADIENTS = [
-  'from-violet-500 to-purple-700',
-  'from-blue-500 to-cyan-700',
-  'from-emerald-500 to-teal-700',
-  'from-orange-500 to-amber-700',
-  'from-pink-500 to-rose-700',
-  'from-indigo-500 to-blue-700',
+  'from-violet-500 to-purple-700', 'from-blue-500 to-cyan-700',
+  'from-emerald-500 to-teal-700',  'from-orange-500 to-amber-700',
+  'from-pink-500 to-rose-700',     'from-indigo-500 to-blue-700',
 ]
 
 function getBundleGradient(name: string) {
@@ -69,10 +88,6 @@ function getBundleGradient(name: string) {
   return BUNDLE_GRADIENTS[Math.abs(hash) % BUNDLE_GRADIENTS.length]
 }
 
-function getBundleInitial(name: string) {
-  return name?.trim()?.[0]?.toUpperCase() || 'B'
-}
-// ADD this helper near formatPrice
 function getOptimizedThumbnail(url: string): string {
   if (!url || !url.includes('cloudinary.com')) return url
   return url.replace('/upload/', '/upload/c_fill,w_800,h_450,q_auto,f_auto/')
@@ -82,14 +97,133 @@ function formatPrice(paise: number) {
   return `₹${(paise / 100).toFixed(0)}`
 }
 
-// ── component ──────────────────────────────────────────────────────────────
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
+// ── Purchases Drawer ───────────────────────────────────────────────────────
+
+function PurchasesDrawer({
+  bundle, open, onClose,
+}: {
+  bundle: Bundle | null
+  open: boolean
+  onClose: () => void
+}) {
+  const [purchases, setPurchases]   = useState<PurchaseRecord[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
+
+  useEffect(() => {
+    if (!open || !bundle) return
+    setPurchases([])
+    setLoading(true)
+
+    fetch(`/api/admin/bundles/${bundle.id}/purchases`)
+      .then(r => r.json())
+      .then(data => {
+        setPurchases(data.purchases ?? [])
+        setTotalCount(data.pagination?.total ?? 0)
+      })
+      .catch(() => toast.error('Failed to load purchases'))
+      .finally(() => setLoading(false))
+  }, [open, bundle])
+
+  return (
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetHeader className="pb-4 border-b">
+          <SheetTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-blue-600" />
+            Purchases — {bundle?.name}
+          </SheetTitle>
+          <SheetDescription>
+            {totalCount} completed purchase{totalCount !== 1 ? 's' : ''}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="mt-4">
+          {loading ? (
+            <div className="flex justify-center items-center h-40">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : purchases.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+              <Users className="h-10 w-10 mb-2 opacity-30" />
+              <p className="text-sm">No completed purchases yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {purchases.map(p => (
+                <div key={p.purchaseId}
+                  className="border rounded-lg p-4 bg-white hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    {/* User info */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                        {p.user.image
+                          ? <img src={p.user.image} className="w-9 h-9 rounded-full object-cover" alt="" />
+                          : <span className="text-sm font-bold text-indigo-600">
+                              {p.user.name?.[0]?.toUpperCase() ?? '?'}
+                            </span>
+                        }
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-gray-900 truncate">{p.user.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{p.user.email}</p>
+                        {p.user.phone && (
+                          <p className="text-xs text-gray-400">{p.user.phone}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Price */}
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold text-green-600">{formatPrice(p.price)}</p>
+                      <p className="text-xs text-gray-400">{formatDate(p.purchasedAt)}</p>
+                    </div>
+                  </div>
+
+                  {/* Payment details */}
+                  {p.payment && (
+                    <div className="mt-3 pt-3 border-t flex flex-wrap gap-x-4 gap-y-1">
+                      {p.payment.razorpayPaymentId && (
+                        <span className="text-xs text-gray-400">
+                          ID: <span className="font-mono text-gray-600">{p.payment.razorpayPaymentId}</span>
+                        </span>
+                      )}
+                      {p.payment.method && (
+                        <span className="text-xs text-gray-400 capitalize">
+                          Via: <span className="text-gray-600">{p.payment.method}</span>
+                        </span>
+                      )}
+                      {p.validUntil && (
+                        <span className="text-xs text-gray-400">
+                          Valid until: <span className="text-gray-600">{formatDate(p.validUntil)}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ── main component ─────────────────────────────────────────────────────────
 
 export default function AdminBundlesPage() {
   const router = useRouter()
   const [bundles, setBundles] = useState<Bundle[]>([])
-  const [stats, setStats] = useState<Stats>({ total: 0, active: 0, inactive: 0, totalPurchases: 0 })
+  const [stats, setStats]     = useState<Stats>({ total: 0, active: 0, inactive: 0, totalPurchases: 0 })
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery]   = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
@@ -99,10 +233,19 @@ export default function AdminBundlesPage() {
     return 'grid'
   })
 
-  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [togglingId, setTogglingId]         = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [bundleToDelete, setBundleToDelete] = useState<Bundle | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [bundleToDelete, setBundleToDelete]     = useState<Bundle | null>(null)
+  const [deleting, setDeleting]                 = useState(false)
+
+  // ── purchases drawer state ──
+  const [drawerBundle, setDrawerBundle] = useState<Bundle | null>(null)
+  const [drawerOpen, setDrawerOpen]     = useState(false)
+
+  const openPurchasesDrawer = (bundle: Bundle) => {
+    setDrawerBundle(bundle)
+    setDrawerOpen(true)
+  }
 
   useEffect(() => { fetchBundles() }, [])
   useEffect(() => { localStorage.setItem('bundleViewMode', viewMode) }, [viewMode])
@@ -116,9 +259,9 @@ export default function AdminBundlesPage() {
       const arr: Bundle[] = data.bundles || []
       setBundles(arr)
       setStats({
-        total: arr.length,
-        active: arr.filter(b => b.isActive).length,
-        inactive: arr.filter(b => !b.isActive).length,
+        total:          arr.length,
+        active:         arr.filter(b => b.isActive).length,
+        inactive:       arr.filter(b => !b.isActive).length,
         totalPurchases: arr.reduce((s, b) => s + b.totalPurchases, 0),
       })
     } catch {
@@ -128,18 +271,14 @@ export default function AdminBundlesPage() {
     }
   }
 
-  // ── filtering ──────────────────────────────────────────────────────────
-
   const filteredBundles = bundles.filter(b => {
     const matchSearch = b.name.toLowerCase().includes(searchQuery.toLowerCase())
     const matchStatus =
       statusFilter === 'all' ||
-      (statusFilter === 'active' && b.isActive) ||
+      (statusFilter === 'active'   && b.isActive) ||
       (statusFilter === 'inactive' && !b.isActive)
     return matchSearch && matchStatus
   })
-
-  // ── actions ────────────────────────────────────────────────────────────
 
   const handleToggleActive = async (bundle: Bundle) => {
     setTogglingId(bundle.id)
@@ -153,7 +292,7 @@ export default function AdminBundlesPage() {
       setBundles(prev => prev.map(b => b.id === bundle.id ? { ...b, isActive: !b.isActive } : b))
       setStats(prev => ({
         ...prev,
-        active: bundle.isActive ? prev.active - 1 : prev.active + 1,
+        active:   bundle.isActive ? prev.active - 1 : prev.active + 1,
         inactive: bundle.isActive ? prev.inactive + 1 : prev.inactive - 1,
       }))
       toast.success(bundle.isActive ? 'Bundle deactivated' : 'Bundle activated')
@@ -188,13 +327,16 @@ export default function AdminBundlesPage() {
   function BundleCardHeader({ bundle }: { bundle: Bundle }) {
     const gradient = getBundleGradient(bundle.name)
     return (
-      <div className={`relative w-full rounded-t-lg overflow-hidden ${!bundle.thumbnail ? `bg-gradient-to-br ${gradient}` : ''}`}
-        style={{ aspectRatio: '16/9' }}>
-      {bundle.thumbnail ? (
-        <img src={getOptimizedThumbnail(bundle.thumbnail)} alt={bundle.name} className="w-full h-full object-cover" />
+      <div
+        className={`relative w-full rounded-t-lg overflow-hidden ${!bundle.thumbnail ? `bg-gradient-to-br ${gradient}` : ''}`}
+        style={{ aspectRatio: '16/9' }}
+      >
+        {bundle.thumbnail ? (
+          <img src={getOptimizedThumbnail(bundle.thumbnail)} alt={bundle.name} className="w-full h-full object-cover" />
         ) : (
           <>
-            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+            <div className="absolute inset-0 opacity-10"
+              style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
               <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
                 <Package className="h-7 w-7 text-white" />
@@ -231,7 +373,6 @@ export default function AdminBundlesPage() {
               <p className="text-sm text-gray-500 mb-2 line-clamp-2">{bundle.description}</p>
             )}
 
-            {/* Exam count + exam titles preview */}
             <div className="flex items-center gap-1.5 mb-3">
               <Layers className="h-3.5 w-3.5 text-gray-400" />
               <span className="text-sm text-gray-600 font-medium">{bundle.totalExams} Exams</span>
@@ -251,7 +392,6 @@ export default function AdminBundlesPage() {
               </div>
             )}
 
-            {/* Pricing */}
             <div className="mb-4">
               <div className="flex items-baseline gap-2">
                 <span className="text-base font-bold text-gray-900">{formatPrice(bundle.finalPrice)}</span>
@@ -266,20 +406,23 @@ export default function AdminBundlesPage() {
               )}
             </div>
 
-            {/* Purchases */}
-            <div className="flex items-center gap-1 text-sm text-gray-500 mb-4">
+            {/* Purchases — now clickable */}
+            <button
+              onClick={() => openPurchasesDrawer(bundle)}
+              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 mb-4 group transition-colors"
+            >
               <Users className="h-3.5 w-3.5" />
-              <span>{bundle.totalPurchases} purchases</span>
-            </div>
+              <span className="font-medium">{bundle.totalPurchases} purchases</span>
+              <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
 
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => router.push(`/admin/bundles/${bundle.id}/edit`)}>
+              <Button variant="outline" size="sm" className="flex-1"
+                onClick={() => router.push(`/admin/bundles/${bundle.id}/edit`)}>
                 <Edit className="h-3 w-3 mr-1" />Edit
               </Button>
               <Button
-                variant="outline"
-                size="sm"
-                disabled={toggling}
+                variant="outline" size="sm" disabled={toggling}
                 onClick={() => handleToggleActive(bundle)}
                 className={bundle.isActive
                   ? 'text-orange-600 border-orange-300 hover:bg-orange-50'
@@ -302,7 +445,7 @@ export default function AdminBundlesPage() {
     )
   }
 
-  // ── render ────────────────────────────────────────────────────────────
+  // ── render ─────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
@@ -321,10 +464,10 @@ export default function AdminBundlesPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         {[
-          { label: 'Total Bundles', value: stats.total, icon: Package, color: 'bg-purple-100 text-purple-600' },
-          { label: 'Active', value: stats.active, icon: Globe, color: 'bg-green-100 text-green-600' },
-          { label: 'Inactive', value: stats.inactive, icon: EyeOff, color: 'bg-gray-100 text-gray-600' },
-          { label: 'Total Purchases', value: stats.totalPurchases.toLocaleString(), icon: Users, color: 'bg-blue-100 text-blue-600' },
+          { label: 'Total Bundles',    value: stats.total,          icon: Package,       color: 'bg-purple-100 text-purple-600' },
+          { label: 'Active',           value: stats.active,         icon: Globe,         color: 'bg-green-100 text-green-600' },
+          { label: 'Inactive',         value: stats.inactive,       icon: EyeOff,        color: 'bg-gray-100 text-gray-600' },
+          { label: 'Total Purchases',  value: stats.totalPurchases, icon: Users,         color: 'bg-blue-100 text-blue-600' },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label}>
             <CardContent className="pt-6">
@@ -348,12 +491,8 @@ export default function AdminBundlesPage() {
           <div className="flex flex-col md:flex-row gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Search bundles..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
+              <Input placeholder="Search bundles..." value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)} className="pl-9" />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-44"><SelectValue placeholder="All Status" /></SelectTrigger>
@@ -364,18 +503,12 @@ export default function AdminBundlesPage() {
               </SelectContent>
             </Select>
             <div className="flex gap-1 border rounded-md p-1 h-10 self-start">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Grid view"
-              >
+              <button onClick={() => setViewMode('grid')}
+                className={`px-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                 <LayoutGrid className="h-4 w-4" />
               </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-2 rounded transition-colors ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
-                title="List view"
-              >
+              <button onClick={() => setViewMode('list')}
+                className={`px-2 rounded transition-colors ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                 <List className="h-4 w-4" />
               </button>
             </div>
@@ -464,7 +597,16 @@ export default function AdminBundlesPage() {
                           : <span className="text-gray-300 text-xs">—</span>
                         }
                       </TableCell>
-                      <TableCell>{bundle.totalPurchases}</TableCell>
+                      {/* Purchases column — clickable in list view too */}
+                      <TableCell>
+                        <button
+                          onClick={() => openPurchasesDrawer(bundle)}
+                          className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium text-sm group transition-colors"
+                        >
+                          {bundle.totalPurchases}
+                          <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                      </TableCell>
                       <TableCell>
                         <Badge className={bundle.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
                           {bundle.isActive ? 'Active' : 'Inactive'}
@@ -472,16 +614,13 @@ export default function AdminBundlesPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => router.push(`/admin/bundles/${bundle.id}/edit`)}>
+                          <Button variant="ghost" size="icon"
+                            onClick={() => router.push(`/admin/bundles/${bundle.id}/edit`)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={toggling}
+                          <Button variant="ghost" size="icon" disabled={toggling}
                             onClick={() => handleToggleActive(bundle)}
-                            title={bundle.isActive ? 'Deactivate' : 'Activate'}
-                          >
+                            title={bundle.isActive ? 'Deactivate' : 'Activate'}>
                             {toggling
                               ? <Loader2 className="h-4 w-4 animate-spin" />
                               : bundle.isActive
@@ -521,6 +660,13 @@ export default function AdminBundlesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Purchases Drawer */}
+      <PurchasesDrawer
+        bundle={drawerBundle}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
 
     </div>
   )

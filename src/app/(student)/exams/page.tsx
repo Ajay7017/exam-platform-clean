@@ -463,7 +463,7 @@ function BundleSkeleton() {
 type TabType = 'exams' | 'bundles';
 
 export default function ExamsPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('exams');
+  const [activeTab, setActiveTab] = useState<TabType>('bundles');
 
   // ── Exam state (unchanged) ──────────────────────────────────────────────
   const [isLoadingExams, setIsLoadingExams] = useState(true);
@@ -494,11 +494,11 @@ export default function ExamsPage() {
 
   // ── effects ─────────────────────────────────────────────────────────────
 
-  useEffect(() => { fetchExams(); }, [searchQuery, diffFilter, tagFilter]);
+  useEffect(() => { fetchBundles(); }, []);
 
   useEffect(() => {
-    if (activeTab === 'bundles' && bundles.length === 0) fetchBundles();
-  }, [activeTab]);
+    if (activeTab === 'exams' && exams.length === 0) fetchExams(); // lazy-load exams
+}, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'bundles') fetchBundles();
@@ -599,15 +599,15 @@ export default function ExamsPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Browse Exams</h1>
         <p className="mt-2 text-gray-600">
-          Choose from {examPagination.total} available exams and {bundlePagination.total || ''} bundles
+          Choose from {bundlePagination.total || ''} bundles and {examPagination.total} Single exams
         </p>
       </div>
 
       {/* ── Tab switcher ── */}
       <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
         {([
-          { key: 'exams', label: 'Single Exams', icon: BookOpen },
           { key: 'bundles', label: 'Test Bundles', icon: Package },
+          { key: 'exams',   label: 'Single Exams', icon: BookOpen },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}

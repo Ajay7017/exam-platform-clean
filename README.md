@@ -42,3 +42,5 @@ RULES: ALWAYS ASK DOUBT IF ANY,DONT RUSH TO GIVE CODE, ALWAYS ASK CODE FILES FIR
 
 npx tsc --noEmit   
 // for code error finding
+
+Get-ChildItem -Path .\src -Recurse | Select-Object FullName > src_structure.txt  

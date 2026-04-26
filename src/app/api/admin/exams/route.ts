@@ -60,7 +60,9 @@ export async function GET(request: NextRequest) {
             select: {
               questions: true,
               attempts: true,
-              purchases: true
+              purchases: {
+                where: { status: 'active' },
+              },
             }
           }
         },

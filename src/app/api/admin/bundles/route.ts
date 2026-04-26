@@ -57,7 +57,11 @@ export async function GET(request: NextRequest) {
             },
           },
           _count: {
-            select: { purchases: true },
+            select: {
+              purchases: {
+                where: { status: 'active' },
+              },
+            },
           },
         },
         orderBy: { createdAt: 'desc' },
