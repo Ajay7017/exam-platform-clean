@@ -12,7 +12,10 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { Upload, FileText, CheckCircle, XCircle, Loader2, AlertCircle, Info } from 'lucide-react'
+import {
+  Upload, FileText, CheckCircle, XCircle,
+  Loader2, AlertCircle, Info, AlertTriangle
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Subject { id: string; name: string }
@@ -21,7 +24,7 @@ interface SubTopic { id: string; name: string; topicId: string }
 
 interface PreviewQuestion {
   statement: string
-  questionType: 'mcq' | 'numerical' // ✅ NEW
+  questionType: 'mcq' | 'numerical'
   options: { key: string; text: string }[]
   correctAnswer?: string
   correctAnswerExact?: number
@@ -31,6 +34,15 @@ interface PreviewQuestion {
   negativeMarks: number
   difficulty: string
   explanation?: string
+  contentHash: string | null
+  // ✅ Duplicate detection fields from Phase 2
+  isDuplicate: boolean
+  existingQuestion: {
+    id: string
+    statement: string
+    topicName: string
+    subjectName: string
+  } | null
 }
 
 export default function QuestionImportPage() {
@@ -49,6 +61,12 @@ export default function QuestionImportPage() {
   const [importJobId, setImportJobId] = useState('')
   const [subTopicIdForConfirm, setSubTopicIdForConfirm] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<PreviewQuestion[]>([])
+
+  // ✅ NEW: full question list split into new vs duplicates
+  const [newQuestionsList, setNewQuestionsList] = useState<PreviewQuestion[]>([])
+  const [duplicateQuestionsList, setDuplicateQuestionsList] = useState<PreviewQuestion[]>([])
+  const [activeTab, setActiveTab] = useState<'new' | 'duplicates'>('new')
+
   const [summary, setSummary] = useState<any>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [confirming, setConfirming] = useState(false)
@@ -150,12 +168,25 @@ export default function QuestionImportPage() {
       setSummary(data.summary)
       setErrors(data.errors || [])
 
+      // ✅ Split allQuestions into new vs duplicates for tab display
+      const all: PreviewQuestion[] = data.allQuestions || []
+      setNewQuestionsList(all.filter(q => !q.isDuplicate))
+      setDuplicateQuestionsList(all.filter(q => q.isDuplicate))
+
+      // Default to duplicates tab if there are duplicates, so admin sees them first
+      setActiveTab(data.summary.duplicatesFound > 0 ? 'duplicates' : 'new')
+
       if (!data.canProceed) {
         toast.error('Document has critical errors. Please fix and try again.')
         return
       }
 
-      toast.success('Document parsed successfully!')
+      if (data.summary.duplicatesFound > 0) {
+        toast.warning(`${data.summary.duplicatesFound} duplicate question(s) found — they will be skipped on import.`)
+      } else {
+        toast.success('Document parsed successfully!')
+      }
+
       setStep('preview')
     } catch (error: any) {
       toast.error(error.message || 'Failed to parse document')
@@ -166,6 +197,13 @@ export default function QuestionImportPage() {
 
   const handleConfirmImport = async () => {
     if (!importJobId) return
+
+    // Guard: if all questions are duplicates, nothing to import
+    if (newQuestionsList.length === 0) {
+      toast.error('All questions are duplicates. Nothing to import.')
+      return
+    }
+
     setConfirming(true)
     try {
       const res = await fetch(`/api/admin/questions/import/${importJobId}/confirm`, {
@@ -196,7 +234,7 @@ export default function QuestionImportPage() {
       setImportProgress(data.progress)
 
       if (data.status === 'completed') {
-        toast.success(`Import completed! ${data.successCount} questions imported.`)
+        toast.success(`Import completed! ${data.successCount} questions imported, ${data.skippedCount ?? 0} duplicates skipped.`)
         setTimeout(() => router.push('/admin/questions'), 2000)
       } else if (data.status === 'failed') {
         toast.error('Import failed. Please check errors.')
@@ -213,13 +251,16 @@ export default function QuestionImportPage() {
     setImportJobId('')
     setSubTopicIdForConfirm(null)
     setPreviewData([])
+    setNewQuestionsList([])
+    setDuplicateQuestionsList([])
     setSummary(null)
     setErrors([])
     setImportProgress(0)
     setImportStatus(null)
+    setActiveTab('new')
   }
 
-  // ✅ Helper: render answer for preview
+  // ── Render answer for preview ─────────────────────────────────────────────
   const renderAnswer = (q: PreviewQuestion) => {
     if (q.questionType === 'numerical') {
       if (q.correctAnswerExact !== undefined) {
@@ -255,6 +296,87 @@ export default function QuestionImportPage() {
     )
   }
 
+  // ── Question card (shared between both tabs) ──────────────────────────────
+  const renderQuestionCard = (q: PreviewQuestion, idx: number, globalIdx: number) => (
+    <div key={idx} className="border-b pb-6 last:border-0">
+      <div className="flex items-start gap-2 mb-3">
+        <span className="font-bold text-gray-700 shrink-0">Q{globalIdx + 1}.</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            {q.questionType === 'numerical' ? (
+              <Badge className="bg-blue-100 text-blue-800 text-xs"># Numerical</Badge>
+            ) : (
+              <Badge className="bg-purple-100 text-purple-800 text-xs">≡ MCQ</Badge>
+            )}
+          </div>
+          <p className="text-gray-900">{q.statement}</p>
+        </div>
+      </div>
+
+      {renderAnswer(q)}
+
+      <div className="ml-8 mt-3 flex gap-4 text-sm text-gray-500">
+        <span>Marks: <strong>{q.marks}</strong></span>
+        <span>Negative: <strong>{q.negativeMarks}</strong></span>
+        <span>Difficulty: <strong className="capitalize">{q.difficulty}</strong></span>
+      </div>
+
+      {q.explanation && (
+        <p className="ml-8 mt-2 text-sm text-gray-500 italic">
+          Explanation: {q.explanation}
+        </p>
+      )}
+    </div>
+  )
+
+  // ── Duplicate card with existing question info ────────────────────────────
+  const renderDuplicateCard = (q: PreviewQuestion, idx: number, globalIdx: number) => (
+    <div key={idx} className="border-b pb-6 last:border-0">
+      <div className="flex items-start gap-2 mb-3">
+        <span className="font-bold text-gray-700 shrink-0">Q{globalIdx + 1}.</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            {q.questionType === 'numerical' ? (
+              <Badge className="bg-blue-100 text-blue-800 text-xs"># Numerical</Badge>
+            ) : (
+              <Badge className="bg-purple-100 text-purple-800 text-xs">≡ MCQ</Badge>
+            )}
+            <Badge className="bg-amber-100 text-amber-800 text-xs flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              Duplicate — Will Be Skipped
+            </Badge>
+          </div>
+          <p className="text-gray-900">{q.statement}</p>
+        </div>
+      </div>
+
+      {/* ✅ Existing question info — tells admin exactly where the duplicate lives */}
+      {q.existingQuestion && (
+        <div className="ml-8 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xs font-semibold text-amber-700 mb-1">
+            Already exists in database:
+          </p>
+          <p className="text-xs text-amber-800 mb-1">
+            <span className="font-medium">Subject:</span> {q.existingQuestion.subjectName}
+            <span className="mx-2">→</span>
+            <span className="font-medium">Topic:</span> {q.existingQuestion.topicName}
+          </p>
+          <p className="text-xs text-amber-700 italic line-clamp-2">
+            "{q.existingQuestion.statement}"
+          </p>
+        </div>
+      )}
+
+      {renderAnswer(q)}
+
+      <div className="ml-8 mt-3 flex gap-4 text-sm text-gray-500">
+        <span>Marks: <strong>{q.marks}</strong></span>
+        <span>Negative: <strong>{q.negativeMarks}</strong></span>
+        <span>Difficulty: <strong className="capitalize">{q.difficulty}</strong></span>
+      </div>
+    </div>
+  )
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -262,7 +384,7 @@ export default function QuestionImportPage() {
         <p className="text-gray-600 mt-1">Bulk import questions from Word document</p>
       </div>
 
-      {/* Steps Indicator */}
+      {/* Steps Indicator — untouched */}
       <div className="mb-8">
         <div className="flex items-center justify-center gap-4">
           {(['upload', 'preview', 'importing'] as const).map((s, idx) => (
@@ -288,7 +410,7 @@ export default function QuestionImportPage() {
         </div>
       </div>
 
-      {/* Step 1: Upload */}
+      {/* ── Step 1: Upload — completely untouched ── */}
       {step === 'upload' && (
         <div className="bg-white rounded-lg border p-8 max-w-2xl mx-auto">
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex gap-3">
@@ -355,10 +477,8 @@ export default function QuestionImportPage() {
               </div>
             </div>
 
-            {/* ✅ UPDATED: Format hint showing both MCQ and NAT formats */}
             <div className="p-4 bg-gray-50 rounded-lg text-sm text-gray-600 space-y-3">
               <p className="font-medium text-gray-700">Expected .docx format per question:</p>
-
               <div>
                 <p className="text-xs font-semibold text-purple-700 mb-1">MCQ Question:</p>
                 <pre className="text-xs bg-white border rounded p-2 overflow-x-auto">{`Question text here
@@ -373,7 +493,6 @@ DIFFICULTY: easy
 EXPLANATION: Optional explanation
 ---`}</pre>
               </div>
-
               <div>
                 <p className="text-xs font-semibold text-blue-700 mb-1">Numerical (NAT) Question:</p>
                 <pre className="text-xs bg-white border rounded p-2 overflow-x-auto">{`Question text here
@@ -386,8 +505,7 @@ EXPLANATION: Optional explanation
 ---`}</pre>
                 <p className="text-xs text-gray-500 mt-1">For range answers use: <code>ANSWER: 40-44</code></p>
               </div>
-
-              <p className="text-xs text-gray-500">Separate questions with <code>---</code> on its own line. MCQ and NAT questions can be mixed in the same document.</p>
+              <p className="text-xs text-gray-500">Separate questions with <code>---</code> on its own line.</p>
             </div>
 
             <Button
@@ -405,15 +523,16 @@ EXPLANATION: Optional explanation
         </div>
       )}
 
-      {/* Step 2: Preview */}
+      {/* ── Step 2: Preview — UPDATED with split tabs ── */}
       {step === 'preview' && (
         <div className="space-y-6">
+
+          {/* Summary bar */}
           <div className="bg-white rounded-lg border p-6">
             <h2 className="text-xl font-semibold mb-4">Import Summary</h2>
-            {/* ✅ UPDATED: show MCQ/NAT breakdown */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
               <div>
-                <p className="text-sm text-gray-600">Total Questions</p>
+                <p className="text-sm text-gray-600">Total Parsed</p>
                 <p className="text-2xl font-bold">{summary?.totalQuestions}</p>
               </div>
               <div>
@@ -424,15 +543,36 @@ EXPLANATION: Optional explanation
                 <p className="text-sm text-gray-600">Numerical</p>
                 <p className="text-2xl font-bold text-blue-600">{summary?.numericalCount ?? 0}</p>
               </div>
+              {/* ✅ NEW: New vs Duplicate counts */}
+              <div>
+                <p className="text-sm text-gray-600">New</p>
+                <p className="text-2xl font-bold text-green-600">{summary?.newQuestions ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Duplicates</p>
+                <p className="text-2xl font-bold text-amber-500">{summary?.duplicatesFound ?? 0}</p>
+              </div>
               <div>
                 <p className="text-sm text-gray-600">Topic</p>
-                <p className="text-lg font-medium">{summary?.topicName}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">SubTopic</p>
-                <p className="text-lg font-medium">{summary?.subTopicName || <span className="text-gray-400 text-base">None</span>}</p>
+                <p className="text-base font-medium">{summary?.topicName}</p>
               </div>
             </div>
+
+            {/* ✅ Duplicate warning banner */}
+            {summary?.duplicatesFound > 0 && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium text-amber-900">
+                    {summary.duplicatesFound} duplicate question{summary.duplicatesFound > 1 ? 's' : ''} found
+                  </p>
+                  <p className="text-sm text-amber-700 mt-0.5">
+                    These questions already exist in the database and will be automatically skipped.
+                    Only <strong>{summary.newQuestions} new question{summary.newQuestions !== 1 ? 's' : ''}</strong> will be imported.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {errors.length > 0 && (
               <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
@@ -450,60 +590,114 @@ EXPLANATION: Optional explanation
             )}
           </div>
 
-          {/* Preview Questions */}
-          <div className="bg-white rounded-lg border p-6">
-            <h2 className="text-xl font-semibold mb-4">Preview (First 10 Questions)</h2>
-            <div className="space-y-6">
-              {previewData.map((q, idx) => (
-                <div key={idx} className="border-b pb-6 last:border-0">
-                  <div className="flex items-start gap-2 mb-3">
-                    <span className="font-bold text-gray-700 shrink-0">Q{idx + 1}.</span>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        {/* ✅ NEW: type badge in preview */}
-                        {q.questionType === 'numerical' ? (
-                          <Badge className="bg-blue-100 text-blue-800 text-xs"># Numerical</Badge>
-                        ) : (
-                          <Badge className="bg-purple-100 text-purple-800 text-xs">≡ MCQ</Badge>
-                        )}
-                      </div>
-                      <p className="text-gray-900">{q.statement}</p>
+          {/* ✅ Split tab view */}
+          <div className="bg-white rounded-lg border overflow-hidden">
+
+            {/* Tab headers */}
+            <div className="flex border-b">
+              <button
+                onClick={() => setActiveTab('new')}
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'new'
+                    ? 'border-green-500 text-green-700 bg-green-50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <CheckCircle className="w-4 h-4" />
+                New Questions
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                  activeTab === 'new' ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {newQuestionsList.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('duplicates')}
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'duplicates'
+                    ? 'border-amber-500 text-amber-700 bg-amber-50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Duplicates Skipped
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                  activeTab === 'duplicates'
+                    ? 'bg-amber-200 text-amber-800'
+                    : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {duplicateQuestionsList.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Tab content */}
+            <div className="p-6">
+
+              {/* New questions tab */}
+              {activeTab === 'new' && (
+                <div>
+                  {newQuestionsList.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <XCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p className="font-medium">No new questions to import</p>
+                      <p className="text-sm mt-1">All questions in this document already exist in the database.</p>
                     </div>
-                  </div>
-
-                  {/* ✅ Render options (MCQ) or answer (NAT) */}
-                  {renderAnswer(q)}
-
-                  <div className="ml-8 mt-3 flex gap-4 text-sm text-gray-500">
-                    <span>Marks: <strong>{q.marks}</strong></span>
-                    <span>Negative: <strong>{q.negativeMarks}</strong></span>
-                    <span>Difficulty: <strong className="capitalize">{q.difficulty}</strong></span>
-                  </div>
-
-                  {q.explanation && (
-                    <p className="ml-8 mt-2 text-sm text-gray-500 italic">
-                      Explanation: {q.explanation}
-                    </p>
+                  ) : (
+                    <div className="space-y-6">
+                      <p className="text-sm text-gray-500 mb-4">
+                        Showing all {newQuestionsList.length} new question{newQuestionsList.length !== 1 ? 's' : ''} that will be imported.
+                      </p>
+                      {newQuestionsList.map((q, idx) => renderQuestionCard(q, idx, idx))}
+                    </div>
                   )}
                 </div>
-              ))}
+              )}
+
+              {/* Duplicates tab */}
+              {activeTab === 'duplicates' && (
+                <div>
+                  {duplicateQuestionsList.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-300" />
+                      <p className="font-medium">No duplicates found</p>
+                      <p className="text-sm mt-1">All questions in this document are new.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3 mb-4">
+                        These {duplicateQuestionsList.length} question{duplicateQuestionsList.length !== 1 ? 's' : ''} already exist in the database and will be skipped during import.
+                      </p>
+                      {duplicateQuestionsList.map((q, idx) => renderDuplicateCard(q, idx, idx))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
+          {/* Confirm / Start Over buttons */}
           <div className="flex gap-4 justify-center">
             <Button variant="outline" onClick={handleStartOver}>Start Over</Button>
-            <Button onClick={handleConfirmImport} disabled={confirming} size="lg">
+            <Button
+              onClick={handleConfirmImport}
+              disabled={confirming || newQuestionsList.length === 0}
+              size="lg"
+            >
               {confirming ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting...</>
+              ) : newQuestionsList.length === 0 ? (
+                'Nothing to Import'
               ) : (
-                `Confirm & Import ${summary?.totalQuestions} Questions`
+                `Confirm & Import ${newQuestionsList.length} New Question${newQuestionsList.length !== 1 ? 's' : ''}`
               )}
             </Button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Importing */}
+      {/* ── Step 3: Importing — updated with skipped count ── */}
       {step === 'importing' && (
         <div className="bg-white rounded-lg border p-8 max-w-2xl mx-auto">
           <div className="text-center space-y-6">
@@ -524,7 +718,7 @@ EXPLANATION: Optional explanation
             </div>
 
             {importStatus && (
-              <div className="grid grid-cols-3 gap-4 pt-4">
+              <div className="grid grid-cols-4 gap-4 pt-4">
                 <div>
                   <p className="text-sm text-gray-600">Total</p>
                   <p className="text-2xl font-bold">{importStatus.totalQuestions}</p>
@@ -532,6 +726,11 @@ EXPLANATION: Optional explanation
                 <div>
                   <p className="text-sm text-gray-600">Imported</p>
                   <p className="text-2xl font-bold text-green-600">{importStatus.successCount}</p>
+                </div>
+                {/* ✅ NEW: Skipped count */}
+                <div>
+                  <p className="text-sm text-gray-600">Skipped</p>
+                  <p className="text-2xl font-bold text-amber-500">{importStatus.skippedCount ?? 0}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Failed</p>

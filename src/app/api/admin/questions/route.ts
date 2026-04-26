@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth-utils'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { computeQuestionHash } from '@/lib/question-parser'
 
-// ✅ NEW: match pairs schema shape for validation
+// ── Match pairs schema — untouched ────────────────────────────────────────────
 const matchPairsSchema = z.object({
   leftColumn: z.object({
     header: z.string().min(1),
@@ -19,6 +20,7 @@ const matchPairsSchema = z.object({
   { message: 'Left and right column must have equal number of items' }
 )
 
+// ── Question schema — untouched ───────────────────────────────────────────────
 const questionSchema = z.object({
   statement: z.string().min(1),
   difficulty: z.enum(['easy', 'medium', 'hard']),
@@ -32,29 +34,24 @@ const questionSchema = z.object({
   subTopicId: z.string().optional(),
   subTopicName: z.string().optional(),
 
-  // ✅ EXISTING: MCQ fields — optional
   optionA: z.string().optional(),
   optionB: z.string().optional(),
   optionC: z.string().optional(),
   optionD: z.string().optional(),
   correctAnswer: z.enum(['A', 'B', 'C', 'D']).optional(),
 
-  // ✅ UPDATED: added 'match' to questionType enum
   questionType: z.enum(['mcq', 'numerical', 'match']).default('mcq'),
 
-  // ✅ EXISTING: NAT fields — untouched
   correctAnswerExact: z.number().optional().nullable(),
   correctAnswerMin: z.number().optional().nullable(),
   correctAnswerMax: z.number().optional().nullable(),
 
-  // ✅ NEW: match fields
   matchPairs: matchPairsSchema.optional().nullable(),
 
 }).refine(
   (data) => data.topicId || (data.subjectId && data.topicName),
   { message: 'Either topicId or (subjectId + topicName) must be provided', path: ['topicId'] }
 ).refine(
-  // ✅ EXISTING: MCQ must have options and correct answer — untouched
   (data) => {
     if (data.questionType === 'mcq') {
       return data.optionA && data.optionB && data.optionC && data.optionD && data.correctAnswer
@@ -63,7 +60,6 @@ const questionSchema = z.object({
   },
   { message: 'MCQ questions require all 4 options and a correct answer', path: ['optionA'] }
 ).refine(
-  // ✅ EXISTING: NAT validation — untouched
   (data) => {
     if (data.questionType === 'numerical') {
       const hasExact = data.correctAnswerExact !== null && data.correctAnswerExact !== undefined
@@ -75,7 +71,6 @@ const questionSchema = z.object({
   },
   { message: 'Numerical questions require either an exact answer or a min/max range', path: ['correctAnswerExact'] }
 ).refine(
-  // ✅ NEW: Match must have matchPairs + options A/B/C/D (combinations) + correctAnswer
   (data) => {
     if (data.questionType === 'match') {
       return (
@@ -90,11 +85,57 @@ const questionSchema = z.object({
   { message: 'Match questions require matchPairs, all 4 combination options, and a correct answer', path: ['matchPairs'] }
 )
 
-// GET: List questions — untouched logic, just added 'match' to type filter support
+// ── GET: List questions — untouched ───────────────────────────────────────────
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin()
     const { searchParams } = new URL(request.url)
+
+    // ✅ NEW: Duplicate check endpoint
+    // Called by QuestionForm debounce — GET /api/admin/questions?checkDuplicate=true&hash=xxx
+    const checkDuplicate = searchParams.get('checkDuplicate')
+    if (checkDuplicate === 'true') {
+      const hash = searchParams.get('hash')
+      if (!hash) {
+        return NextResponse.json({ isDuplicate: false, existing: null })
+      }
+
+      const existing = await prisma.question.findFirst({
+        where: {
+          contentHash: hash,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          statement: true,
+          topic: {
+            select: {
+              name: true,
+              subject: { select: { name: true } }
+            }
+          }
+        }
+      })
+
+      if (!existing) {
+        return NextResponse.json({ isDuplicate: false, existing: null })
+      }
+
+      return NextResponse.json({
+        isDuplicate: true,
+        existing: {
+          id: existing.id,
+          // Truncate for display in modal
+          statement: existing.statement.length > 200
+            ? existing.statement.slice(0, 200) + '...'
+            : existing.statement,
+          topicName: existing.topic.name,
+          subjectName: existing.topic.subject.name,
+        }
+      })
+    }
+
+    // ── Existing list logic — completely untouched ────────────────────────────
     const limit = parseInt(searchParams.get('limit') || '20')
     const page = parseInt(searchParams.get('page') || '1')
     const search = searchParams.get('search') || ''
@@ -147,7 +188,6 @@ export async function GET(request: NextRequest) {
         correctAnswerExact: q.correctAnswerExact,
         correctAnswerMin: q.correctAnswerMin,
         correctAnswerMax: q.correctAnswerMax,
-        // ✅ NEW: include matchPairs in list response
         matchPairs: q.matchPairs ?? null,
         createdAt: q.createdAt,
       })),
@@ -159,14 +199,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Create a new question
+// ── POST: Create a new question ───────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin()
     const body = await request.json()
     const data = questionSchema.parse(body)
 
-    // ✅ EXISTING: Topic resolution — completely untouched
+    // ── Topic resolution — untouched ──────────────────────────────────────────
     let topicId: string
 
     if (data.topicId) {
@@ -204,7 +244,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Either topicId or (subjectId + topicName) must be provided' }, { status: 400 })
     }
 
-    // ✅ EXISTING: SubTopic resolution — completely untouched
+    // ── SubTopic resolution — untouched ───────────────────────────────────────
     let subTopicId: string | undefined
 
     if (data.subTopicId) {
@@ -235,6 +275,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ✅ NEW: Compute hash from incoming data before insert
+    const contentHash = computeQuestionHash({
+      questionType: data.questionType,
+      statement: data.statement,
+      optionA: data.optionA,
+      optionB: data.optionB,
+      optionC: data.optionC,
+      optionD: data.optionD,
+      correctAnswerExact: data.correctAnswerExact,
+      correctAnswerMin: data.correctAnswerMin,
+      correctAnswerMax: data.correctAnswerMax,
+      matchPairs: data.matchPairs,
+    })
+
+    // ✅ NEW: Duplicate check at save time — hard block
+    // This is the server-side gate. Even if the debounce in the form
+    // missed it (e.g. user bypassed frontend), this catches it.
+    if (contentHash) {
+      const existing = await prisma.question.findFirst({
+        where: { contentHash, isActive: true },
+        select: {
+          id: true,
+          statement: true,
+          topic: {
+            select: {
+              name: true,
+              subject: { select: { name: true } }
+            }
+          }
+        }
+      })
+
+      if (existing) {
+        return NextResponse.json({
+          error: 'Duplicate question detected',
+          isDuplicate: true,
+          existing: {
+            id: existing.id,
+            statement: existing.statement.length > 200
+              ? existing.statement.slice(0, 200) + '...'
+              : existing.statement,
+            topicName: existing.topic.name,
+            subjectName: existing.topic.subject.name,
+          }
+        }, { status: 409 })
+      }
+    }
+
     const isNumerical = data.questionType === 'numerical'
     const isMatch = data.questionType === 'match'
 
@@ -248,18 +336,16 @@ export async function POST(request: NextRequest) {
         difficulty: data.difficulty,
         explanation: data.explanation || '',
         isActive: data.isActive ?? true,
-
         type: data.questionType ?? 'mcq',
 
-        // ✅ EXISTING: NAT fields — only set for numerical, untouched logic
+        // ✅ NEW: store hash so future creates/imports detect this as duplicate
+        contentHash: contentHash ?? null,
+
         correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
         correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
         correctAnswerMax: isNumerical ? (data.correctAnswerMax ?? null) : null,
+        matchPairs: isMatch ? (data.matchPairs as any ?? null) : null,
 
-        // ✅ NEW: matchPairs — only set for match type
-        matchPairs: isMatch ? (data.matchPairs ?? null) : null,
-
-        // ✅ Options created for both MCQ and Match (match uses combination options A/B/C/D)
         ...((isNumerical === false) && {
           options: {
             create: [
@@ -299,7 +385,6 @@ export async function POST(request: NextRequest) {
         correctAnswerExact: question.correctAnswerExact,
         correctAnswerMin: question.correctAnswerMin,
         correctAnswerMax: question.correctAnswerMax,
-        // ✅ NEW
         matchPairs: question.matchPairs ?? null,
       }
     }, { status: 201 })
@@ -307,7 +392,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('CREATE QUESTION ERROR:', error)
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation failed', details: error.errors }, { status: 400 })
+      return NextResponse.json({ error: 'Validation failed', details: error.issues }, { status: 400 })
     }
     return NextResponse.json({
       error: 'Internal Server Error',
