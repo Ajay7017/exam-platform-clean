@@ -20,8 +20,15 @@ function processMathNodes(html: string): string {
     /<math-node([^>]*)><\/math-node>/g,
     (_, attrs) => {
       const latexMatch = attrs.match(/latex="([^"]*)"/);
-      const displayMatch = attrs.match(/display="([^"]*)"/);
-      const latex = latexMatch ? decodeURIComponent(latexMatch[1]) : '';
+        const displayMatch = attrs.match(/display="([^"]*)"/);
+        let latex = ''
+        if (latexMatch) {
+          try {
+            latex = decodeURIComponent(latexMatch[1])
+          } catch {
+            latex = latexMatch[1] // use raw value if decode fails
+          }
+        }
       const isDisplay = displayMatch ? displayMatch[1] === 'true' : false;
 
       if (!latex) return '';

@@ -10,20 +10,19 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LeaderboardCard } from '@/components/student/LeaderboardCard';
 import { OptimizedImage } from '@/components/ui/optimized-image';
-// ADD these two imports after existing imports
 import { FeedbackTab }    from '@/components/results/FeedbackTab'
 import { ErrorReportTab } from '@/components/results/ErrorReportTab'
 import {
   RefreshCw, CheckCircle, XCircle, Circle,
   Clock, Trophy, TrendingUp, AlertCircle,
-  ArrowLeft, Target, MinusCircle, Timer,
+  ArrowLeft, Target, MinusCircle, Timer, Download, Loader2,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 
-// ── MatchTable — reused from QuestionDisplay, same component ─────────────
+// ── MatchTable ─────────────────────────────────────────────────────────────
 const LEFT_LABELS  = ['A', 'B', 'C', 'D', 'E', 'F']
 const RIGHT_LABELS = ['i', 'ii', 'iii', 'iv', 'v', 'vi']
 
@@ -38,12 +37,8 @@ function MatchTable({ matchPairs }: {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-muted/60 border-b border-border">
-            <th className="text-left px-4 py-2 font-medium w-1/2">
-              {matchPairs.leftColumn.header}
-            </th>
-            <th className="text-left px-4 py-2 font-medium w-1/2">
-              {matchPairs.rightColumn.header}
-            </th>
+            <th className="text-left px-4 py-2 font-medium w-1/2">{matchPairs.leftColumn.header}</th>
+            <th className="text-left px-4 py-2 font-medium w-1/2">{matchPairs.rightColumn.header}</th>
           </tr>
         </thead>
         <tbody>
@@ -163,15 +158,15 @@ function ScorecardCard({ result }: { result: any }) {
       </Card>
     )
   }
-  const you    = { score: result.score?.toFixed(1) || '0', correct: result.correctAnswers, wrong: result.wrongAnswers, time: result.timeSpent, percentage: result.percentage?.toFixed(1) || '0' }
+  const you     = { score: result.score?.toFixed(1) || '0', correct: result.correctAnswers, wrong: result.wrongAnswers, time: result.timeSpent, percentage: result.percentage?.toFixed(1) || '0' }
   const topper  = comparisonStats.topper
   const average = comparisonStats.average
   const rows = [
     { label: 'Score',    you: `${you.score} / ${result.totalMarks}`,   topper: topper  ? `${topper.score.toFixed(1)} / ${result.totalMarks}`  : null, avg: average ? `${average.score.toFixed(1)} / ${result.totalMarks}` : null },
     { label: 'Accuracy', you: `${you.percentage}%`,                     topper: topper  ? `${topper.percentage.toFixed(1)}%`                   : null, avg: average ? `${average.percentage.toFixed(1)}%`                  : null },
-    { label: 'Correct',  you: `${you.correct}`,                         topper: topper  ? `${Math.round(topper.correct)}`                     : null, avg: average ? `${average.correct.toFixed(1)}`                      : null },
-    { label: 'Wrong',    you: `${you.wrong}`,                           topper: topper  ? `${Math.round(topper.wrong)}`                       : null, avg: average ? `${average.wrong.toFixed(1)}`                        : null },
-    { label: 'Time',     you: formatTime(you.time),                     topper: topper  ? formatTime(Math.round(topper.time))                 : null, avg: average ? formatTime(Math.round(average.time))                 : null },
+    { label: 'Correct',  you: `${you.correct}`,                         topper: topper  ? `${Math.round(topper.correct)}`                      : null, avg: average ? `${average.correct.toFixed(1)}`                      : null },
+    { label: 'Wrong',    you: `${you.wrong}`,                           topper: topper  ? `${Math.round(topper.wrong)}`                        : null, avg: average ? `${average.wrong.toFixed(1)}`                        : null },
+    { label: 'Time',     you: formatTime(you.time),                     topper: topper  ? formatTime(Math.round(topper.time))                  : null, avg: average ? formatTime(Math.round(average.time))                 : null },
   ]
   return (
     <Card>
@@ -208,7 +203,7 @@ function ScorecardCard({ result }: { result: any }) {
   )
 }
 
-// ── ✅ NEW: Progress Over Time chart ───────────────────────────────────────
+// ── Progress Over Time chart ───────────────────────────────────────────────
 function ProgressChart({ attemptHistory, currentAttemptId }: {
   attemptHistory: any[]
   currentAttemptId: string
@@ -296,8 +291,6 @@ function ProcessingScreen({ attemptId, onReady }: { attemptId: string; onReady: 
 
     poll()
     const interval = setInterval(poll, 3000)
-
-    // After 20 seconds stop polling and show calm message
     const timeout = setTimeout(() => {
       clearInterval(interval)
       setTimedOut(true)
@@ -316,7 +309,7 @@ function ProcessingScreen({ attemptId, onReady }: { attemptId: string; onReady: 
           <CheckCircle className="w-8 h-8 mx-auto text-green-500" />
           <p className="text-sm font-medium text-gray-700">Your exam has been submitted successfully.</p>
           <p className="text-xs text-gray-400">
-            Results are being processed and will reflect here shortly. 
+            Results are being processed and will reflect here shortly.
             You can safely leave this page and check back in a few minutes.
           </p>
         </div>
@@ -343,10 +336,11 @@ export default function ResultPage() {
   const router    = useRouter()
   const attemptId = params.id as string
 
-  const [result, setResult]   = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
+  const [result, setResult]         = useState<any>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
   const [solutionFilter, setSolutionFilter] = useState<SolutionFilter>('all')
+  const [pdfGenerating, setPdfGenerating]   = useState(false)
 
   useEffect(() => { fetchResult() }, [attemptId])
 
@@ -355,13 +349,10 @@ export default function ResultPage() {
       setLoading(true)
       const res = await fetch(`/api/attempts/${attemptId}/result`)
       const data = await res.json()
-
-      // Still grading — show processing state, don't treat as error
       if (res.status === 202 && data.processing) {
         setResult({ __processing: true })
         return
       }
-
       if (!res.ok) throw new Error('Failed to load results')
       setResult(data)
     } catch (err: any) {
@@ -380,7 +371,6 @@ export default function ResultPage() {
     </div>
   )
 
-  // Still grading — poll every 3 seconds and show waiting screen
   if (result?.__processing) return (
     <ProcessingScreen attemptId={attemptId} onReady={() => fetchResult()} />
   )
@@ -428,6 +418,154 @@ export default function ResultPage() {
 
   const isPractice = result.isOfficial === false
 
+  // ── PDF Download ──────────────────────────────────────────────────────────
+  const downloadSolutionsPDF = () => {
+  // Create a hidden iframe with the full solutions HTML
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) return
+
+  // Gather all questions (no filter - always print all)
+  const allQuestions = result.questionResults || []
+
+  const questionsHtml = allQuestions.map((q: any, idx: number) => {
+    const originalIndex = idx
+    const isCorrect = q.isCorrect
+    const isWrong = !q.isCorrect && q.yourAnswer !== null
+
+    const statusColor = isCorrect ? '#10b981' : isWrong ? '#ef4444' : '#6b7280'
+    const statusBg    = isCorrect ? '#ecfdf5'  : isWrong ? '#fef2f2'  : '#f9fafb'
+    const statusText  = isCorrect ? 'Correct'  : isWrong ? 'Wrong'    : 'Unattempted'
+    const marksText   = isCorrect ? `+${q.marks}` : isWrong ? `-${q.negativeMarks}` : '0 marks'
+
+    const optionsHtml = (q.questionType === 'mcq' || q.questionType === 'match')
+      ? (q.options || []).map((opt: any) => {
+          const optIsCorrect = opt.isCorrect
+          const optIsYours   = opt.key === q.yourAnswer && !isCorrect
+          const bg    = optIsCorrect ? '#ecfdf5' : optIsYours ? '#fef2f2' : 'transparent'
+          const color = optIsCorrect ? '#059669' : optIsYours ? '#dc2626' : '#374151'
+          const border = optIsCorrect ? '2px solid #10b981' : optIsYours ? '2px solid #ef4444' : '1px solid #e5e7eb'
+          const weight = optIsCorrect || optIsYours ? '600' : '400'
+          const icon   = optIsCorrect ? '✓' : optIsYours ? '✗' : ''
+          const iconColor = optIsCorrect ? '#059669' : '#dc2626'
+          return `
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:8px;border:${border};background:${bg};margin-bottom:6px;">
+              <span style="color:#6b7280;font-weight:600;min-width:20px;">${opt.key}.</span>
+              <span style="flex:1;color:${color};font-weight:${weight};">${opt.text || ''}</span>
+              ${icon ? `<span style="color:${iconColor};font-weight:700;">${icon}</span>` : ''}
+            </div>`
+        }).join('')
+      : ''
+
+    const numericalHtml = q.questionType === 'numerical' ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+        <div style="padding:10px;border-radius:8px;border:2px solid ${isCorrect ? '#10b981' : isWrong ? '#ef4444' : '#e5e7eb'};background:${isCorrect ? '#ecfdf5' : isWrong ? '#fef2f2' : '#f9fafb'}">
+          <div style="font-size:10px;color:#6b7280;margin-bottom:4px;">Your Answer</div>
+          <div style="font-size:18px;font-weight:700;color:${isCorrect ? '#059669' : isWrong ? '#dc2626' : '#9ca3af'}">${q.yourAnswer || 'Not Attempted'}</div>
+        </div>
+        <div style="padding:10px;border-radius:8px;border:2px solid #10b981;background:#ecfdf5">
+          <div style="font-size:10px;color:#6b7280;margin-bottom:4px;">Correct Answer</div>
+          <div style="font-size:18px;font-weight:700;color:#059669">${q.correctAnswer}</div>
+        </div>
+      </div>` : ''
+
+    const answerSummary = (q.questionType === 'mcq' || q.questionType === 'match') ? `
+      <div style="font-size:11px;color:#9ca3af;padding-top:8px;border-top:1px solid #f3f4f6;margin-top:4px;">
+        <span><strong>Your answer:</strong> ${q.yourAnswer || 'Not Attempted'}</span>
+        &nbsp;&nbsp;
+        <span><strong>Correct answer:</strong> ${q.correctAnswer}</span>
+      </div>` : ''
+
+    const explanationHtml = q.explanation ? `
+      <div style="margin-top:10px;padding:10px 12px;background:#eff6ff;border-radius:8px;border:1px solid #dbeafe;">
+        <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:4px;">Explanation</div>
+        <div style="font-size:12px;color:#1d4ed8;">${q.explanation}</div>
+      </div>` : ''
+
+    const imageHtml = q.imageUrl ? `
+      <div style="margin-top:8px;">
+        <img src="${q.imageUrl}" style="max-width:100%;border-radius:8px;border:1px solid #e5e7eb;" />
+      </div>` : ''
+
+    return `
+      <div style="border-radius:10px;border:1px solid #e5e7eb;border-left:4px solid ${statusColor};margin-bottom:16px;overflow:hidden;page-break-inside:avoid;">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${statusBg};border-bottom:1px solid #f3f4f6;flex-wrap:wrap;">
+          <span style="font-weight:700;color:#374151;font-size:13px;">Q${originalIndex + 1}</span>
+          <span style="background:${statusColor};color:white;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;">${statusText}</span>
+          ${q.topic ? `<span style="font-size:11px;color:#6b7280;">${q.topic}</span>` : ''}
+          <span style="margin-left:auto;font-size:11px;color:${statusColor};font-weight:600;">
+            ${q.timeSpentSec > 0 ? formatTime(q.timeSpentSec) + '  |  ' : ''}${marksText}
+          </span>
+        </div>
+        <!-- Body -->
+        <div style="padding:12px;">
+          <div style="font-size:13px;color:#111827;line-height:1.6;margin-bottom:10px;">${q.statement || ''}</div>
+          ${imageHtml}
+          ${optionsHtml}
+          ${numericalHtml}
+          ${answerSummary}
+          ${explanationHtml}
+        </div>
+      </div>`
+  }).join('')
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>${result.examTitle || 'Solutions'}</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: white; color: #111827; }
+        @media print {
+          @page { margin: 12mm 14mm; size: A4; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .no-print { display: none !important; }
+        }
+        .header { background: linear-gradient(135deg, #4338ca, #6366f1); color: white; padding: 20px 24px; margin-bottom: 20px; }
+        .header h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+        .header .meta { font-size: 12px; color: #c7d2fe; display: flex; flex-wrap: wrap; gap: 16px; }
+        .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+        .stat { flex: 1; min-width: 100px; padding: 10px 14px; border-radius: 10px; border: 1px solid #e5e7eb; }
+        .content { padding: 0 24px 24px; }
+        .print-btn { position: fixed; bottom: 24px; right: 24px; background: #4f46e5; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(79,70,229,0.4); z-index: 1000; }
+        .print-btn:hover { background: #4338ca; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>${result.examTitle || 'Exam Solutions'}</h1>
+        <div class="meta">
+          <span>Score: ${result.score?.toFixed(0) || 0} / ${result.totalMarks}</span>
+          <span>Correct: ${result.correctAnswers}</span>
+          <span>Wrong: ${result.wrongAnswers}</span>
+          <span>Unattempted: ${result.unattempted}</span>
+          <span>Accuracy: ${accuracy}%</span>
+          <span>Time: ${formatTime(result.timeSpent)}</span>
+          <span>${new Date(result.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+        </div>
+      </div>
+
+      <div class="content">
+        ${questionsHtml}
+      </div>
+
+      <button class="print-btn no-print" onclick="window.print()">🖨️ Save as PDF</button>
+
+      <script>
+        // Wait for images to load before being ready
+        window.onload = () => {
+          // slight delay so images render
+          setTimeout(() => window.print(), 800)
+        }
+      </script>
+    </body>
+    </html>
+  `)
+  printWindow.document.close()
+}
+
   return (
     <div className="max-w-4xl mx-auto space-y-5 -mt-2">
 
@@ -460,7 +598,6 @@ export default function ResultPage() {
                   <Badge className={pct >= (result.passingMarks || 40) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
                     {pct >= (result.passingMarks || 40) ? 'Passed' : 'Failed'}
                   </Badge>
-                  {/* ✅ NEW: Practice badge */}
                   {isPractice && (
                     <Badge className="bg-blue-100 text-blue-700 flex items-center gap-1">
                       <RefreshCw className="w-3 h-3" /> Practice
@@ -470,7 +607,6 @@ export default function ResultPage() {
                 <p className="text-sm text-gray-400">
                   {new Date(result.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                 </p>
-                {/* ✅ NEW: Practice mode notice */}
                 {isPractice && (
                   <p className="text-xs text-blue-600 mt-1">
                     Practice attempt — this score does not affect your rank or leaderboard position.
@@ -581,7 +717,6 @@ export default function ResultPage() {
             <ScorecardCard result={result} />
           </div>
 
-          {/* ✅ NEW: Progress Over Time — only shows if 2+ attempts exist */}
           {result.attemptHistory?.length >= 2 && (
             <ProgressChart attemptHistory={result.attemptHistory} currentAttemptId={attemptId} />
           )}
@@ -598,27 +733,47 @@ export default function ResultPage() {
           <LeaderboardCard type="exam" examId={result.examId} limit={25} showTitle={true} />
         </TabsContent>
 
-        {/* Solutions Tab */}
+        {/* ── Solutions Tab ── */}
         <TabsContent value="solutions" className="space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            {([
-              { key: 'all',         label: 'All',         count: filterCounts.all,         activeClass: 'bg-gray-900 text-white' },
-              { key: 'correct',     label: 'Correct',     count: filterCounts.correct,     activeClass: 'bg-emerald-600 text-white' },
-              { key: 'wrong',       label: 'Incorrect',   count: filterCounts.wrong,       activeClass: 'bg-red-500 text-white' },
-              { key: 'unattempted', label: 'Unattempted', count: filterCounts.unattempted, activeClass: 'bg-gray-400 text-white' },
-            ] as const).map(f => (
-              <button key={f.key} onClick={() => setSolutionFilter(f.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
-                  solutionFilter === f.key ? `${f.activeClass} border-transparent` : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                }`}>
-                {f.label}
-                <span className={`text-xs px-1.5 py-0.5 rounded-full ${solutionFilter === f.key ? 'bg-white/20' : 'bg-gray-100'}`}>
-                  {f.count}
-                </span>
-              </button>
-            ))}
+
+          {/* Filter row + Download button */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            {/* Filter pills */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {([
+                { key: 'all',         label: 'All',         count: filterCounts.all,         activeClass: 'bg-gray-900 text-white' },
+                { key: 'correct',     label: 'Correct',     count: filterCounts.correct,     activeClass: 'bg-emerald-600 text-white' },
+                { key: 'wrong',       label: 'Incorrect',   count: filterCounts.wrong,       activeClass: 'bg-red-500 text-white' },
+                { key: 'unattempted', label: 'Unattempted', count: filterCounts.unattempted, activeClass: 'bg-gray-400 text-white' },
+              ] as const).map(f => (
+                <button key={f.key} onClick={() => setSolutionFilter(f.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                    solutionFilter === f.key ? `${f.activeClass} border-transparent` : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {f.label}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${solutionFilter === f.key ? 'bg-white/20' : 'bg-gray-100'}`}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Download PDF button */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={downloadSolutionsPDF}
+              disabled={pdfGenerating}
+              className="flex items-center gap-1.5 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+            >
+              {pdfGenerating
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating...</>
+                : <><Download className="h-3.5 w-3.5" />Download PDF</>
+              }
+            </Button>
           </div>
 
+          {/* Question cards */}
           {filteredQuestions.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">No questions in this category.</div>
           ) : (
@@ -648,62 +803,58 @@ export default function ResultPage() {
                           <OptimizedImage src={q.imageUrl} alt={`Q${originalIndex + 1}`} className="max-w-full rounded-lg border shadow-sm" />
                         </div>
                       )}
-                      {/* ✅ Match table shown under statement, not in options */}
                       {q.questionType === 'match' && q.matchPairs && (
                         <MatchTable matchPairs={q.matchPairs} />
                       )}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 pt-0">
-                    {/* MCQ options — untouched */}
-                      {q.questionType === 'mcq' && (
-                        <div className="space-y-1.5">
-                          {q.options?.map((opt: any) => (
-                            <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
-                              <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
-                              <SafeHtml html={opt.text} className="flex-1" />
-                              {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
-                              {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* ✅ Match options — plain text combinations, same highlight logic as MCQ */}
-                      {q.questionType === 'match' && (
-                        <div className="space-y-1.5">
-                          {q.options?.map((opt: any) => (
-                            <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
-                              <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
-                              <span className="flex-1">{opt.text}</span>
-                              {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
-                              {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* NAT answer — untouched */}
-                      {q.questionType === 'numerical' && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className={`p-3 rounded-lg border-2 ${q.yourAnswer ? q.isCorrect ? 'border-green-400 bg-green-50' : 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
-                            <p className="text-xs text-gray-500 mb-1">Your Answer</p>
-                            <p className={`text-xl font-bold ${q.yourAnswer ? q.isCorrect ? 'text-green-700' : 'text-red-700' : 'text-gray-400'}`}>{q.yourAnswer || 'Not Attempted'}</p>
+                    {q.questionType === 'mcq' && (
+                      <div className="space-y-1.5">
+                        {q.options?.map((opt: any) => (
+                          <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                            <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
+                            <SafeHtml html={opt.text} className="flex-1" />
+                            {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
+                            {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
                           </div>
-                          <div className="p-3 rounded-lg border-2 border-green-400 bg-green-50">
-                            <p className="text-xs text-gray-500 mb-1">Correct Answer</p>
-                            <p className="text-xl font-bold text-green-700">{q.correctAnswer}</p>
-                          </div>
-                        </div>
-                      )}
+                        ))}
+                      </div>
+                    )}
 
-                      {/* Your/Correct answer summary — MCQ and Match both show this */}
-                      {(q.questionType === 'mcq' || q.questionType === 'match') && (
-                        <div className="flex gap-4 text-xs text-gray-500 pt-1 border-t">
-                          <span><strong>Your:</strong> {q.yourAnswer || 'Not Attempted'}</span>
-                          <span><strong>Correct:</strong> {q.correctAnswer}</span>
+                    {q.questionType === 'match' && (
+                      <div className="space-y-1.5">
+                        {q.options?.map((opt: any) => (
+                          <div key={opt.key} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm ${opt.isCorrect ? 'border-green-400 bg-green-50' : opt.key === q.yourAnswer && !q.isCorrect ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                            <span className="font-semibold text-gray-500 w-4">{opt.key}.</span>
+                            <span className="flex-1">{opt.text}</span>
+                            {opt.isCorrect && <CheckCircle className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />}
+                            {opt.key === q.yourAnswer && !q.isCorrect && <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {q.questionType === 'numerical' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className={`p-3 rounded-lg border-2 ${q.yourAnswer ? q.isCorrect ? 'border-green-400 bg-green-50' : 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+                          <p className="text-xs text-gray-500 mb-1">Your Answer</p>
+                          <p className={`text-xl font-bold ${q.yourAnswer ? q.isCorrect ? 'text-green-700' : 'text-red-700' : 'text-gray-400'}`}>{q.yourAnswer || 'Not Attempted'}</p>
                         </div>
-                      )}
+                        <div className="p-3 rounded-lg border-2 border-green-400 bg-green-50">
+                          <p className="text-xs text-gray-500 mb-1">Correct Answer</p>
+                          <p className="text-xl font-bold text-green-700">{q.correctAnswer}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {(q.questionType === 'mcq' || q.questionType === 'match') && (
+                      <div className="flex gap-4 text-xs text-gray-500 pt-1 border-t">
+                        <span><strong>Your:</strong> {q.yourAnswer || 'Not Attempted'}</span>
+                        <span><strong>Correct:</strong> {q.correctAnswer}</span>
+                      </div>
+                    )}
+
                     {q.explanation && (
                       <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                         <p className="text-xs font-semibold text-blue-800 mb-1">Explanation</p>
@@ -716,12 +867,10 @@ export default function ResultPage() {
             })
           )}
         </TabsContent>
+
         {/* Feedback Tab */}
         <TabsContent value="feedback">
-          <FeedbackTab
-            examId={result.examId}
-            attemptId={attemptId}
-          />
+          <FeedbackTab examId={result.examId} attemptId={attemptId} />
         </TabsContent>
 
         {/* Report Error Tab */}
