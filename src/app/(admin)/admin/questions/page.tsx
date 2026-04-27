@@ -27,11 +27,11 @@ import { toast } from 'sonner'
 import {
   Loader2, Upload, Search, Eye, Edit, Trash2, Plus, CheckCircle2,
   ToggleLeft, ToggleRight, X, LayoutList, Rows3, ClipboardList, Tag, ChevronDown,
-  FileDown,
+  FileDown, BookOpen, ChevronUp,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
-// SEARCHABLE SELECT COMPONENT
+// SEARCHABLE SELECT COMPONENT — untouched
 // ─────────────────────────────────────────────
 interface SearchableSelectOption {
   value: string
@@ -68,7 +68,6 @@ function SearchableSelect({
     ? allLabel
     : options.find(o => o.value === value)?.label ?? placeholder
 
-  // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -80,7 +79,6 @@ function SearchableSelect({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Focus input when opened
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50)
   }, [open])
@@ -107,7 +105,6 @@ function SearchableSelect({
 
       {open && (
         <div className="absolute z-50 mt-1 w-full min-w-[200px] rounded-md border border-gray-200 bg-white shadow-lg">
-          {/* Search box */}
           <div className="p-2 border-b border-gray-100">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -121,10 +118,7 @@ function SearchableSelect({
               />
             </div>
           </div>
-
-          {/* Options list */}
           <div className="max-h-48 overflow-y-auto py-1">
-            {/* "All" option always on top */}
             <button
               type="button"
               onClick={() => handleSelect(allValue)}
@@ -135,7 +129,6 @@ function SearchableSelect({
               {value === allValue && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
               <span className={value === allValue ? '' : 'pl-5'}>{allLabel}</span>
             </button>
-
             {filtered.length === 0 ? (
               <p className="px-3 py-4 text-sm text-center text-gray-400">No results found</p>
             ) : (
@@ -164,7 +157,7 @@ function SearchableSelect({
 }
 
 // ─────────────────────────────────────────────
-// TAG INPUT COMPONENT (unchanged)
+// TAG INPUT COMPONENT — untouched
 // ─────────────────────────────────────────────
 function TagInput({
   tags,
@@ -249,6 +242,62 @@ function TagInput({
   )
 }
 
+// ─────────────────────────────────────────────
+// ✅ NEW: UsedInExams inline accordion component
+// Self-contained — receives the exam list, manages its own open state
+// ─────────────────────────────────────────────
+function UsedInExams({ exams }: { exams: { id: string; title: string }[] }) {
+  const [open, setOpen] = useState(false)
+  const count = exams.length
+
+  if (count === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+        <BookOpen className="w-3 h-3" />
+        Not used in any exam
+      </span>
+    )
+  }
+
+  return (
+    <div className="inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border transition-all ${
+          open
+            ? 'bg-amber-50 border-amber-300 text-amber-700'
+            : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+        }`}
+      >
+        <BookOpen className="w-3 h-3" />
+        Used in {count} exam{count !== 1 ? 's' : ''}
+        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      </button>
+
+      {open && (
+        <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+          <p className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1.5">
+            <BookOpen className="w-3.5 h-3.5" />
+            This question is used in:
+          </p>
+          <ul className="space-y-1">
+            {exams.map(exam => (
+              <li key={exam.id} className="flex items-start gap-2 text-xs text-amber-900">
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                {exam.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Helpers — untouched
+// ─────────────────────────────────────────────
 function stripHtml(html: string) {
   return html
     .replace(/<math-node[^>]*><\/math-node>/g, '[Math]')
@@ -266,7 +315,6 @@ function getTypeBadge(type?: 'mcq' | 'numerical' | 'match') {
   return <Badge className="bg-purple-100 text-purple-800 text-[10px] sm:text-xs font-medium">≡ MCQ</Badge>
 }
 
-// ── sort helper ───────────────────────────────────────────────────────────
 const sortByName = <T extends { name: string }>(arr: T[]): T[] =>
   [...arr].sort((a, b) => a.name.localeCompare(b.name))
 
@@ -286,6 +334,8 @@ interface Question {
   isActive: boolean
   createdAt: string
   questionType?: 'mcq' | 'numerical' | 'match'
+  // ✅ NEW: exam usage data from API
+  usedInExams: { id: string; title: string }[]
 }
 
 interface QuestionDetail extends Question {
@@ -350,7 +400,7 @@ export default function AdminQuestionsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [exportLoading, setExportLoading] = useState(false)
   const [exportStatus, setExportStatus] = useState('')
-  const [limit, setLimit] = useState(20)   // ← ADD THIS
+  const [limit, setLimit] = useState(20)
 
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [viewQuestion, setViewQuestion] = useState<QuestionDetail | null>(null)
@@ -358,7 +408,7 @@ export default function AdminQuestionsPage() {
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editQuestionId, setEditQuestionId] = useState<string | null>(null)
-  const [editQuestionData, setEditQuestionData] = useState<Partial<QuestionDetail> | null>(null)
+  const [editQuestionData, setEditQuestionData] = useState<any>(null)
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteQuestionId, setDeleteQuestionId] = useState<string | null>(null)
@@ -374,7 +424,7 @@ export default function AdminQuestionsPage() {
 
   useEffect(() => {
     if (subjectId === 'all') {
-      setFilteredTopics(topics) // already sorted
+      setFilteredTopics(topics)
     } else {
       setFilteredTopics(topics.filter(t => t.subjectId === subjectId))
     }
@@ -384,7 +434,7 @@ export default function AdminQuestionsPage() {
 
   useEffect(() => {
     if (topicId === 'all') {
-      setFilteredSubTopics(subTopics) // already sorted
+      setFilteredSubTopics(subTopics)
     } else {
       setFilteredSubTopics(subTopics.filter(st => st.topicId === topicId))
     }
@@ -393,8 +443,6 @@ export default function AdminQuestionsPage() {
 
   useEffect(() => { fetchQuestions() }, [page, difficulty, subjectId, topicId, subTopicId, questionType, limit])
   useEffect(() => { setSelectedIds(new Set()) }, [page, difficulty, subjectId, topicId, subTopicId, questionType])
-
-  // ── fetch helpers — sort alphabetically after fetch ───────────────────
 
   const fetchSubjects = async () => {
     try {
@@ -410,7 +458,7 @@ export default function AdminQuestionsPage() {
       const res = await fetch('/api/admin/topics')
       if (!res.ok) return
       const data = await res.json()
-      const list = sortByName(data.topics || data || [])
+      const list = sortByName(data.topics || data || []) as Topic[]
       setTopics(list)
       setFilteredTopics(list)
     } catch (e) { console.error('Failed to fetch topics', e) }
@@ -421,7 +469,7 @@ export default function AdminQuestionsPage() {
       const res = await fetch('/api/admin/subtopics')
       if (!res.ok) return
       const data = await res.json()
-      const list = sortByName(data || [])
+      const list = sortByName(data || []) as SubTopic[]
       setSubTopics(list)
       setFilteredSubTopics(list)
     } catch (e) { console.error('Failed to fetch subtopics', e) }
@@ -670,14 +718,13 @@ export default function AdminQuestionsPage() {
     }
   }
 
-  // ── Derived option arrays for SearchableSelect ────────────────────────
   const subjectOptions = subjects.map(s => ({ value: s.id, label: s.name }))
   const topicOptions = filteredTopics.map(t => ({ value: t.id, label: t.name }))
   const subTopicOptions = filteredSubTopics.map(st => ({ value: st.id, label: st.name }))
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header — untouched */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Question Bank</h1>
@@ -725,11 +772,10 @@ export default function AdminQuestionsPage() {
         </div>
       </div>
 
-      {/* ── Filters ── */}
+      {/* Filters — untouched */}
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-7">
-            {/* Search */}
             <div className="lg:col-span-2 flex gap-2">
               <Input
                 placeholder="Search questions..."
@@ -741,8 +787,6 @@ export default function AdminQuestionsPage() {
                 <Search className="w-4 h-4" />
               </Button>
             </div>
-
-            {/* Question Type — short list, plain Select is fine */}
             <Select value={questionType} onValueChange={val => { setQuestionType(val); setPage(1) }}>
               <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
               <SelectContent>
@@ -752,8 +796,6 @@ export default function AdminQuestionsPage() {
                 <SelectItem value="match">Match</SelectItem>
               </SelectContent>
             </Select>
-
-            {/* Subject — searchable */}
             <SearchableSelect
               options={subjectOptions}
               value={subjectId}
@@ -761,8 +803,6 @@ export default function AdminQuestionsPage() {
               allLabel="All Subjects"
               allValue="all"
             />
-
-            {/* Topic — searchable */}
             <SearchableSelect
               options={topicOptions}
               value={topicId}
@@ -771,8 +811,6 @@ export default function AdminQuestionsPage() {
               allValue="all"
               disabled={filteredTopics.length === 0}
             />
-
-            {/* SubTopic — searchable */}
             <SearchableSelect
               options={subTopicOptions}
               value={subTopicId}
@@ -781,8 +819,6 @@ export default function AdminQuestionsPage() {
               allValue="all"
               disabled={filteredSubTopics.length === 0}
             />
-
-            {/* Difficulty — short list, plain Select */}
             <Select value={difficulty} onValueChange={val => { setDifficulty(val); setPage(1) }}>
               <SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger>
               <SelectContent>
@@ -813,7 +849,7 @@ export default function AdminQuestionsPage() {
         </CardContent>
       </Card>
 
-      {/* Sticky Bulk Action Bar — unchanged */}
+      {/* Sticky Bulk Action Bar — untouched */}
       {someSelected && (
         <div className="sticky top-4 z-20 flex flex-wrap items-center gap-3 bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3">
           <span className="text-sm font-medium text-gray-700">{selectedIds.size} selected</span>
@@ -827,7 +863,6 @@ export default function AdminQuestionsPage() {
             onClick={handleExportPdf}
             disabled={exportLoading}
             className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
-            title="Export selected questions as PDF"
           >
             {exportLoading
               ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />{exportStatus || 'Exporting…'}</>
@@ -849,7 +884,7 @@ export default function AdminQuestionsPage() {
         </div>
       )}
 
-      {/* Question Listing — unchanged */}
+      {/* Question Listing */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -867,7 +902,9 @@ export default function AdminQuestionsPage() {
             )}
           </CardContent>
         </Card>
+
       ) : viewMode === 'table' ? (
+        // ── TABLE VIEW ────────────────────────────────────────────────────────
         <Card>
           <CardContent className="p-0 overflow-x-auto">
             <Table>
@@ -884,6 +921,8 @@ export default function AdminQuestionsPage() {
                   <TableHead>Marks</TableHead>
                   <TableHead>Difficulty</TableHead>
                   <TableHead>Status</TableHead>
+                  {/* ✅ NEW column */}
+                  <TableHead>Exams</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -921,6 +960,10 @@ export default function AdminQuestionsPage() {
                         )}
                       </button>
                     </TableCell>
+                    {/* ✅ NEW: exam usage cell in table view */}
+                    <TableCell>
+                      <UsedInExams exams={question.usedInExams ?? []} />
+                    </TableCell>
                     <TableCell className="text-sm text-gray-600">{new Date(question.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
@@ -935,7 +978,9 @@ export default function AdminQuestionsPage() {
             </Table>
           </CardContent>
         </Card>
+
       ) : (
+        // ── CARD VIEW ─────────────────────────────────────────────────────────
         <div className="space-y-4">
           <div className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -949,6 +994,7 @@ export default function AdminQuestionsPage() {
                 <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => handleSelectOne(q.id)} className="rounded border-gray-300 w-4 h-4 text-blue-600 cursor-pointer" />
               </div>
               <div className="flex-1 min-w-0">
+                {/* Badges row — untouched */}
                 <div className="flex flex-wrap items-center gap-2 mb-2.5">
                   {getTypeBadge(q.questionType)}
                   <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">{q.subjectName}</span>
@@ -957,17 +1003,33 @@ export default function AdminQuestionsPage() {
                   <Badge className={getDifficultyColor(q.difficulty)}>{q.difficulty}</Badge>
                   <span className="text-xs font-medium px-2 py-0.5 rounded border border-gray-200"><span className="text-green-600">+{q.marks}</span> <span className="text-red-500">-{q.negativeMarks}</span></span>
                 </div>
-                <div className="text-sm text-gray-800 line-clamp-3 mb-4 prose prose-sm max-w-none leading-relaxed">
+
+                {/* Statement — untouched */}
+                <div className="text-sm text-gray-800 line-clamp-3 mb-3 prose prose-sm max-w-none leading-relaxed">
                   <SafeHtml html={q.statement} />
                 </div>
+
+                {/* ✅ NEW: exam usage — sits between statement and the metadata row */}
+                <div className="mb-3">
+                  <UsedInExams exams={q.usedInExams ?? []} />
+                </div>
+
+                {/* Metadata row — untouched */}
                 <div className="flex items-center gap-4 text-xs text-gray-500">
                   <span>Created: {new Date(q.createdAt).toLocaleDateString()}</span>
                   <div className="w-px h-3 bg-gray-300"></div>
                   <button onClick={() => handleInlineToggle(q)} disabled={togglingId === q.id} className="hover:opacity-80 transition-opacity">
-                    {togglingId === q.id ? <span className="flex items-center gap-1 text-gray-500"><Loader2 className="w-3 h-3 animate-spin" /> Updating...</span> : q.isActive ? <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 className="w-3 h-3" /> Active</span> : <span className="flex items-center gap-1 text-gray-500 font-medium"><X className="w-3 h-3" /> Inactive</span>}
+                    {togglingId === q.id
+                      ? <span className="flex items-center gap-1 text-gray-500"><Loader2 className="w-3 h-3 animate-spin" /> Updating...</span>
+                      : q.isActive
+                        ? <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 className="w-3 h-3" /> Active</span>
+                        : <span className="flex items-center gap-1 text-gray-500 font-medium"><X className="w-3 h-3" /> Inactive</span>
+                    }
                   </button>
                 </div>
               </div>
+
+              {/* Action buttons — untouched */}
               <div className="flex flex-col gap-1 shrink-0 border-l border-gray-100 pl-3">
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleView(q.id)}><Eye className="h-4 w-4" /></Button>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900" onClick={() => handleEdit(q.id)}><Edit className="h-4 w-4" /></Button>
@@ -978,6 +1040,7 @@ export default function AdminQuestionsPage() {
         </div>
       )}
 
+      {/* Pagination — untouched */}
       {totalPages > 1 && (
         <div className="flex justify-center gap-2 mt-6">
           <Button variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
@@ -986,7 +1049,7 @@ export default function AdminQuestionsPage() {
         </div>
       )}
 
-      {/* Quick Exam Dialog — unchanged */}
+      {/* Quick Exam Dialog — untouched */}
       <Dialog open={quickExamDialogOpen} onOpenChange={setQuickExamDialogOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1033,7 +1096,7 @@ export default function AdminQuestionsPage() {
                 <span className="text-sm text-gray-700">Randomize question order</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={quickExamData.allowReview} onChange={e => setQuickExamData(p => ({ ...p, allowReview: e.target.checked }))} className="rounded border-gray-300 w-4 h-4 text-blue-600" />
+                <input type="checkbox" checked={quickExamData.allowReview} onChange={e => setQuickExamData(p => ({ ...p, allowReview: e.target.checked }))} className="rounded border-gray-500 w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-700">Allow review before submit</span>
               </label>
             </div>
@@ -1048,7 +1111,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog — unchanged */}
+      {/* View Dialog — untouched */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1165,7 +1228,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog — unchanged */}
+      {/* Edit Dialog — untouched */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1184,7 +1247,7 @@ export default function AdminQuestionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Single Delete Dialog — unchanged */}
+      {/* Single Delete Dialog — untouched */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1206,7 +1269,7 @@ export default function AdminQuestionsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Bulk Delete Dialog — unchanged */}
+      {/* Bulk Delete Dialog — untouched */}
       <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

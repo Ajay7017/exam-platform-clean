@@ -85,14 +85,13 @@ const questionSchema = z.object({
   { message: 'Match questions require matchPairs, all 4 combination options, and a correct answer', path: ['matchPairs'] }
 )
 
-// ── GET: List questions — untouched ───────────────────────────────────────────
+// ── GET: List questions ───────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin()
     const { searchParams } = new URL(request.url)
 
-    // ✅ NEW: Duplicate check endpoint
-    // Called by QuestionForm debounce — GET /api/admin/questions?checkDuplicate=true&hash=xxx
+    // ✅ Duplicate check endpoint — untouched
     const checkDuplicate = searchParams.get('checkDuplicate')
     if (checkDuplicate === 'true') {
       const hash = searchParams.get('hash')
@@ -125,7 +124,6 @@ export async function GET(request: NextRequest) {
         isDuplicate: true,
         existing: {
           id: existing.id,
-          // Truncate for display in modal
           statement: existing.statement.length > 200
             ? existing.statement.slice(0, 200) + '...'
             : existing.statement,
@@ -135,7 +133,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // ── Existing list logic — completely untouched ────────────────────────────
+    // ── Existing list logic ───────────────────────────────────────────────────
     const limit = parseInt(searchParams.get('limit') || '20')
     const page = parseInt(searchParams.get('page') || '1')
     const search = searchParams.get('search') || ''
@@ -159,7 +157,16 @@ export async function GET(request: NextRequest) {
         include: {
           topic: { include: { subject: true } },
           subTopic: true,
-          options: { orderBy: { sequence: 'asc' } }
+          options: { orderBy: { sequence: 'asc' } },
+          // ✅ NEW: batch-load exam usage for all questions in one join
+          // select only what we need — no extra data transferred
+          examQuestions: {
+            select: {
+              exam: {
+                select: { id: true, title: true }
+              }
+            }
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -190,6 +197,8 @@ export async function GET(request: NextRequest) {
         correctAnswerMax: q.correctAnswerMax,
         matchPairs: q.matchPairs ?? null,
         createdAt: q.createdAt,
+        // ✅ NEW: exam usage — array of { id, title } for each exam using this question
+        usedInExams: q.examQuestions.map(eq => eq.exam),
       })),
       pagination: { total, totalPages: Math.ceil(total / limit), page }
     })
@@ -199,7 +208,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// ── POST: Create a new question ───────────────────────────────────────────────
+// ── POST: Create a new question — untouched ───────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin()
@@ -275,7 +284,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ✅ NEW: Compute hash from incoming data before insert
+    // ✅ Compute hash — untouched
     const contentHash = computeQuestionHash({
       questionType: data.questionType,
       statement: data.statement,
@@ -289,9 +298,7 @@ export async function POST(request: NextRequest) {
       matchPairs: data.matchPairs,
     })
 
-    // ✅ NEW: Duplicate check at save time — hard block
-    // This is the server-side gate. Even if the debounce in the form
-    // missed it (e.g. user bypassed frontend), this catches it.
+    // ✅ Duplicate check at save time — untouched
     if (contentHash) {
       const existing = await prisma.question.findFirst({
         where: { contentHash, isActive: true },
@@ -337,10 +344,7 @@ export async function POST(request: NextRequest) {
         explanation: data.explanation || '',
         isActive: data.isActive ?? true,
         type: data.questionType ?? 'mcq',
-
-        // ✅ NEW: store hash so future creates/imports detect this as duplicate
         contentHash: contentHash ?? null,
-
         correctAnswerExact: isNumerical ? (data.correctAnswerExact ?? null) : null,
         correctAnswerMin: isNumerical ? (data.correctAnswerMin ?? null) : null,
         correctAnswerMax: isNumerical ? (data.correctAnswerMax ?? null) : null,

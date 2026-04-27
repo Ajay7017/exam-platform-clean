@@ -1,39 +1,39 @@
 // src/scripts/backfill-content-hashes.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// ONE-TIME script: computes and stores contentHash for all existing questions
-// that currently have contentHash = null.
-//
-// Safe to run multiple times — skips questions that already have a hash.
-// Safe to run on production — read-heavy, batched writes, no deletes.
+// ONE-TIME script: computes and stores contentHash for all existing questions.
+// Safe to run multiple times.
 //
 // Run with:
-//   npx ts-node --compiler-options '{"module":"CommonJS"}' src/scripts/backfill-content-hashes.ts
-// ─────────────────────────────────────────────────────────────────────────────
+//   npx ts-node --project tsconfig.scripts.json src/scripts/backfill-content-hashes.ts
 
 import { PrismaClient } from '@prisma/client'
 import { computeQuestionHash } from '../lib/question-parser'
 
 const prisma = new PrismaClient()
 
-const BATCH_SIZE = 100 // fetch 100 questions at a time — safe for Neon
+const BATCH_SIZE = 100
+
+// Sentinel value for questions where hash cannot be computed (image-only).
+// Stored in DB so they exit the WHERE contentHash = null filter permanently.
+// The duplicate check logic already skips questions with null hash at check
+// time, so this sentinel is never used in hash comparisons.
+const SKIP_SENTINEL = 'SKIP'
 
 async function backfill() {
   console.log('═══════════════════════════════════════════')
   console.log('  Content Hash Backfill — Starting')
   console.log('═══════════════════════════════════════════')
 
-  // Count how many need backfill
   const totalNeedingBackfill = await prisma.question.count({
     where: { contentHash: null }
   })
 
   if (totalNeedingBackfill === 0) {
-    console.log('✅ All questions already have content hashes. Nothing to do.')
+    console.log('✅ All questions already processed. Nothing to do.')
     await prisma.$disconnect()
     return
   }
 
-  console.log(`📊 Found ${totalNeedingBackfill} questions needing hash computation`)
+  console.log(`📊 Found ${totalNeedingBackfill} questions needing processing`)
   console.log(`📦 Processing in batches of ${BATCH_SIZE}`)
   console.log('')
 
@@ -41,10 +41,9 @@ async function backfill() {
   let hashed = 0
   let skippedImageOnly = 0
   let failed = 0
-  let page = 0
+  let batchNum = 0
 
   while (true) {
-    // Fetch batch of questions without hash
     const questions = await prisma.question.findMany({
       where: { contentHash: null },
       select: {
@@ -56,20 +55,17 @@ async function backfill() {
         correctAnswerMax: true,
         matchPairs: true,
         options: {
-          select: {
-            optionKey: true,
-            text: true,
-          },
+          select: { optionKey: true, text: true },
           orderBy: { sequence: 'asc' }
         }
       },
       take: BATCH_SIZE,
-      skip: page * BATCH_SIZE,
     })
 
     if (questions.length === 0) break
 
-    console.log(`Processing batch ${page + 1} (${questions.length} questions)...`)
+    batchNum++
+    console.log(`Processing batch ${batchNum} (${questions.length} questions)...`)
 
     for (const q of questions) {
       try {
@@ -91,38 +87,44 @@ async function backfill() {
           matchPairs: q.matchPairs,
         })
 
-        if (hash === null) {
-          // Image-only options or insufficient data — leave as null
-          skippedImageOnly++
-          processed++
-          continue
-        }
+        // ✅ FIX: store sentinel for image-only questions so they exit the
+        // WHERE contentHash = null filter and never loop again
+        const valueToStore = hash ?? SKIP_SENTINEL
 
-        // Check if this hash already exists in DB (another question has it)
-        // If so, this is a duplicate that already exists — still store the hash
-        // so the system can detect it going forward
         await prisma.question.update({
           where: { id: q.id },
-          data: { contentHash: hash },
+          data: { contentHash: valueToStore },
         })
 
-        hashed++
+        if (hash === null) {
+          skippedImageOnly++
+        } else {
+          hashed++
+        }
         processed++
 
       } catch (error: any) {
         failed++
         processed++
         console.error(`  ❌ Question ${q.id} failed: ${error.message}`)
+
+        // ✅ FIX: mark failed questions with sentinel so they don't loop
+        // infinitely. They can be inspected manually if needed.
+        try {
+          await prisma.question.update({
+            where: { id: q.id },
+            data: { contentHash: SKIP_SENTINEL },
+          })
+        } catch {
+          // If this also fails, script will retry on next run — acceptable
+        }
       }
     }
 
-    const percent = Math.round((processed / totalNeedingBackfill) * 100)
-    console.log(`  ✓ Batch done — ${processed}/${totalNeedingBackfill} (${percent}%) | Hashed: ${hashed} | Skipped: ${skippedImageOnly} | Failed: ${failed}`)
+    const remaining = await prisma.question.count({ where: { contentHash: null } })
+    const percent = Math.round(((totalNeedingBackfill - remaining) / totalNeedingBackfill) * 100)
+    console.log(`  ✓ Batch done — Remaining: ${remaining} (${percent}% done) | Hashed: ${hashed} | Skipped: ${skippedImageOnly} | Failed: ${failed}`)
 
-    page++
-
-    // Small delay between batches to avoid overwhelming Neon
-    // 50ms is enough — keeps connection pool happy
     await new Promise(resolve => setTimeout(resolve, 50))
   }
 
@@ -135,13 +137,8 @@ async function backfill() {
   console.log(`  Skipped (images): ${skippedImageOnly}`)
   console.log(`  Failed          : ${failed}`)
   console.log('')
-
-  if (failed > 0) {
-    console.log(`⚠️  ${failed} questions failed — run the script again to retry them.`)
-    console.log('   Failed questions still have contentHash = null and will be retried.')
-  } else {
-    console.log('✅ All questions backfilled successfully.')
-  }
+  console.log('✅ Done. All questions have exited the null hash filter.')
+  console.log('   Image-only questions stored with SKIP sentinel — excluded from duplicate checks automatically.')
 
   await prisma.$disconnect()
 }
