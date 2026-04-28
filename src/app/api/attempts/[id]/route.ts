@@ -1,16 +1,16 @@
 // src/app/api/attempts/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth-utils'
-import { handleApiError } from '@/lib/api-error'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth-utils";
+import { handleApiError } from "@/lib/api-error";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } },
 ) {
   try {
-    const session = await requireAuth()
-    const attemptId = params.id
+    const session = await requireAuth();
+    const attemptId = params.id;
 
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
@@ -23,50 +23,44 @@ export async function GET(
                 question: {
                   include: {
                     options: {
-                      orderBy: { sequence: 'asc' }
+                      orderBy: { sequence: "asc" },
                     },
                     topic: {
-                      select: { name: true }
-                    }
-                  }
-                }
+                      select: { name: true },
+                    },
+                  },
+                },
               },
-              orderBy: { sequence: 'asc' }
-            }
-          }
-        }
-      }
-    })
+              orderBy: { sequence: "asc" },
+            },
+          },
+        },
+      },
+    });
 
     if (!attempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
     }
 
     if (attempt.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     if (attempt.hasSubmitted) {
       return NextResponse.json(
-        { error: 'Exam already submitted', attemptId: attempt.id },
-        { status: 400 }
-      )
+        { error: "Exam already submitted", attemptId: attempt.id },
+        { status: 400 },
+      );
     }
 
     if (new Date() > attempt.expiresAt) {
       return NextResponse.json(
-        { error: 'Exam time expired', attemptId: attempt.id },
-        { status: 400 }
-      )
+        { error: "Exam time expired", attemptId: attempt.id },
+        { status: 400 },
+      );
     }
 
-    const questions = attempt.exam.questions.map(eq => eq.question)
+    const questions = attempt.exam.questions.map((eq) => eq.question);
 
     // Transform the raw DB answers JSON into the flat map the client uses.
     //
@@ -76,24 +70,30 @@ export async function GET(
     // Without this transform, on page refresh the client stores the whole object
     // as the answer value, so option comparison (answers[id] === "A") always fails
     // and every question shows as unanswered in the palette.
-    const rawAnswers = (attempt.answers as Record<string, any>) || {}
-    const savedAnswers: Record<string, string | number | null> = {}
-    const savedMarkedForReview: Record<string, boolean> = {}
+    const rawAnswers = (attempt.answers as Record<string, any>) || {};
+    const savedAnswers: Record<string, string | number | null> = {};
+    const savedMarkedForReview: Record<string, boolean> = {};
 
     for (const [questionId, response] of Object.entries(rawAnswers)) {
-      if (response && typeof response === 'object') {
+      if (response && typeof response === "object") {
         // Pick the right answer field based on what's populated
-        if (response.numericalAnswer !== null && response.numericalAnswer !== undefined) {
-          savedAnswers[questionId] = response.numericalAnswer
-        } else if (response.selectedOption !== null && response.selectedOption !== undefined) {
-          savedAnswers[questionId] = response.selectedOption
+        if (
+          response.numericalAnswer !== null &&
+          response.numericalAnswer !== undefined
+        ) {
+          savedAnswers[questionId] = response.numericalAnswer;
+        } else if (
+          response.selectedOption !== null &&
+          response.selectedOption !== undefined
+        ) {
+          savedAnswers[questionId] = response.selectedOption;
         } else {
           // Explicitly cleared — include as null so the client knows it was visited
-          savedAnswers[questionId] = null
+          savedAnswers[questionId] = null;
         }
 
         if (response.markedForReview) {
-          savedMarkedForReview[questionId] = true
+          savedMarkedForReview[questionId] = true;
         }
       }
     }
@@ -103,7 +103,7 @@ export async function GET(
       examId: attempt.exam.id,
       examTitle: attempt.exam.title,
       examSlug: attempt.exam.slug,
-      subject: attempt.exam.subject?.name || 'Multi-Subject',
+      subject: attempt.exam.subject?.name || "Multi-Subject",
       duration: attempt.exam.durationMin,
       totalQuestions: questions.length,
       totalMarks: attempt.exam.totalMarks,
@@ -116,6 +116,7 @@ export async function GET(
       // Flat maps — ready to drop straight into React state
       savedAnswers,
       savedMarkedForReview,
+      // AFTER:
       questions: questions.map((q, index) => ({
         id: q.id,
         sequence: index + 1,
@@ -125,17 +126,17 @@ export async function GET(
         marks: q.marks,
         negativeMarks: q.negativeMarks,
         difficulty: q.difficulty,
-        type: q.type ?? 'mcq',
-        options: q.options.map(o => ({
+        type: q.type ?? "mcq",
+        options: q.options.map((o) => ({
           key: o.optionKey,
           text: o.text,
-          imageUrl: o.imageUrl
-          // isCorrect intentionally omitted — student must not see the answer
-        }))
-      }))
-    })
-
+          imageUrl: o.imageUrl,
+        })),
+        // ✅ Pass through matchPairs for 'match' type questions
+        matchPairs: q.matchPairs ?? null,
+      })),
+    });
   } catch (error) {
-    return handleApiError(error)
+    return handleApiError(error);
   }
 }
