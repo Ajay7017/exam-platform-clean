@@ -7,20 +7,22 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
 
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'header', key: 'x-forwarded-proto', value: 'http' }],
+        destination: 'https://mockzy.co.in/:path*',
+        permanent: true,
+      },
+    ]
+  },
+
   images: {
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'api.dicebear.com',
-      },
-      {
-        protocol: 'http',
-        hostname: 'localhost',
-      },
+      { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: 'https', hostname: 'api.dicebear.com' },
+      { protocol: 'http', hostname: 'localhost' },
     ],
     formats: ['image/avif', 'image/webp'],
   },
@@ -37,8 +39,6 @@ const nextConfig = {
     };
 
     if (isServer) {
-      // Stub out ketcher entirely on server builds —
-      // prevents paper → canvas → jsdom from being resolved
       config.resolve.alias = {
         ...config.resolve.alias,
         'ketcher-standalone': false,
