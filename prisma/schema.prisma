@@ -532,3 +532,75 @@ model ErrorReport {
   @@index([questionId])
   @@index([status])
 }
+
+// ============================================
+// EXAM EVENT MODELS (Answer Keys / Result Pages)
+// ============================================
+
+enum ExamEventStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ExamEventResourceStatus {
+  COMING_SOON
+  LIVE
+  REMOVED
+}
+
+model ExamEvent {
+  id          String          @id @default(cuid())
+  title       String
+  slug        String          @unique
+  description String?         @db.Text
+  examDate    DateTime?
+  status      ExamEventStatus @default(DRAFT)
+
+  // Score calculator
+  calculatorEnabled   Boolean @default(false)
+  totalQuestions      Int     @default(180)
+  totalMarks          Int     @default(720)
+  correctMarks        Float   @default(4)
+  negativeMarks       Float   @default(1)
+
+  // Expected cutoffs (optional, admin fills after exam)
+  cutoffGeneral Int?
+  cutoffOBC     Int?
+  cutoffSC      Int?
+  cutoffST      Int?
+
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+
+  // Popup banner (shown on homepage)
+  popupEnabled    Boolean @default(false)
+  popupMessage    String? // e.g. "NEET 2026 Answer Key is live now!"
+  popupLinkLabel  String? // e.g. "View Answer Key"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resources ExamEventResource[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+model ExamEventResource {
+  id          String                  @id @default(cuid())
+  examEventId String
+  examEvent   ExamEvent               @relation(fields: [examEventId], references: [id], onDelete: Cascade)
+
+  label       String                  // e.g. "Question Paper", "Answer Key", "Solutions PDF"
+  type        String                  // "QUESTION_PAPER" | "ANSWER_KEY" | "SOLUTIONS" | "OTHER"
+  driveLink   String?                 // Google Drive link admin pastes
+  status      ExamEventResourceStatus @default(COMING_SOON)
+  sortOrder   Int                     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([examEventId])
+  @@index([status])
+}

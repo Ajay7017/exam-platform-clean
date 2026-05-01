@@ -30,6 +30,7 @@ import {
   LogOut,
   Zap,
   Menu,
+  CalendarDays, 
 } from 'lucide-react';
 
 const navGroups = [
@@ -50,6 +51,7 @@ const navGroups = [
       { label: 'Exam Management', href: '/admin/exams',      icon: ClipboardList, color: 'text-orange-400' },
       { label: 'Bundles',         href: '/admin/bundles',    icon: Package,       color: 'text-pink-400' },
       { label: 'Study Materials', href: '/admin/materials',  icon: BookOpen,      color: 'text-indigo-400' },
+      { label: 'Exam Events', href: '/admin/exam-events', icon: CalendarDays, color: 'text-yellow-400' },
     ],
   },
   {
@@ -295,6 +297,7 @@ function getActiveBgColor(colorClass: string): string {
     'text-slate-400':   'rgba(148,163,184,0.10), rgba(100,116,139,0.05)',
     'text-rose-400':    'rgba(251,113,133,0.12), rgba(225,29,72,0.06)',
     'text-gray-400':    'rgba(156,163,175,0.10), rgba(107,114,128,0.05)',
+    'text-yellow-400': 'rgba(250,204,21,0.12), rgba(202,138,4,0.06)',
   };
   return map[colorClass] || 'rgba(99,102,241,0.15), rgba(79,70,229,0.08)';
 }
@@ -313,6 +316,7 @@ function getGlowColor(colorClass: string): string {
     'text-slate-400':   'rgba(148,163,184,0.10)',
     'text-rose-400':    'rgba(251,113,133,0.12)',
     'text-gray-400':    'rgba(156,163,175,0.10)',
+    'text-yellow-400': 'rgba(250,204,21,0.12)',
   };
   return map[colorClass] || 'rgba(99,102,241,0.15)';
 }
@@ -331,6 +335,7 @@ function getBarColor(colorClass: string): string {
     'text-slate-400':   'bg-slate-400',
     'text-rose-400':    'bg-rose-400',
     'text-gray-400':    'bg-gray-400',
+    'text-yellow-400': 'bg-yellow-400',
   };
   return map[colorClass] || 'bg-indigo-400';
 }

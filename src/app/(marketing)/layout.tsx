@@ -1,6 +1,6 @@
-// src/app/(marketing)/layout.tsx
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
+import { ExamEventPopup } from '@/components/marketing/ExamEventPopup'; // ← add
 
 export default function MarketingLayout({
   children,
@@ -12,6 +12,7 @@ export default function MarketingLayout({
       <Navbar variant="marketing" />
       <main className="flex-1">{children}</main>
       <Footer />
+      <ExamEventPopup /> {/* ← add at bottom, outside main */}
     </div>
   );
 }

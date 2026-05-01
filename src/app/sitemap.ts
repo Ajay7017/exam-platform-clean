@@ -1,6 +1,20 @@
 import { MetadataRoute } from "next";
+import { prisma } from "@/lib/prisma";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const examEvents = await prisma.examEvent.findMany({
+    where: { status: "PUBLISHED" },
+    select: { slug: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const examEventUrls: MetadataRoute.Sitemap = examEvents.map((event) => ({
+    url: `https://mockzy.co.in/exam-events/${event.slug}`,
+    lastModified: event.updatedAt,
+    changeFrequency: "hourly",
+    priority: 0.95,
+  }));
+
   return [
     {
       url: "https://mockzy.co.in",
@@ -10,6 +24,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     {
       url: "https://mockzy.co.in/exams",
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.9,
+    },
+    {
+      url: "https://mockzy.co.in/exam-events",
       lastModified: new Date(),
       changeFrequency: "daily",
       priority: 0.9,
@@ -26,5 +46,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.5,
     },
+    ...examEventUrls,
   ];
 }
