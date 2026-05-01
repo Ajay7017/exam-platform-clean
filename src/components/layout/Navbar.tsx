@@ -13,6 +13,7 @@ import {
   Crown,
   BookOpen,
   FlaskConical,
+  KeyRound,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,8 +31,13 @@ interface NavbarProps {
 const NAV_LINKS = [
   {
     label: 'Test Series',
-    href: '/exams',          // middleware will redirect unauthenticated → /login
+    href: '/exams',
     icon: <BookOpen className="h-4 w-4" />,
+  },
+  {
+    label: 'Answer Keys',
+    href: '/exam-events',
+    icon: <KeyRound className="h-4 w-4" />,
   },
   {
     label: 'Study Materials',
@@ -72,7 +78,6 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Non-marketing variants render nothing here — handled by their own sidebar components
   if (variant !== 'marketing') return null
 
   return (
@@ -102,7 +107,7 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
               <Link href="/" className="flex-shrink-0 flex items-center group">
                 <div className="relative h-12 w-[160px] transition-transform duration-300 group-hover:scale-105">
                   <Image
-                    src="/logo.png"           // place your logo file in /public/logo.png
+                    src="/logo.png"
                     alt="Mockzy"
                     fill
                     className="object-contain object-left"
@@ -123,7 +128,6 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
                       {link.icon}
                     </span>
                     {link.label}
-                    {/* underline slide */}
                     <span className="absolute bottom-1 left-4 right-4 h-[2px] rounded-full bg-[#1a6fd4] scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left" />
                   </Link>
                 ))}
@@ -137,9 +141,7 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
                     <div className="h-9 w-28 rounded-lg bg-gray-100 animate-pulse" />
                   </div>
                 ) : session?.user ? (
-                  /* ── Logged-in state ── */
                   <div className="flex items-center gap-3">
-                    {/* Avatar + name */}
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200">
                       {session.user.image ? (
                         <img
@@ -185,7 +187,6 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
                     </Button>
                   </div>
                 ) : (
-                  /* ── Logged-out state ── */
                   <>
                     <Link href="/login">
                       <Button
@@ -203,7 +204,6 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
                         size="sm"
                         className="relative overflow-hidden bg-[#1a6fd4] hover:bg-[#1558b0] text-white font-semibold px-5 shadow-md shadow-blue-200 hover:shadow-blue-300 transition-all duration-300 group"
                       >
-                        {/* shine sweep */}
                         <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
                         <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                         <span className="relative">Get Started</span>
@@ -233,7 +233,6 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
                 </SheetTrigger>
 
                 <SheetContent side="right" className="w-full sm:w-[360px] p-0 flex flex-col">
-                  {/* Sheet header */}
                   <SheetHeader className="px-6 py-5 border-b border-gray-100">
                     <SheetTitle className="flex items-center gap-3">
                       <div className="relative h-10 w-[130px]">
@@ -339,7 +338,7 @@ export function Navbar({ variant = 'marketing' }: NavbarProps) {
         </div>
       </nav>
 
-      {/* Spacer so page content doesn't hide under fixed nav */}
+      {/* Spacer */}
       <div className="h-[71px]" />
     </>
   )
