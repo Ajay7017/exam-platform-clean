@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic' // ← add this line
+
 // Public — no auth required
 export async function GET(request: NextRequest) {
     try {
@@ -16,9 +18,9 @@ export async function GET(request: NextRequest) {
                 examDate: true,
                 metaTitle: true,
                 metaDescription: true,
-                popupEnabled: true,   // ← add
-                popupMessage: true,   // ← add
-                popupLinkLabel: true, // ← add
+                popupEnabled: true,
+                popupMessage: true,
+                popupLinkLabel: true,
                 _count: {
                     select: { resources: true }
                 }

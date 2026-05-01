@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError } from '@/lib/api-error'
 import { prisma } from '@/lib/prisma'
+export const dynamic = 'force-dynamic'
 
 // Public — no auth required
 export async function GET(
