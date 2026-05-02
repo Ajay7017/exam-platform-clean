@@ -69,6 +69,10 @@ export const createExamEventResourceSchema = z.object({
     val => (val === '' || val === null || val === undefined ? undefined : val),
     z.string().url('Must be a valid URL').optional()
   ),
+  fileUrl: z.preprocess(
+    val => (val === '' || val === null || val === undefined ? undefined : val),
+    z.string().url('Must be a valid URL').optional()
+  ),
   status: z.enum(['COMING_SOON', 'LIVE', 'REMOVED']).default('COMING_SOON'),
   sortOrder: z.number().int().default(0),
 })
@@ -79,3 +83,22 @@ export type CreateExamEventInput = z.infer<typeof createExamEventSchema>
 export type UpdateExamEventInput = z.infer<typeof updateExamEventSchema>
 export type CreateExamEventResourceInput = z.infer<typeof createExamEventResourceSchema>
 export type UpdateExamEventResourceInput = z.infer<typeof updateExamEventResourceSchema>
+
+export const answerKeySectionSchema = z.object({
+  name: z.string().min(1, 'Section name is required'),
+  from: z.number().int().min(1),
+  to: z.number().int().min(1),
+})
+
+export const answerKeyQuestionSchema = z.object({
+  number: z.number().int().min(1),
+  answer: z.string().min(1),
+  explanation: z.string().optional().default(''),
+})
+
+export const answerKeySchema = z.object({
+  sections: z.array(answerKeySectionSchema).min(1, 'At least one section is required'),
+  questions: z.array(answerKeyQuestionSchema).min(1, 'At least one question is required'),
+})
+
+export type AnswerKeyInput = z.infer<typeof answerKeySchema>

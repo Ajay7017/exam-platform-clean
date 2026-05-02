@@ -17,8 +17,9 @@ export async function GET(
             status: { not: 'REMOVED' }  // never show REMOVED to public
           },
           orderBy: { sortOrder: 'asc' }
+          },
+        answerKey: true
         }
-      }
     })
 
     if (!examEvent || examEvent.status !== 'PUBLISHED') {

@@ -1,11 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
+
+const RichTextEditor = dynamic(
+  () => import('@/components/admin/RichTextEditor').then(m => m.RichTextEditor),
+  { ssr: false, loading: () => <div className="h-24 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" /> }
+)
 import {
   ArrowLeft, Save, Loader2, Plus, Trash2, ExternalLink,
-  Globe, EyeOff, CheckCircle2, Clock, XCircle, GripVertical
+  Globe, EyeOff, CheckCircle2, Clock, XCircle, GripVertical,
+  Upload, FileText, X
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -66,13 +73,32 @@ export default function EditExamEventPage() {
   const [isAddingResource, setIsAddingResource] = useState(false)
   const [savingResourceId, setSavingResourceId] = useState<string | null>(null)
   const [deletingResourceId, setDeletingResourceId] = useState<string | null>(null)
+  const [uploadingPdfForId, setUploadingPdfForId] = useState<string | null>(null)
+  const [isUploadingNewPdf, setIsUploadingNewPdf] = useState(false)
   const [newResource, setNewResource] = useState({
     label: '',
     type: 'QUESTION_PAPER',
     driveLink: '',
+    fileUrl: '',
     status: 'COMING_SOON',
     sortOrder: 0,
   })
+
+  // Answer key state
+  const [answerKey, setAnswerKey] = useState<{
+    sections: { name: string; from: number; to: number }[]
+    questions: { number: number; answer: string; explanation: string }[]
+  } | null>(null)
+  const [isSavingAnswerKey, setIsSavingAnswerKey] = useState(false)
+  const [isDeletingAnswerKey, setIsDeletingAnswerKey] = useState(false)
+  const [activeSection, setActiveSection] = useState(0)
+  const [expandedExplanation, setExpandedExplanation] = useState<number | null>(null)
+  const [newSection, setNewSection] = useState({ name: '', from: '', to: '' })
+  const [isAddingSection, setIsAddingSection] = useState(false)
+
+  // File input refs
+  const newPdfInputRef = useRef<HTMLInputElement>(null)
+  const existingPdfInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   // Load event data
   useEffect(() => {
@@ -85,6 +111,16 @@ export default function EditExamEventPage() {
         const ev = data.examEvent
         setEventStatus(ev.status)
         setResources(ev.resources || [])
+        // Load answer key
+        try {
+          const akRes = await fetch(`/api/admin/exam-events/${id}/answer-key`)
+          if (akRes.ok) {
+            const akData = await akRes.json()
+            if (akData.answerKey) setAnswerKey(akData.answerKey)
+          }
+        } catch {
+          // answer key not found is fine
+        }
         setFormData({
           title: ev.title || '',
           slug: ev.slug || '',
@@ -171,6 +207,71 @@ export default function EditExamEventPage() {
     }
   }
 
+  // Upload PDF for existing resource
+  const handleUploadPdfForResource = async (resourceId: string, file: File) => {
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are allowed')
+      return
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('PDF must be under 20MB')
+      return
+    }
+
+    setUploadingPdfForId(resourceId)
+    try {
+      const formData = new FormData()
+      formData.append('pdf', file)
+
+      const uploadRes = await fetch(`/api/admin/exam-events/${id}/resources/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+      const uploadData = await uploadRes.json()
+      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed')
+
+      // Save fileUrl to resource
+      await handleUpdateResource(resourceId, 'fileUrl', uploadData.url)
+      toast.success('PDF uploaded successfully')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload PDF')
+    } finally {
+      setUploadingPdfForId(null)
+    }
+  }
+
+  // Upload PDF for new resource (before adding)
+  const handleUploadPdfForNew = async (file: File) => {
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are allowed')
+      return
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('PDF must be under 20MB')
+      return
+    }
+
+    setIsUploadingNewPdf(true)
+    try {
+      const fd = new FormData()
+      fd.append('pdf', file)
+
+      const uploadRes = await fetch(`/api/admin/exam-events/${id}/resources/upload`, {
+        method: 'POST',
+        body: fd,
+      })
+      const uploadData = await uploadRes.json()
+      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed')
+
+      setNewResource(prev => ({ ...prev, fileUrl: uploadData.url }))
+      toast.success('PDF ready — click Add to save the resource')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload PDF')
+    } finally {
+      setIsUploadingNewPdf(false)
+    }
+  }
+
   // Add resource
   const handleAddResource = async () => {
     if (!newResource.label.trim()) {
@@ -183,6 +284,7 @@ export default function EditExamEventPage() {
       const payload = {
         ...newResource,
         driveLink: newResource.driveLink || undefined,
+        fileUrl: newResource.fileUrl || undefined,
       }
 
       const res = await fetch(`/api/admin/exam-events/${id}/resources`, {
@@ -194,7 +296,7 @@ export default function EditExamEventPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to add resource')
 
       setResources(prev => [...prev, data.resource])
-      setNewResource({ label: '', type: 'QUESTION_PAPER', driveLink: '', status: 'COMING_SOON', sortOrder: 0 })
+      setNewResource({ label: '', type: 'QUESTION_PAPER', driveLink: '', fileUrl: '', status: 'COMING_SOON', sortOrder: 0 })
       toast.success('Resource added successfully')
     } catch (err: any) {
       toast.error(err.message)
@@ -205,7 +307,6 @@ export default function EditExamEventPage() {
 
   // Update resource field inline
   const handleUpdateResource = async (resourceId: string, field: string, value: string) => {
-    // Optimistic update
     setResources(prev =>
       prev.map(r => r.id === resourceId ? { ...r, [field]: value } : r)
     )
@@ -222,22 +323,27 @@ export default function EditExamEventPage() {
           label: updated.label,
           type: updated.type,
           driveLink: updated.driveLink || undefined,
+          fileUrl: updated.fileUrl || undefined,
           status: updated.status,
           sortOrder: updated.sortOrder,
         })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to update')
-      toast.success('Resource updated')
     } catch (err: any) {
       toast.error(err.message)
-      // Revert on error
       setResources(prev =>
         prev.map(r => r.id === resourceId ? { ...r, [field]: resources.find(x => x.id === resourceId)?.[field] } : r)
       )
     } finally {
       setSavingResourceId(null)
     }
+  }
+
+  // Remove uploaded PDF from existing resource
+  const handleRemovePdf = async (resourceId: string) => {
+    await handleUpdateResource(resourceId, 'fileUrl', '')
+    toast.success('PDF removed')
   }
 
   // Delete resource
@@ -258,6 +364,142 @@ export default function EditExamEventPage() {
       toast.error(err.message)
     } finally {
       setDeletingResourceId(null)
+    }
+  }
+
+  // ── Answer Key Handlers ────────────────────────────────────────────────
+
+  const handleInitAnswerKey = () => {
+    setAnswerKey({
+      sections: [
+        { name: 'Physics', from: 1, to: 45 },
+        { name: 'Chemistry', from: 46, to: 90 },
+        { name: 'Biology', from: 91, to: 180 },
+      ],
+      questions: Array.from({ length: 180 }, (_, i) => ({
+        number: i + 1,
+        answer: '',
+        explanation: '',
+      })),
+    })
+  }
+
+  const handleAddSection = () => {
+    if (!newSection.name.trim() || !newSection.from || !newSection.to) {
+      toast.error('Fill in section name, from and to question numbers')
+      return
+    }
+    const from = parseInt(newSection.from)
+    const to = parseInt(newSection.to)
+    if (from >= to) {
+      toast.error('From must be less than To')
+      return
+    }
+    setAnswerKey(prev => {
+      if (!prev) return prev
+      // generate questions for this range if not already present
+      const existingNums = new Set(prev.questions.map(q => q.number))
+      const newQuestions = []
+      for (let i = from; i <= to; i++) {
+        if (!existingNums.has(i)) {
+          newQuestions.push({ number: i, answer: '', explanation: '' })
+        }
+      }
+      return {
+        sections: [...prev.sections, { name: newSection.name.trim(), from, to }],
+        questions: [...prev.questions, ...newQuestions].sort((a, b) => a.number - b.number),
+      }
+    })
+    setNewSection({ name: '', from: '', to: '' })
+    setIsAddingSection(false)
+  }
+
+  const handleDeleteSection = (index: number) => {
+    setAnswerKey(prev => {
+      if (!prev) return prev
+      const sections = prev.sections.filter((_, i) => i !== index)
+      return { ...prev, sections }
+    })
+    if (activeSection >= index && activeSection > 0) {
+      setActiveSection(prev => prev - 1)
+    }
+  }
+
+  const handleSetAnswer = (questionNumber: number, answer: string) => {
+    setAnswerKey(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        questions: prev.questions.map(q =>
+          q.number === questionNumber
+            ? { ...q, answer: q.answer === answer ? '' : answer }
+            : q
+        ),
+      }
+    })
+  }
+
+  const handleSetExplanation = (questionNumber: number, explanation: string) => {
+    setAnswerKey(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        questions: prev.questions.map(q =>
+          q.number === questionNumber ? { ...q, explanation } : q
+        ),
+      }
+    })
+  }
+
+  const handleSaveAnswerKey = async () => {
+    if (!answerKey) return
+    if (answerKey.sections.length === 0) {
+      toast.error('Add at least one section before saving')
+      return
+    }
+    const answeredCount = answerKey.questions.filter(q => q.answer).length
+    if (answeredCount === 0) {
+      toast.error('Add at least one answer before saving')
+      return
+    }
+
+    setIsSavingAnswerKey(true)
+    try {
+      const res = await fetch(`/api/admin/exam-events/${id}/answer-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sections: answerKey.sections,
+          questions: answerKey.questions.filter(q => q.answer), // only save questions with answers
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to save answer key')
+      toast.success(`Answer key saved — ${answeredCount} answers`)
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setIsSavingAnswerKey(false)
+    }
+  }
+
+  const handleDeleteAnswerKey = async () => {
+    const confirmed = window.confirm('Delete the entire answer key? This cannot be undone.')
+    if (!confirmed) return
+
+    setIsDeletingAnswerKey(true)
+    try {
+      const res = await fetch(`/api/admin/exam-events/${id}/answer-key`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to delete')
+      setAnswerKey(null)
+      setActiveSection(0)
+      setExpandedExplanation(null)
+      toast.success('Answer key deleted')
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setIsDeletingAnswerKey(false)
     }
   }
 
@@ -286,7 +528,6 @@ export default function EditExamEventPage() {
           </div>
         </div>
 
-        {/* Publish toggle */}
         <button
           onClick={handlePublishToggle}
           disabled={isPublishing}
@@ -438,7 +679,6 @@ export default function EditExamEventPage() {
           </Field>
         </Section>
 
-        {/* Save button */}
         <div className="flex justify-end">
           <button type="submit" disabled={isSaving}
             className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-sm">
@@ -457,11 +697,10 @@ export default function EditExamEventPage() {
             Resources
           </h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            Question paper, answer key, solutions — manage status and drive links here.
+            Upload PDF directly or paste a Google Drive link as fallback.
           </p>
         </div>
 
-        {/* Existing resources */}
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
           {resources.length === 0 ? (
             <p className="px-6 py-6 text-sm text-gray-400 text-center">
@@ -470,13 +709,12 @@ export default function EditExamEventPage() {
           ) : (
             resources.map(resource => {
               const statusConf = STATUS_CONFIG[resource.status as keyof typeof STATUS_CONFIG]
-              const StatusIcon = statusConf.icon
               return (
                 <div key={resource.id} className="px-6 py-4 space-y-3">
+                  {/* Row 1: Label / Type / Status / Delete */}
                   <div className="flex items-start gap-3">
                     <GripVertical className="w-4 h-4 text-gray-300 mt-2 shrink-0" />
                     <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {/* Label */}
                       <input
                         type="text"
                         value={resource.label}
@@ -485,8 +723,6 @@ export default function EditExamEventPage() {
                         className={inputClass}
                         placeholder="Label"
                       />
-
-                      {/* Type */}
                       <select
                         value={resource.type}
                         onChange={e => handleUpdateResource(resource.id, 'type', e.target.value)}
@@ -496,8 +732,6 @@ export default function EditExamEventPage() {
                           <option key={t.value} value={t.value}>{t.label}</option>
                         ))}
                       </select>
-
-                      {/* Status */}
                       <select
                         value={resource.status}
                         onChange={e => handleUpdateResource(resource.id, 'status', e.target.value)}
@@ -508,8 +742,6 @@ export default function EditExamEventPage() {
                         <option value="REMOVED">Removed</option>
                       </select>
                     </div>
-
-                    {/* Delete */}
                     <button
                       onClick={() => handleDeleteResource(resource.id, resource.label)}
                       disabled={deletingResourceId === resource.id}
@@ -522,25 +754,77 @@ export default function EditExamEventPage() {
                     </button>
                   </div>
 
-                  {/* Drive Link */}
-                  <div className="ml-7 flex items-center gap-2">
-                    <input
-                      type="url"
-                      value={resource.driveLink || ''}
-                      onChange={e => setResources(prev => prev.map(r => r.id === resource.id ? { ...r, driveLink: e.target.value } : r))}
-                      onBlur={e => handleUpdateResource(resource.id, 'driveLink', e.target.value)}
-                      className={`${inputClass} flex-1`}
-                      placeholder="https://drive.google.com/... (paste link here)"
-                    />
-                    {resource.driveLink && (
-                      <a href={resource.driveLink} target="_blank" rel="noopener noreferrer"
-                        className="p-2 text-blue-500 hover:text-blue-700 shrink-0">
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
+                  {/* Row 2: PDF Upload */}
+                  <div className="ml-7 space-y-2">
+                    {resource.fileUrl ? (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <FileText className="w-4 h-4 text-green-600 shrink-0" />
+                        <span className="text-xs text-green-700 dark:text-green-400 flex-1 truncate">
+                          PDF uploaded
+                        </span>
+                        
+                          <a href={resource.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-green-600 hover:underline shrink-0"
+                        >
+                          Preview
+                        </a>
+                        <button
+                          onClick={() => handleRemovePdf(resource.id)}
+                          className="p-0.5 text-green-500 hover:text-red-500 transition-colors shrink-0"
+                          title="Remove PDF"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          ref={el => { existingPdfInputRefs.current[resource.id] = el }}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) handleUploadPdfForResource(resource.id, file)
+                            e.target.value = ''
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => existingPdfInputRefs.current[resource.id]?.click()}
+                          disabled={uploadingPdfForId === resource.id}
+                          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {uploadingPdfForId === resource.id
+                            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading...</>
+                            : <><Upload className="w-3.5 h-3.5" /> Upload PDF</>
+                          }
+                        </button>
+                      </div>
                     )}
-                    {savingResourceId === resource.id && (
-                      <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
-                    )}
+
+                    {/* Drive link fallback */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={resource.driveLink || ''}
+                        onChange={e => setResources(prev => prev.map(r => r.id === resource.id ? { ...r, driveLink: e.target.value } : r))}
+                        onBlur={e => handleUpdateResource(resource.id, 'driveLink', e.target.value)}
+                        className={`${inputClass} flex-1`}
+                        placeholder="Or paste Google Drive link as fallback..."
+                      />
+                      {resource.driveLink && (
+                        <a href={resource.driveLink} target="_blank" rel="noopener noreferrer"
+                          className="p-2 text-blue-500 hover:text-blue-700 shrink-0">
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+                      {savingResourceId === resource.id && (
+                        <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -548,7 +832,7 @@ export default function EditExamEventPage() {
           )}
         </div>
 
-        {/* Add new resource form */}
+        {/* Add new resource */}
         <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-800 space-y-3">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Add New Resource</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -577,30 +861,301 @@ export default function EditExamEventPage() {
               <option value="LIVE">Live</option>
             </select>
           </div>
-          <div className="flex gap-3">
-            <input
-              type="url"
-              value={newResource.driveLink}
-              onChange={e => setNewResource(prev => ({ ...prev, driveLink: e.target.value }))}
-              className={`${inputClass} flex-1`}
-              placeholder="https://drive.google.com/... (optional, can add later)"
-            />
+
+          {/* PDF upload for new resource */}
+          <div className="space-y-2">
+            {newResource.fileUrl ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <FileText className="w-4 h-4 text-green-600 shrink-0" />
+                <span className="text-xs text-green-700 dark:text-green-400 flex-1">PDF ready to save</span>
+                <button
+                  type="button"
+                  onClick={() => setNewResource(prev => ({ ...prev, fileUrl: '' }))}
+                  className="p-0.5 text-green-500 hover:text-red-500 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  ref={newPdfInputRef}
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) handleUploadPdfForNew(file)
+                    e.target.value = ''
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => newPdfInputRef.current?.click()}
+                  disabled={isUploadingNewPdf}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isUploadingNewPdf
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading...</>
+                    : <><Upload className="w-3.5 h-3.5" /> Upload PDF</>
+                  }
+                </button>
+                <input
+                  type="url"
+                  value={newResource.driveLink}
+                  onChange={e => setNewResource(prev => ({ ...prev, driveLink: e.target.value }))}
+                  className={`${inputClass} flex-1`}
+                  placeholder="Or paste Drive link..."
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end">
             <button
               type="button"
               onClick={handleAddResource}
               disabled={isAddingResource || !newResource.label.trim()}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shrink-0"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               {isAddingResource
                 ? <Loader2 className="w-4 h-4 animate-spin" />
                 : <Plus className="w-4 h-4" />
               }
-              Add
+              Add Resource
             </button>
           </div>
         </div>
       </div>
-    </div>
+        {/* ── Answer Key Section ────────────────────────────────────────── */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+              Answer Key
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Enter answers and explanations — shown on the public page.
+            </p>
+          </div>
+          {answerKey && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">
+                {answerKey.questions.filter(q => q.answer).length} / {answerKey.questions.length} answered
+              </span>
+              <button
+                type="button"
+                onClick={handleDeleteAnswerKey}
+                disabled={isDeletingAnswerKey}
+                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                title="Delete answer key"
+              >
+                {isDeletingAnswerKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {!answerKey ? (
+          <div className="px-6 py-10 text-center">
+            <p className="text-sm text-gray-400 mb-4">No answer key yet. Start by initialising one.</p>
+            <button
+              type="button"
+              onClick={handleInitAnswerKey}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Initialise Answer Key
+            </button>
+          </div>
+        ) : (
+          <div className="p-6 space-y-6">
+
+            {/* Sections manager */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sections</p>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingSection(s => !s)}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  {isAddingSection ? 'Cancel' : '+ Add Section'}
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {answerKey.sections.map((section, index) => (
+                  <div key={index} className="flex items-center gap-3 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">{section.name}</span>
+                    <span className="text-xs text-gray-400">Q{section.from} – Q{section.to}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSection(index)}
+                      className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {isAddingSection && (
+                <div className="mt-3 flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">Section Name</label>
+                    <input
+                      type="text"
+                      value={newSection.name}
+                      onChange={e => setNewSection(prev => ({ ...prev, name: e.target.value }))}
+                      className={inputClass}
+                      placeholder="e.g. Physics"
+                    />
+                  </div>
+                  <div className="w-20">
+                    <label className="text-xs text-gray-500 mb-1 block">From Q</label>
+                    <input
+                      type="number"
+                      value={newSection.from}
+                      onChange={e => setNewSection(prev => ({ ...prev, from: e.target.value }))}
+                      className={inputClass}
+                      placeholder="1"
+                      min={1}
+                    />
+                  </div>
+                  <div className="w-20">
+                    <label className="text-xs text-gray-500 mb-1 block">To Q</label>
+                    <input
+                      type="number"
+                      value={newSection.to}
+                      onChange={e => setNewSection(prev => ({ ...prev, to: e.target.value }))}
+                      className={inputClass}
+                      placeholder="45"
+                      min={1}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddSection}
+                    className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors shrink-0"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Section tabs */}
+            {answerKey.sections.length > 0 && (
+              <div>
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  {answerKey.sections.map((section, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => { setActiveSection(index); setExpandedExplanation(null) }}
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        activeSection === index
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {section.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Questions for active section */}
+                <div className="space-y-1">
+                  {answerKey.questions
+                    .filter(q => {
+                      const sec = answerKey.sections[activeSection]
+                      return q.number >= sec.from && q.number <= sec.to
+                    })
+                    .map(q => (
+                      <div key={q.number} className="border border-gray-100 dark:border-gray-800 rounded-lg overflow-hidden">
+                        <div className="flex items-center gap-3 px-3 py-2">
+                          <span className="text-xs font-mono text-gray-400 w-8 shrink-0">Q{q.number}</span>
+
+                          {/* Answer buttons */}
+                          <div className="flex gap-1.5">
+                            {['A', 'B', 'C', 'D'].map(opt => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => handleSetAnswer(q.number, opt)}
+                                className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${
+                                  q.answer === opt
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600'
+                                }`}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex-1" />
+
+                          {/* Explanation toggle */}
+                          <button
+                            type="button"
+                            onClick={() => setExpandedExplanation(
+                              expandedExplanation === q.number ? null : q.number
+                            )}
+                            className={`text-xs px-2 py-1 rounded transition-colors ${
+                              q.explanation
+                                ? 'text-green-600 bg-green-50 dark:bg-green-900/20'
+                                : 'text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-800'
+                            }`}
+                          >
+                            {expandedExplanation === q.number
+                              ? 'Close'
+                              : q.explanation ? 'Edit Explanation' : 'Add Explanation'
+                            }
+                          </button>
+                        </div>
+
+                        {/* Explanation editor */}
+                        {expandedExplanation === q.number && (
+                          <div className="border-t border-gray-100 dark:border-gray-800 p-3">
+                            <p className="text-xs text-gray-400 mb-2">Explanation for Q{q.number}</p>
+                            <RichTextEditor
+                              value={q.explanation || ''}
+                              onChange={val => handleSetExplanation(q.number, val)}
+                              placeholder="Type explanation here. Supports math, images, chemistry symbols..."
+                              minHeight="80px"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* Save button */}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800">
+              <span className="text-xs text-gray-400">
+                Changes are not auto-saved — click Save when done.
+              </span>
+              <button
+                type="button"
+                onClick={handleSaveAnswerKey}
+                disabled={isSavingAnswerKey}
+                className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {isSavingAnswerKey
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
+                  : <><Save className="w-4 h-4" /> Save Answer Key</>
+                }
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      </div>
   )
 }
 

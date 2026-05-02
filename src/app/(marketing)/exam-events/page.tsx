@@ -1,3 +1,4 @@
+// src/app/(marketing)/exam-events/page.tsx
 import Link from 'next/link'
 import { CalendarDays, FileText, ChevronRight } from 'lucide-react'
 import type { Metadata } from 'next'

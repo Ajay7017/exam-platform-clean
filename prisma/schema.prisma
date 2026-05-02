@@ -582,6 +582,7 @@ model ExamEvent {
   updatedAt DateTime @updatedAt
 
   resources ExamEventResource[]
+  answerKey ExamEventAnswerKey?
 
   @@index([slug])
   @@index([status])
@@ -592,15 +593,39 @@ model ExamEventResource {
   examEventId String
   examEvent   ExamEvent               @relation(fields: [examEventId], references: [id], onDelete: Cascade)
 
-  label       String                  // e.g. "Question Paper", "Answer Key", "Solutions PDF"
-  type        String                  // "QUESTION_PAPER" | "ANSWER_KEY" | "SOLUTIONS" | "OTHER"
-  driveLink   String?                 // Google Drive link admin pastes
+  label       String
+  type        String
+  driveLink   String?
+  fileUrl     String?
   status      ExamEventResourceStatus @default(COMING_SOON)
   sortOrder   Int                     @default(0)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([examEventId])
   @@index([status])
+}
+
+model ExamEventAnswerKey {
+  id          String    @id @default(cuid())
+  examEventId String    @unique
+  examEvent   ExamEvent @relation(fields: [examEventId], references: [id], onDelete: Cascade)
+
+  sections    Json
+  // [
+  //   { "name": "Physics", "from": 1, "to": 45 },
+  //   { "name": "Chemistry", "from": 46, "to": 90 },
+  //   { "name": "Biology", "from": 91, "to": 180 }
+  // ]
+
+  questions   Json
+  // [
+  //   { "number": 1, "answer": "B", "explanation": "<p>html from rich text editor</p>" },
+  //   ...
+  // ]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([examEventId])
 }

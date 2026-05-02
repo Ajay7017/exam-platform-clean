@@ -1,3 +1,4 @@
+// src/app/api/admin/exam-events/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth-utils'
 import { handleApiError } from '@/lib/api-error'
@@ -62,6 +63,7 @@ export async function POST(
         label: validated.label,
         type: validated.type,
         driveLink: validated.driveLink ?? null,
+        fileUrl: validated.fileUrl ?? null,
         status: validated.status,
         sortOrder: validated.sortOrder,
       }

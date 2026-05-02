@@ -66,3 +66,50 @@ export async function deleteImage(publicId: string): Promise<void> {
 export async function deleteImages(publicIds: string[]): Promise<void> {
   await cloudinary.api.delete_resources(publicIds)
 }
+
+/**
+ * Upload PDF to Cloudinary
+ * @param buffer File buffer
+ * @param filename Original filename
+ * @returns Public URL and publicId of uploaded PDF
+ */
+export async function uploadPDF(
+  buffer: Buffer,
+  filename: string
+): Promise<{ url: string; publicId: string }> {
+  return new Promise((resolve, reject) => {
+    const sanitized = filename
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(0, 80)
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'exam-pdfs',
+        public_id: sanitized,
+        resource_type: 'raw',
+        use_filename: true,
+        unique_filename: true,
+      },
+      (error, result) => {
+        if (error) {
+          reject(error)
+        } else if (result) {
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+          })
+        }
+      }
+    )
+
+    uploadStream.end(buffer)
+  })
+}
+
+/**
+ * Delete PDF from Cloudinary
+ */
+export async function deletePDF(publicId: string): Promise<void> {
+  await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' })
+}
