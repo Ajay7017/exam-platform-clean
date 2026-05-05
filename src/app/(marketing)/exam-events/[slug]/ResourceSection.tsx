@@ -69,7 +69,7 @@ function PDFViewerModal({
 
       {/* PDF iframe — Google viewer proxy handles Cloudinary's attachment header */}
       <iframe
-        src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
+        src={`/api/pdf-proxy?url=${encodeURIComponent(url)}`}
         className="flex-1 w-full"
         title={label}
         style={{ border: 'none' }}
