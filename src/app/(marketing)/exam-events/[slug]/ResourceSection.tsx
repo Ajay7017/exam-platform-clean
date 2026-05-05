@@ -34,10 +34,12 @@ const TYPE_ICONS: Record<string, any> = {
 function PDFViewerModal({
   url,
   label,
+  filename,
   onClose,
 }: {
   url: string
   label: string
+  filename: string
   onClose: () => void
 }) {
   return (
@@ -51,7 +53,7 @@ function PDFViewerModal({
         <div className="flex items-center gap-2">
           
             <a href={`/api/pdf-proxy?url=${encodeURIComponent(url)}`}
-            download="document.pdf"
+            download={filename}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
@@ -124,7 +126,7 @@ function ResourceCard({
           </button>
           
             <a href={`/api/pdf-proxy?url=${encodeURIComponent(resource.fileUrl!)}`}
-            download="document.pdf"
+            download={`${resource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`}
             className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
@@ -189,11 +191,11 @@ export function ResourceSection({ resources }: { resources: Resource[] }) {
         </div>
       </div>
 
-      {/* PDF Modal */}
       {viewingResource?.fileUrl && (
         <PDFViewerModal
           url={viewingResource.fileUrl}
           label={viewingResource.label}
+          filename={`${viewingResource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`}
           onClose={() => setViewingResource(null)}
         />
       )}
