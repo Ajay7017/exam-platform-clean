@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url')
+  const name = request.nextUrl.searchParams.get('name') || 'document.pdf'
 
   if (!url) {
     return NextResponse.json({ error: 'No URL provided' }, { status: 400 })
@@ -24,12 +25,13 @@ export async function GET(request: NextRequest) {
     }
 
     const buffer = await response.arrayBuffer()
+    const safeName = name.replace(/[^a-zA-Z0-9_.\-]/g, '_')
 
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'inline; filename="document.pdf"',
+        'Content-Disposition': `inline; filename="${safeName}"`,
         'Cache-Control': 'public, max-age=3600',
       },
     })

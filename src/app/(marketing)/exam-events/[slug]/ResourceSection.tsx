@@ -52,7 +52,7 @@ function PDFViewerModal({
         </div>
         <div className="flex items-center gap-2">
           
-            <a href={`/api/pdf-proxy?url=${encodeURIComponent(url)}`}
+            <a href={`/api/pdf-proxy?url=${encodeURIComponent(url)}&name=${encodeURIComponent(filename)}`}
             download={filename}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
           >
@@ -125,7 +125,7 @@ function ResourceCard({
             View PDF
           </button>
           
-            <a href={`/api/pdf-proxy?url=${encodeURIComponent(resource.fileUrl!)}`}
+            <a href={`/api/pdf-proxy?url=${encodeURIComponent(resource.fileUrl!)}&name=${encodeURIComponent(`${resource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`)}`}
             download={`${resource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`}
             className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors"
           >
