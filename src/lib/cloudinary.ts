@@ -91,6 +91,9 @@ export async function uploadPDF(
         use_filename: true,
         unique_filename: true,
         format: 'pdf',
+        type: 'upload',
+        access_mode: 'public',
+        moderation: 'manual',
       },
       (error, result) => {
         if (error) {
