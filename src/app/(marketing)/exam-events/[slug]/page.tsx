@@ -195,7 +195,7 @@ export default async function ExamEventDetailPage(
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
 
         {/* Resources — client component with PDF viewer */}
-        <ResourceSection resources={event.resources} />
+        <ResourceSection resources={event.resources} slug={event.slug} />
 
         {/* Answer Key — client component with search + explanations */}
         <AnswerKeySection answerKey={event.answerKey} />

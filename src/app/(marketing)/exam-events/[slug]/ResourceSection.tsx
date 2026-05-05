@@ -36,11 +36,13 @@ function PDFViewerModal({
   label,
   filename,
   onClose,
+  onDownload,
 }: {
   url: string
   label: string
   filename: string
   onClose: () => void
+  onDownload: () => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90">
@@ -54,6 +56,7 @@ function PDFViewerModal({
           
             <a href={`/api/pdf-proxy?url=${encodeURIComponent(url)}&name=${encodeURIComponent(filename)}`}
             download={filename}
+            onClick={onDownload}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
@@ -84,9 +87,11 @@ function PDFViewerModal({
 function ResourceCard({
   resource,
   onView,
+  onDownload,
 }: {
   resource: Resource
   onView: (resource: Resource) => void
+  onDownload: (resourceId: string) => void
 }) {
   const Icon = TYPE_ICONS[resource.type] || FileText
   const isLive = resource.status === 'LIVE'
@@ -127,6 +132,7 @@ function ResourceCard({
           
             <a href={`/api/pdf-proxy?url=${encodeURIComponent(resource.fileUrl!)}&name=${encodeURIComponent(`${resource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`)}`}
             download={`${resource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`}
+            onClick={() => onDownload(resource.id)}
             className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
@@ -158,8 +164,18 @@ function ResourceCard({
 }
 
 // ── Main Export ────────────────────────────────────────────────────────────
-export function ResourceSection({ resources }: { resources: Resource[] }) {
+export function ResourceSection({ resources, slug }: { resources: Resource[], slug: string }) {
   const [viewingResource, setViewingResource] = useState<Resource | null>(null)
+
+  const trackView = (resourceId: string) => {
+    fetch(`/api/exam-events/${slug}/resources/${resourceId}/view`, { method: 'POST' })
+      .catch(() => {}) // silent fail
+  }
+
+  const trackDownload = (resourceId: string) => {
+    fetch(`/api/exam-events/${slug}/resources/${resourceId}/download`, { method: 'POST' })
+      .catch(() => {}) // silent fail
+  }
 
   if (resources.length === 0) {
     return (
@@ -185,7 +201,8 @@ export function ResourceSection({ resources }: { resources: Resource[] }) {
             <ResourceCard
               key={resource.id}
               resource={resource}
-              onView={setViewingResource}
+              onView={(r) => { trackView(r.id); setViewingResource(r) }}
+              onDownload={trackDownload}
             />
           ))}
         </div>
@@ -197,6 +214,7 @@ export function ResourceSection({ resources }: { resources: Resource[] }) {
           label={viewingResource.label}
           filename={`${viewingResource.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`}
           onClose={() => setViewingResource(null)}
+          onDownload={() => trackDownload(viewingResource.id)}
         />
       )}
     </>

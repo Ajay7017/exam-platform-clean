@@ -599,6 +599,8 @@ model ExamEventResource {
   fileUrl     String?
   status      ExamEventResourceStatus @default(COMING_SOON)
   sortOrder   Int                     @default(0)
+  viewCount   Int                     @default(0)
+  downloadCount Int                   @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
