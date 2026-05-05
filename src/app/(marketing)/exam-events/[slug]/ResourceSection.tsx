@@ -50,8 +50,8 @@ function PDFViewerModal({
         </div>
         <div className="flex items-center gap-2">
           
-            <a href={url}
-            download
+            <a href={`/api/pdf-proxy?url=${encodeURIComponent(url)}`}
+            download="document.pdf"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
@@ -67,9 +67,9 @@ function PDFViewerModal({
         </div>
       </div>
 
-      {/* PDF iframe */}
+      {/* PDF iframe — Google viewer proxy handles Cloudinary's attachment header */}
       <iframe
-        src={url}
+        src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
         className="flex-1 w-full"
         title={label}
         style={{ border: 'none' }}
@@ -123,8 +123,8 @@ function ResourceCard({
             View PDF
           </button>
           
-            <a href={resource.fileUrl!}
-            download
+            <a href={`/api/pdf-proxy?url=${encodeURIComponent(resource.fileUrl!)}`}
+            download="document.pdf"
             className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />

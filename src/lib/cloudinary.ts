@@ -90,6 +90,7 @@ export async function uploadPDF(
         resource_type: 'raw',
         use_filename: true,
         unique_filename: true,
+        format: 'pdf',
       },
       (error, result) => {
         if (error) {
