@@ -4,7 +4,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/components/providers/session-provider";
-import Script from "next/script";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -65,20 +66,17 @@ export default function RootLayout({
       </head>
 
       <body className={inter.className}>
-        {/* Session provider for NextAuth */}
         <SessionProvider>
-          {/* Accessibility skip link */}
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-primary-500 focus:text-white focus:rounded-lg"
           >
             Skip to main content
           </a>
-
           {children}
-
-          {/* Toast notifications */}
           <Toaster position="top-right" richColors />
+          <Analytics />
+          <SpeedInsights />
         </SessionProvider>
       </body>
     </html>
