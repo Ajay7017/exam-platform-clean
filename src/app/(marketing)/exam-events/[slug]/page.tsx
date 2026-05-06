@@ -43,15 +43,25 @@ interface ExamEvent {
   answerKey: AnswerKey | null
 }
 
+export const revalidate = 60
+
+// Replace with this:
+import { prisma } from '@/lib/prisma'
+
 async function getExamEvent(slug: string): Promise<ExamEvent | null> {
   try {
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
-    const res = await fetch(`${baseUrl}/api/exam-events/${slug}`, {
-      next: { revalidate: 60 },
+    const event = await prisma.examEvent.findUnique({
+      where: { slug },
+      include: {
+        resources: {
+          where: { status: { not: 'REMOVED' } },
+          orderBy: { sortOrder: 'asc' },
+        },
+        answerKey: true,
+      },
     })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.examEvent || null
+    if (!event || event.status !== 'PUBLISHED') return null
+    return event as unknown as ExamEvent
   } catch {
     return null
   }

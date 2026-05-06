@@ -14,28 +14,40 @@ interface ExamEvent {
   title: string
   slug: string
   description: string | null
-  examDate: string | null
+  examDate: Date | string | null
   metaTitle: string | null
   _count: { resources: number }
 }
 
+export const revalidate = 60
+
+// Replace with this:
+import { prisma } from '@/lib/prisma'
+
 async function getExamEvents(): Promise<ExamEvent[]> {
   try {
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
-    const res = await fetch(`${baseUrl}/api/exam-events`, {
-      next: { revalidate: 60 }, // revalidate every 60 seconds
+    return await prisma.examEvent.findMany({
+      where: { status: 'PUBLISHED' },
+      orderBy: { examDate: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        examDate: true,
+        metaTitle: true,
+        _count: { select: { resources: true } },
+      },
     })
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.examEvents || []
   } catch {
     return []
   }
 }
 
-function formatDate(dateStr: string | null) {
+function formatDate(dateStr: string | Date | null) {
   if (!dateStr) return null
   return new Date(dateStr).toLocaleDateString('en-IN', {
+
     day: 'numeric',
     month: 'long',
     year: 'numeric',
