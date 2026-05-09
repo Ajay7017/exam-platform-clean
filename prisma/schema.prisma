@@ -87,6 +87,7 @@ model Subject {
   topics        Topic[]
   exams         Exam[]
   subscriptions Subscription[]
+  practiceExams PracticeExam[]
   
   @@index([slug])
   @@index([isActive])
@@ -164,6 +165,7 @@ model Question {
   options       Option[]
   examQuestions ExamQuestion[]
   errorReports  ErrorReport[]
+  practiceExamQuestions PracticeExamQuestion[]
   
   @@index([topicId, isActive])
   @@index([subTopicId])
@@ -630,4 +632,44 @@ model ExamEventAnswerKey {
   updatedAt   DateTime  @updatedAt
 
   @@index([examEventId])
+}
+
+// ============================================
+// PRACTICE EXAM MODELS
+// ============================================
+
+enum PracticeExamStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model PracticeExam {
+  id            String              @id @default(cuid())
+  title         String
+  slug          String              @unique
+  description   String?             @db.Text
+  subjectId     String
+  subject       Subject             @relation(fields: [subjectId], references: [id])
+  questionCount Int
+  status        PracticeExamStatus  @default(DRAFT)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  questions     PracticeExamQuestion[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([subjectId])
+}
+
+model PracticeExamQuestion {
+  id              String       @id @default(cuid())
+  practiceExamId  String
+  practiceExam    PracticeExam @relation(fields: [practiceExamId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question     @relation(fields: [questionId], references: [id])
+  order           Int
+
+  @@index([practiceExamId])
+  @@index([questionId])
 }

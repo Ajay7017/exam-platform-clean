@@ -14,6 +14,7 @@ import {
   BookOpen,
   FlaskConical,
   KeyRound,
+  PenLine,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,6 +44,11 @@ const NAV_LINKS = [
     label: 'Study Materials',
     href: '/study-materials',
     icon: <FlaskConical className="h-4 w-4" />,
+  },
+  {
+    label: 'Practice Questions',
+    href: '/practice-exams',
+    icon: <PenLine className="h-4 w-4" />,
   },
 ]
 
