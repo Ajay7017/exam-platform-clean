@@ -189,7 +189,7 @@ console.log('🚀 Worker started. Redis sync every 10s, Rank calc every 2min')
 setInterval(processSyncQueue, SYNC_INTERVAL_MS)
 
 calculatePendingRanks() // Run immediately on start
-const rankInterval = setInterval(calculatePendingRanks, 2 * 60 * 1000)
+const rankInterval = setInterval(calculatePendingRanks, 60 * 60 * 1000)
 
 // ─── GRACEFUL SHUTDOWN ────────────────────────────────────────────
 async function shutdown() {
